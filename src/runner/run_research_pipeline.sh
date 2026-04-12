@@ -68,9 +68,10 @@ cd "$REPO_BASENAME"
 # Force la remote URL au cas où elle aurait changé (token éphémère)
 git remote set-url origin "$REPO_URL"
 
-# Force la récupération des dernières références
+# Force la récupération des dernières références (on spécifie explicitement la branche
+# car le GITHUB_TOKEN éphémère ne fetch que HEAD par défaut)
 log_info "Synchronisation de la référence distante origin/$TARGET_BRANCH..."
-git fetch origin
+git fetch origin "$TARGET_BRANCH"
 
 # Validation de sécurité : est-ce que la branche existe sur le remote ?
 if ! git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
