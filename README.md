@@ -18,7 +18,7 @@ Cluster CI est fondé sur le principe de GitOps. Au lieu que l'agent cherche à 
 **Flux d'exécution** :
 1. **Pull Request** : Joules (l'agent codeur) pousse ses changements sur une PR GitHub.
 2. **Déclenchement CI** : GitHub Actions accroche le self-hosted runner.
-3. **Orchestration** : Le script de setup bascule dans un répertoire de cache persistant (`/data/research_workspaces/$REPO_NAME`), fait un `git pull` de la branche, et lance l'environnement (`uv sync`, puis `dvc repro`).
+3. **Orchestration** : Le script de setup bascule dans un répertoire de cache local non-tracké (`workspaces/$ORG/$REPO_NAME`), fait un `git fetch` et un `git checkout` forcé de la branche (pour conserver l'état DVC intact inter-branches), et lance l'environnement (`uv sync`, puis `dvc repro`).
 4. **Authentification** : Le runner injecte les credentials silencieusement, évitant l'interblocage OAuth2 interactif pour DVC via Google Drive.
 5. **Feedbacks CI** : Joules reçoit les échecs et succès natifs via l'intégration GitHub PR, pouvant ajuster le code sans saturer sa mémoire contextuelle. L'agent superviseur (Eugène) monitore uniquement la complétion globale.
 
@@ -54,5 +54,6 @@ cluster-ci/
 ## Roadmap
 
 - [ ] [Setup Orchestrateur Runner](docs/tasks/setup_orchestrator.md)
+- [ ] [Déploiement Local & Test Runner](docs/tasks/deploy_local_cluster.md)
 - [ ] [Authentification Silencieuse DVC](docs/tasks/dvc_auth.md)
 - [ ] [Script d'Installation Client](docs/tasks/client_script.md)
