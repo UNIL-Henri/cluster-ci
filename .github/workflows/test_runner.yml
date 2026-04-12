@@ -17,7 +17,7 @@ jobs:
           ORCHESTRATOR_PATH="/home/lopilo/code/cluster-ci/src/runner/run_research_pipeline.sh"
           
           if [ -f "$ORCHESTRATOR_PATH" ]; then
-            $ORCHESTRATOR_PATH ${{ github.repository }} ${{ github.head_ref || github.ref_name }}
+            $ORCHESTRATOR_PATH ${{ github.repository }} ${{ github.head_ref || github.ref_name }} ${{ secrets.GITHUB_TOKEN }}
           else
             echo "Erreur critique : L'orchestrateur est introuvable au chemin absolu prévu sur le cluster."
             exit 1

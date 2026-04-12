@@ -9,6 +9,7 @@ fi
 
 TARGET_REPO=$1
 TARGET_BRANCH=$2
+GH_TOKEN=$3
 
 # Se placer à la racine du projet cluster-ci
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
@@ -30,16 +31,23 @@ cd "$BASE_DIR/repositories"
 # Extraire juste le nom final du repo pour le dossier (ex: llm-as-recommender)
 REPO_BASENAME=$(basename "$TARGET_REPO")
 
+if [ -n "$GH_TOKEN" ]; then
+    # Authentification https silencieuse pour GitHub Actions
+    REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git"
+else
+    REPO_URL="https://github.com/${TARGET_REPO}.git"
+fi
+
 # 2. Gestion de l'état Git
 if [ ! -d "$REPO_BASENAME/.git" ]; then
     echo "⏳ Premier fetch du dépôt. Clonage..."
-    # On clone avec l'URL en supposant une configuration SSH ou un depôt public
-    # Pour un repo privé via HTTPS sans interactivité, il faudrait idéalement 
-    # passer par github.com avec le jeton, mais on suppose un env local authentifié (ex: SSH).
-    git clone "https://github.com/$TARGET_REPO.git" "$REPO_BASENAME"
+    git clone "$REPO_URL" "$REPO_BASENAME"
 fi
 
 cd "$REPO_BASENAME"
+
+# Force la remote URL au cas où elle aurait changé (token éphémère)
+git remote set-url origin "$REPO_URL"
 
 # Force la récupération des dernières références
 echo "🔄 Synchronisation de la branche: $TARGET_BRANCH"
