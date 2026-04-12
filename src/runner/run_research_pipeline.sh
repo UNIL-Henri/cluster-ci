@@ -17,16 +17,20 @@ cd "$BASE_DIR"
 
 REPO_WORK_DIR="repositories/$TARGET_REPO"
 
+# Pipe toute la sortie (stdout et stderr) vers la console ET vers un fichier log local
+LOG_FILE="$BASE_DIR/cluster-ci-runs.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 function log_info() {
-    echo -e "[\$(date +'%Y-%m-%d %H:%M:%S')] ℹ️  \$1"
+    echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ℹ️  $1"
 }
 
 function log_success() {
-    echo -e "[\$(date +'%Y-%m-%d %H:%M:%S')] ✅ \$1"
+    echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ $1"
 }
 
 function log_error() {
-    echo -e "[\$(date +'%Y-%m-%d %H:%M:%S')] ❌ \$1"
+    echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ❌ $1"
 }
 
 echo "=========================================================================="
@@ -95,3 +99,9 @@ uv run python -c "import time; print('⏳ Lancement du test simulé DVC...'); ti
 echo "=========================================================================="
 log_success "CLUSTER-CI: Exécution GitOps terminée avec succès."
 echo "=========================================================================="
+
+# Tronquer log à 2000 lignes max (efface le tout début pour ne garder que la fin)
+if [ -f "$LOG_FILE" ]; then
+    tail -n 2000 "$LOG_FILE" > "${LOG_FILE}.tmp"
+    mv "${LOG_FILE}.tmp" "$LOG_FILE"
+fi
