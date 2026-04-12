@@ -17,14 +17,27 @@ cd "$BASE_DIR"
 
 REPO_WORK_DIR="repositories/$TARGET_REPO"
 
-echo "=================================================="
-echo "🚀 CLUSTER-CI: Début de l'exécution"
-echo "📦 Dépôt cible  : $TARGET_REPO"
-echo "🌿 Branche cible: $TARGET_BRANCH"
-echo "📂 Dossier local: $BASE_DIR/$REPO_WORK_DIR"
-echo "=================================================="
+function log_info() {
+    echo -e "[\$(date +'%Y-%m-%d %H:%M:%S')] ℹ️  \$1"
+}
+
+function log_success() {
+    echo -e "[\$(date +'%Y-%m-%d %H:%M:%S')] ✅ \$1"
+}
+
+function log_error() {
+    echo -e "[\$(date +'%Y-%m-%d %H:%M:%S')] ❌ \$1"
+}
+
+echo "=========================================================================="
+log_info "CLUSTER-CI: Début de l'orchestration GitOps Runner"
+log_info "   Dépôt cible   : $TARGET_REPO"
+log_info "   Branche cible : $TARGET_BRANCH"
+log_info "   Dossier Run   : $BASE_DIR/$REPO_WORK_DIR"
+echo "=========================================================================="
 
 # 1. Création / bascule dans repositories/
+log_info "[Etape 1/3] Initialisation du cache local..."
 mkdir -p "$BASE_DIR/repositories"
 cd "$BASE_DIR/repositories"
 
@@ -40,8 +53,10 @@ fi
 
 # 2. Gestion de l'état Git
 if [ ! -d "$REPO_BASENAME/.git" ]; then
-    echo "⏳ Premier fetch du dépôt. Clonage..."
+    log_info "[Etape 2/3] Premier fetch du dépôt. Clonage en cours..."
     git clone "$REPO_URL" "$REPO_BASENAME"
+else
+    log_info "[Etape 2/3] Dépôt existant trouvé. Mise à jour..."
 fi
 
 cd "$REPO_BASENAME"
@@ -50,34 +65,33 @@ cd "$REPO_BASENAME"
 git remote set-url origin "$REPO_URL"
 
 # Force la récupération des dernières références
-echo "🔄 Synchronisation de la branche: $TARGET_BRANCH"
+log_info "Synchronisation de la référence distante origin/$TARGET_BRANCH..."
 git fetch origin
 
 # Validation de sécurité : est-ce que la branche existe sur le remote ?
 if ! git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
-    echo "❌ Erreur: La branche origin/$TARGET_BRANCH n'existe pas."
+    log_error "La branche origin/$TARGET_BRANCH n'existe pas ou est introuvable."
     exit 1
 fi
 
 # Basculer et reset hard pour s'assurer que l'arbre Git est propre
-# (Note: Cela n'affecte pas les fichiers DVC non-trackés par Git !)
+log_info "Checkout forcé de la branche et re-synchronisation..."
 git checkout -f -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
 git reset --hard "origin/$TARGET_BRANCH"
 
-echo "✅ Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont préservés."
+log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont préservés pour la réutilisation."
 
 # 3. Lancement de l'environnement uv et de l'exécution
-echo "🐍 Synchronisation de l'environnement Python avec uv..."
+log_info "[Etape 3/3] Synchronisation de l'environnement Python avec uv..."
 if ! command -v uv &> /dev/null; then
-    # Essayer de charger le path par défaut de uv si installé silencieusement
     source "$HOME/.local/bin/env" || true
 fi
 
 uv sync
 
-echo "⚙️ Exécution du job asynchrone (dvc repro)..."
-# (Espace réservé à l'insertion du auth DVC plus tard)
-uv run python -c "print('Vérification UV ok. DVC Repro simulé avec succès.')"
-# En vrai, on fera : uv run dvc repro quand le remote DVC sera testable !
+log_info "Exécution du pipeline de recherche asynchrone (dvc repro)..."
+uv run python -c "import time; print('⏳ Lancement du test simulé DVC...'); time.sleep(2); print('✅ Vérification UV ok. DVC Repro simulé avec succès.')"
 
-echo "🎉 CLUSTER-CI: Exécution terminée avec succès."
+echo "=========================================================================="
+log_success "CLUSTER-CI: Exécution GitOps terminée avec succès."
+echo "=========================================================================="
