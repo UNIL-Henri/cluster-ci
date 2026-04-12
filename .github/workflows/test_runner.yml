@@ -10,4 +10,4 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Trigger Orchestrator Script
-        run: cluster-ci-run ${{ github.repository }} ${{ github.head_ref || github.ref_name }} ${{ secrets.GITHUB_TOKEN }}
+        run: /usr/local/bin/cluster-ci-run ${{ github.repository }} ${{ github.head_ref || github.ref_name }} ${{ secrets.GITHUB_TOKEN }}
