@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Orchestrator
-        run: /home/lopilo/code/cluster-ci/src/runner/run_research_pipeline.sh "\${{ github.repository }}" "\${{ github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
+        run: cluster-ci-run "\${{ github.repository }}" "\${{ github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
 EOF
 
 # 3. Injection du fichier de configuration .cluster-ci

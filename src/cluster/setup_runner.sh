@@ -100,3 +100,7 @@ echo "   Commandes utiles :"
 echo "   - sudo ./svc.sh status  : Voir l'état"
 echo "   - sudo ./svc.sh stop    : Arrêter"
 echo "   - sudo ./svc.sh start   : Démarrer"
+
+# 6. Lien global pour l'orchestrateur
+echo "🔗 Création du lien symbolique global /usr/local/bin/cluster-ci-run..."
+sudo ln -sf "$BASE_DIR/src/runner/run_research_pipeline.sh" /usr/local/bin/cluster-ci-run
