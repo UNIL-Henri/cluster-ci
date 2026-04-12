@@ -19,6 +19,8 @@ name: Cluster-CI Execution
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
