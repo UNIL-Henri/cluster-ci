@@ -7,7 +7,7 @@ Système d'intégration continue asynchrone pour pipeline de recherche, conçu c
 ### Côté Client (Projet de recherche)
 Pour intégrer un projet de recherche au cluster, exécutez la commande suivante à la racine de votre dépôt :
 ```bash
-curl -sSL https://raw.githubusercontent.com/hjamet/cluster-ci/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash
 ```
 
 ### Côté Serveur (Machine Ubuntu / Cluster)
