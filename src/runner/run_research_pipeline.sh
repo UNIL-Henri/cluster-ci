@@ -42,8 +42,8 @@ echo "==========================================================================
 
 # 1. Création / bascule dans repositories/
 log_info "[Etape 1/3] Initialisation du cache local..."
-mkdir -p "$BASE_DIR/repositories"
-cd "$BASE_DIR/repositories"
+mkdir -p "$BASE_DIR/repositories/$(dirname "$TARGET_REPO")"
+cd "$BASE_DIR/repositories/$(dirname "$TARGET_REPO")"
 
 # Extraire juste le nom final du repo pour le dossier (ex: llm-as-recommender)
 REPO_BASENAME=$(basename "$TARGET_REPO")
@@ -68,10 +68,10 @@ cd "$REPO_BASENAME"
 # Force la remote URL au cas où elle aurait changé (token éphémère)
 git remote set-url origin "$REPO_URL"
 
-# Force la récupération des dernières références (on spécifie explicitement la branche
-# car le GITHUB_TOKEN éphémère ne fetch que HEAD par défaut)
+# Force la récupération des dernières références (on spécifie explicitement le mapping
+# de la branche vers origin/branche car le fetch conditionnel GitHub Actions l'omet parfois)
 log_info "Synchronisation de la référence distante origin/$TARGET_BRANCH..."
-git fetch origin "$TARGET_BRANCH"
+git fetch origin "+refs/heads/$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
 
 # Validation de sécurité : est-ce que la branche existe sur le remote ?
 if ! git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
