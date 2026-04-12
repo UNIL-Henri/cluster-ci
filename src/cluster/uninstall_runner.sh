@@ -67,7 +67,4 @@ cd "$BASE_DIR"
 echo "🧹 Suppression du répertoire local $RUNNER_DIR..."
 rm -rf "$RUNNER_DIR"
 
-echo "🧹 Suppression du lien symbolique global (cluster-ci-run)..."
-sudo rm -f /usr/local/bin/cluster-ci-run
-
 echo "✅ Désinstallation complète terminée."

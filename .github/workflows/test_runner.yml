@@ -10,4 +10,4 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Trigger Orchestrator Script
-        run: cluster-ci-run ${{ github.repository }} ${{ github.head_ref || github.ref_name }} ${{ secrets.GITHUB_TOKEN }}
+        run: /home/lopilo/code/cluster-ci/src/runner/run_research_pipeline.sh ${{ github.repository }} ${{ github.head_ref || github.ref_name }} ${{ secrets.GITHUB_TOKEN }}

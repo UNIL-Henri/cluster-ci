@@ -17,7 +17,7 @@ curl -sSL https://raw.githubusercontent.com/hjamet/cluster-ci/main/install.sh | 
 ```bash
 ./src/cluster/setup_runner.sh owner/repo
 ```
-Le script installera automatiquement le runner, créera un lien symbolique global `cluster-ci-run` et l'enregistrera en tant que service `systemd`.
+Le script installera automatiquement le runner et l'enregistrera en tant que service `systemd`.
 
 4. Pour tout désinstaller proprement (service systemd, suppression sur GitHub, nettoyage local) :
 ```bash
@@ -64,7 +64,6 @@ cluster-ci/
 | `install.sh` | Injecte le workflow GitHub Actions et le fichier `.cluster-ci` dans un dépôt client |
 | `src/cluster/setup_runner.sh` | Installe et configure le runner GitHub Actions en tant que service `systemd` |
 | `src/cluster/uninstall_runner.sh` | Désinstalle le runner complétement (Systemd, GitHub, local) |
-| `cluster-ci-run` | (Lien global) Orchestrateur appelé par la CI |
 
 ## Scripts exécutables secondaires & Utilitaires
 
