@@ -24,6 +24,14 @@ else
     echo "✅ uv est déjà installé."
 fi
 
+# 1.5 Vérification / Installation de DVC
+if ! command -v dvc &> /dev/null; then
+    echo "📦 Installation de DVC (globale via uv)..."
+    uv tool install dvc
+else
+    echo "✅ dvc est déjà installé."
+fi
+
 # 2. Vérification du GITHUB_PAT
 if [ ! -f ".env" ]; then
     echo "❌ Erreur: Fichier .env manquant à la racine. Veuillez le créer avec GITHUB_PAT=..."

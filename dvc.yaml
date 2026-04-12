@@ -1,0 +1,5 @@
+stages:
+  fake_test:
+    cmd: echo 'Pipeline DVC factice exécutée avec succès !'
+    deps:
+    - .cluster-ci
