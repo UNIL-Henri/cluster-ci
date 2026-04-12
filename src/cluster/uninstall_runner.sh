@@ -2,18 +2,20 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <owner/repo>"
-    echo "Exemple: $0 hjamet/cluster-ci"
+    echo "Usage: $0 <target_repo_or_org>"
+    echo "Exemples :"
+    echo "  Mode Dépôt  : $0 hjamet/cluster-ci"
+    echo "  Mode Orga   : $0 hjamet-research"
     exit 1
 fi
 
-TARGET_REPO=$1
+TARGET=$1
 
 # Se placer à la racine du projet
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
-echo "🗑️ Désinstallation du Runner pour le dépôt : $TARGET_REPO"
+echo "🗑️ Désinstallation du Runner pour la cible : $TARGET"
 
 # Vérification du GITHUB_PAT
 if [ ! -f ".env" ]; then
@@ -27,7 +29,7 @@ if [ -z "$GITHUB_PAT" ]; then
     exit 1
 fi
 
-RUNNER_DIR="runners/${TARGET_REPO//\//-}"
+RUNNER_DIR="runners/${TARGET//\//-}"
 
 if [ ! -d "$RUNNER_DIR" ]; then
     echo "⚠️ Le dossier $RUNNER_DIR n'existe pas. Rien à désinstaller localement."
@@ -44,13 +46,19 @@ if [ -f "svc.sh" ]; then
 fi
 
 # 2. Désenregistrement dynamique via l'API GitHub
-echo "🔑 Récupération du Remove Token temporaire via API..."
+if [[ "$TARGET" == *"/"* ]]; then
+    API_URL="https://api.github.com/repos/$TARGET/actions/runners/remove-token"
+else
+    API_URL="https://api.github.com/orgs/$TARGET/actions/runners/remove-token"
+fi
+
+echo "🔑 Récupération du Remove Token temporaire via API ($API_URL)..."
 RESPONSE=$(curl -sL \
   -X POST \
   -H "Accept: application/vnd.github+json" \
   -H "Authorization: Bearer $GITHUB_PAT" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
-  https://api.github.com/repos/$TARGET_REPO/actions/runners/remove-token)
+  $API_URL)
 
 # Parse sécurisé avec python3 standard
 REMOVE_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")

@@ -2,18 +2,20 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <owner/repo>"
-    echo "Exemple: $0 hjamet/cluster-ci"
+    echo "Usage: $0 <target_repo_or_org>"
+    echo "Exemples :"
+    echo "  Mode Dépôt  : $0 hjamet/cluster-ci"
+    echo "  Mode Orga   : $0 hjamet-research"
     exit 1
 fi
 
-TARGET_REPO=$1
+TARGET=$1
 
 # Se placer à la racine du projet
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
-echo "🎯 Préparation du Cluster pour le dépôt : $TARGET_REPO"
+echo "🎯 Préparation du Cluster pour la cible : $TARGET"
 
 # 1. Vérification / Installation de uv
 if ! command -v uv &> /dev/null; then
@@ -46,7 +48,7 @@ fi
 
 # 3. Préparation du dossier contenant le runner
 # On crée un dossier dédié par repo pour pouvoir en gérer plusieurs sur le compte personnel
-RUNNER_DIR="runners/${TARGET_REPO//\//-}"
+RUNNER_DIR="runners/${TARGET//\//-}"
 mkdir -p "$RUNNER_DIR"
 cd "$RUNNER_DIR"
 
@@ -59,13 +61,19 @@ if [ ! -f "config.sh" ]; then
 fi
 
 # 4. Enregistrement dynamique via l'API GitHub
-echo "🔑 Récupération du Registration Token temporaire via API..."
+if [[ "$TARGET" == *"/"* ]]; then
+    API_URL="https://api.github.com/repos/$TARGET/actions/runners/registration-token"
+else
+    API_URL="https://api.github.com/orgs/$TARGET/actions/runners/registration-token"
+fi
+
+echo "🔑 Récupération du Registration Token temporaire via API ($API_URL)..."
 RESPONSE=$(curl -sL \
   -X POST \
   -H "Accept: application/vnd.github+json" \
   -H "Authorization: Bearer $GITHUB_PAT" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
-  https://api.github.com/repos/$TARGET_REPO/actions/runners/registration-token)
+  $API_URL)
 
 # Parse sécurisé avec python3 standard
 REG_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")
@@ -77,7 +85,7 @@ if [ -z "$REG_TOKEN" ]; then
 fi
 
 echo "⚙️ Configuration du Runner local..."
-./config.sh --url https://github.com/$TARGET_REPO --token $REG_TOKEN --unattended --replace --name "cluster-local-${TARGET_REPO//\//-}" --labels self-hosted,cluster-ci
+./config.sh --url https://github.com/$TARGET --token $REG_TOKEN --unattended --replace --name "cluster-local-${TARGET//\//-}" --labels self-hosted,cluster-ci
 
 echo "✅ Runner installé et configuré avec succès dans $RUNNER_DIR"
 echo "👉 Pour le démarrer manuellement (Test DEV) : cd $RUNNER_DIR && ./run.sh"

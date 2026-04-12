@@ -15,13 +15,17 @@ curl -sSL https://raw.githubusercontent.com/hjamet/cluster-ci/main/install.sh | 
 2. Configurez votre PAT GitHub dans un fichier `.env` (`GITHUB_PAT=your_token`).
 3. Lancez l'installation du runner :
 ```bash
-./src/cluster/setup_runner.sh owner/repo
+sudo ./src/cluster/setup_runner.sh owner/repo
+# OU pour cibler une Organisation complète :
+sudo ./src/cluster/setup_runner.sh nom_organisation
 ```
 Le script installera automatiquement le runner et l'enregistrera en tant que service `systemd`.
 
 4. Pour tout désinstaller proprement (service systemd, suppression sur GitHub, nettoyage local) :
 ```bash
-./src/cluster/uninstall_runner.sh owner/repo
+sudo ./src/cluster/uninstall_runner.sh owner/repo
+# OU pour l'Organisation :
+sudo ./src/cluster/uninstall_runner.sh nom_organisation
 ```
 
 ## Description détaillée
