@@ -1,0 +1,24 @@
+name: Test Cluster-CI Runner
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test_pipeline:
+    runs-on: self-hosted
+    steps:
+      - name: Trigger Orchestrator Script
+        run: |
+          # The runner executes in its _work/repo/repo directory, but we know the absolute installation
+          # because this is our dedicated target server mapping.
+          
+          ORCHESTRATOR_PATH="/home/lopilo/code/cluster-ci/src/runner/run_research_pipeline.sh"
+          
+          if [ -f "$ORCHESTRATOR_PATH" ]; then
+            $ORCHESTRATOR_PATH ${{ github.repository }} ${{ github.head_ref || github.ref_name }}
+          else
+            echo "Erreur critique : L'orchestrateur est introuvable au chemin absolu prévu sur le cluster."
+            exit 1
+          fi
