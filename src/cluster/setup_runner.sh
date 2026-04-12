@@ -71,6 +71,20 @@ fi
 echo "⚙️ Configuration du Runner local..."
 ./config.sh --url https://github.com/$TARGET_REPO --token $REG_TOKEN --unattended --replace --name "cluster-local-${TARGET_REPO//\//-}" --labels self-hosted,cluster-ci
 
+# 5. Installation du lien symbolique global pour l'orchestrateur
+echo "⚙️ Installation du lien symbolique de l'orchestrateur..."
+sudo ln -sf "$BASE_DIR/src/runner/run_research_pipeline.sh" /usr/local/bin/cluster-ci-run
+
 echo "✅ Runner installé et configuré avec succès dans $RUNNER_DIR"
 echo "👉 Pour le démarrer manuellement (Test) : cd $RUNNER_DIR && ./run.sh"
-echo "👉 Pour l'installer en tant que service : sudo ./svc.sh install && sudo ./svc.sh start"
+
+# 6. Installation Systemd
+echo "⚙️ Installation du service systemd..."
+sudo ./svc.sh install
+sudo ./svc.sh start
+
+echo "🚀 Service systemd installé et démarré."
+echo "   Commandes utiles :"
+echo "   - sudo ./svc.sh status  : Voir l'état"
+echo "   - sudo ./svc.sh stop    : Arrêter"
+echo "   - sudo ./svc.sh start   : Démarrer"

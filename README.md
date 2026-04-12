@@ -4,12 +4,25 @@ Système d'intégration continue asynchrone pour pipeline de recherche, conçu c
 
 ## Installation
 
+### Côté Client (Projet de recherche)
+Pour intégrer un projet de recherche au cluster, exécutez la commande suivante à la racine de votre dépôt :
 ```bash
-# Côté Agent-Sim / Projet Client
 curl -sSL https://raw.githubusercontent.com/hjamet/cluster-ci/main/install.sh | bash
 ```
 
-*(La configuration du Runner sur la machine Ubuntu se fera via les scripts de la roadmap ci-dessous. Le process précis sera documenté ultérieurement.)*
+### Côté Serveur (Machine Ubuntu / Cluster)
+1. Clonez ce dépôt.
+2. Configurez votre PAT GitHub dans un fichier `.env` (`GITHUB_PAT=your_token`).
+3. Lancez l'installation du runner :
+```bash
+./src/cluster/setup_runner.sh owner/repo
+```
+Le script installera automatiquement le runner, créera un lien symbolique global `cluster-ci-run` et l'enregistrera en tant que service `systemd`.
+
+4. Pour tout désinstaller proprement (service systemd, suppression sur GitHub, nettoyage local) :
+```bash
+./src/cluster/uninstall_runner.sh owner/repo
+```
 
 ## Description détaillée
 
@@ -18,9 +31,10 @@ Cluster CI est fondé sur le principe de GitOps. Au lieu que l'agent cherche à 
 **Flux d'exécution** :
 1. **Pull Request** : Joules (l'agent codeur) pousse ses changements sur une PR GitHub.
 2. **Déclenchement CI** : GitHub Actions accroche le self-hosted runner.
-3. **Orchestration** : Le script de setup bascule dans un répertoire de cache local non-tracké (`workspaces/$ORG/$REPO_NAME`), fait un `git fetch` et un `git checkout` forcé de la branche (pour conserver l'état DVC intact inter-branches), et lance l'environnement (`uv sync`, puis `dvc repro`).
-4. **Authentification** : Le runner injecte les credentials silencieusement, évitant l'interblocage OAuth2 interactif pour DVC via Google Drive.
-5. **Feedbacks CI** : Joules reçoit les échecs et succès natifs via l'intégration GitHub PR, pouvant ajuster le code sans saturer sa mémoire contextuelle. L'agent superviseur (Eugène) monitore uniquement la complétion globale.
+3. **Orchestration** : Le script de setup bascule dans un répertoire de cache local non-tracké (`repositories/$ORG/$REPO_NAME`), fait un `git fetch` et un `git checkout` forcé de la branche (pour conserver l'état DVC intact inter-branches).
+4. **Exécution** : L'orchestrateur détecte le fichier `.cluster-ci`, prépare l'environnement via `uv sync` et lance `uv run dvc repro` avec les arguments fournis.
+5. **Authentification** : Le runner injecte les credentials silencieusement (Google Drive).
+6. **Feedbacks CI** : Joules reçoit les échecs et succès natifs via l'intégration GitHub PR.
 
 ## Principaux résultats
 
@@ -37,15 +51,20 @@ Cluster CI est fondé sur le principe de GitOps. Au lieu que l'agent cherche à 
 ```text
 cluster-ci/
 ├── docs/           # Documentation, Index et Spécifications des tâches
-├── install.sh      # (À venir) Script curlable d'installation côté client 
-└── src/            # (À venir) Scripts exécutables du Runner
+├── install.sh      # Script d'installation côté client 
+└── src/            # Scripts du Runner et de l'Orchestrateur
+    ├── cluster/    # Setup et gestion du runner local (systemd)
+    └── runner/     # Orchestrateur GitOps (run_research_pipeline.sh)
 ```
 
 ## Scripts d'entrée principaux
 
 | Commande | Description |
 |----------|-------------|
-| `install.sh` | Injecte le workflow d'exécution GitHub Actions dans un dépôt client |
+| `install.sh` | Injecte le workflow GitHub Actions et le fichier `.cluster-ci` dans un dépôt client |
+| `src/cluster/setup_runner.sh` | Installe et configure le runner GitHub Actions en tant que service `systemd` |
+| `src/cluster/uninstall_runner.sh` | Désinstalle le runner complétement (Systemd, GitHub, local) |
+| `cluster-ci-run` | (Lien global) Orchestrateur appelé par la CI |
 
 ## Scripts exécutables secondaires & Utilitaires
 
@@ -53,7 +72,7 @@ cluster-ci/
 
 ## Roadmap
 
-- [ ] [Setup Orchestrateur Runner](docs/tasks/setup_orchestrator.md)
-- [ ] [Déploiement Local & Test Runner](docs/tasks/deploy_local_cluster.md)
+- [x] [Setup Orchestrateur Runner](docs/tasks/setup_orchestrator.md)
+- [x] [Déploiement Local & Test Runner](docs/tasks/deploy_local_cluster.md)
 - [ ] [Authentification Silencieuse DVC](docs/tasks/dvc_auth.md)
-- [ ] [Script d'Installation Client](docs/tasks/client_script.md)
+- [x] [Script d'Installation Client](docs/tasks/client_script.md)

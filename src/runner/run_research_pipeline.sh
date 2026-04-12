@@ -98,8 +98,23 @@ else
     log_info "Aucun fichier pyproject.toml trouvé. Etape uv sync ignorée."
 fi
 
-log_info "Exécution du pipeline de recherche asynchrone (dvc repro)..."
-uv run python -c "import time; print('⏳ Lancement du test simulé DVC...'); time.sleep(2); print('✅ Vérification UV ok. DVC Repro simulé avec succès.')"
+if [ ! -f ".cluster-ci" ]; then
+    log_error "Fichier .cluster-ci introuvable à la racine du dépôt. Exécution avortée."
+    exit 1
+fi
+
+log_info "Lecture des paramètres depuis .cluster-ci..."
+# Nettoyage des commentaires et mise en une seule ligne des arguments
+DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | tr '\n' ' ' | xargs)
+
+if [ -z "$DVC_ARGS" ]; then
+    log_info "Aucun argument spécifié dans .cluster-ci. Exécution de tout le pipeline."
+else
+    log_info "Arguments détectés : $DVC_ARGS"
+fi
+
+log_info "Lancement de : uv run dvc repro $DVC_ARGS"
+uv run dvc repro $DVC_ARGS
 
 echo "=========================================================================="
 log_success "CLUSTER-CI: Exécution GitOps terminée avec succès."
