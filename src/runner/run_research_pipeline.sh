@@ -12,7 +12,8 @@ TARGET_BRANCH=$2
 GH_TOKEN=$3
 
 # Se placer à la racine du projet cluster-ci
-BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
+SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
+BASE_DIR="$( cd "$( dirname "$SCRIPT_PATH" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
 REPO_WORK_DIR="repositories/$TARGET_REPO"
