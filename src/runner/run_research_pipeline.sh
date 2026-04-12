@@ -92,7 +92,11 @@ if ! command -v uv &> /dev/null; then
     source "$HOME/.local/bin/env" || true
 fi
 
-uv sync
+if [ -f "pyproject.toml" ]; then
+    uv sync
+else
+    log_info "Aucun fichier pyproject.toml trouvé. Etape uv sync ignorée."
+fi
 
 log_info "Exécution du pipeline de recherche asynchrone (dvc repro)..."
 uv run python -c "import time; print('⏳ Lancement du test simulé DVC...'); time.sleep(2); print('✅ Vérification UV ok. DVC Repro simulé avec succès.')"
