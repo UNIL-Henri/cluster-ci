@@ -5,6 +5,9 @@ echo "🚀 CLUSTER-CI : Démarrage du Runner"
 echo "=========================================="
 
 echo "🛑 1/2 Nettoyage des anciennes instances..."
+pkill -SIGINT -f "Runner.Listener" || true
+# On attend un instant pour le graceful shutdown
+sleep 2
 pkill -9 -f "Runner.Listener" || true
 pkill -9 -f "Runner.Worker" || true
 pkill -9 -f "run_research_pipeline" || true
