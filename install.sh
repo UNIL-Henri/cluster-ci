@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Orchestrator
-        run: /usr/local/bin/cluster-ci-run "\${{ github.repository }}" "\${{ github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
+        run: /usr/local/bin/cluster-ci-run "\${{ github.repository }}" "\${{ github.head_ref || github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
 EOF
 
 # 3. Injection du fichier de configuration .cluster-ci
