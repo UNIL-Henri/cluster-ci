@@ -12,14 +12,23 @@ curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.s
 
 ### Côté Serveur (Machine Ubuntu / Cluster)
 1. Clonez ce dépôt.
-2. Configurez votre PAT GitHub dans un fichier `.env` (`GITHUB_PAT=your_token`).
+2. Configurez vos variables d'environnement à la racine du dépôt :
+   - Fichier **`.env`** : Contient le `GITHUB_PAT` et les configurations générales.
+   - Fichier **`.env.secrets`** (optionnel) : Contient les tokens d'API et credentials Cloud.
+   
+   **Variables recommandées :**
+   - `GITHUB_PAT` : Token GitHub avec accès `repo` et `workflow`.
+   - `GCP_CREDENTIALS` : (JSON minifié sur une ligne) Credentials Google Drive.
+   - `GCP_TOKEN` : (JSON minifié sur une ligne) Token OAuth Google Drive.
+   - `HF_TOKEN` : Token HuggingFace pour l'accès aux modèles.
+
 3. Lancez l'installation du runner :
 ```bash
 ./src/cluster/setup_runner.sh owner/repo
 # OU pour cibler une Organisation complète :
 ./src/cluster/setup_runner.sh nom_organisation
 ```
-Le script installera automatiquement le runner et l'enregistrera en tant que service `systemd`.
+Le script installera automatiquement le runner et l'enregistrera en tant que service `systemd`. Les fichiers `.env` seront automatiquement chargés par le runner lors de chaque job.
 
 4. Pour tout désinstaller proprement (service systemd, suppression sur GitHub, nettoyage local) :
 ```bash
@@ -37,7 +46,7 @@ Cluster CI est fondé sur le principe de GitOps. Au lieu que l'agent cherche à 
 2. **Déclenchement CI** : GitHub Actions accroche le self-hosted runner.
 3. **Orchestration** : Le script de setup bascule dans un répertoire de cache local non-tracké (`repositories/$ORG/$REPO_NAME`), fait un `git fetch` et un `git checkout` forcé de la branche (pour conserver l'état DVC intact inter-branches).
 4. **Exécution** : L'orchestrateur détecte le fichier `.cluster-ci`, prépare l'environnement via `uv sync` et lance `uv run dvc repro` avec les arguments fournis.
-5. **Authentification** : Le runner injecte les credentials silencieusement (Google Drive).
+5. **Authentification** : Le runner injecte les credentials silencieusement (Google Drive) en sourçant les fichiers `.env` et `.env.secrets` globaux du cluster.
 6. **Feedbacks CI** : Joules reçoit les échecs et succès natifs via l'intégration GitHub PR.
 
 ## Principaux résultats
@@ -77,5 +86,6 @@ cluster-ci/
 
 - [x] [Setup Orchestrateur Runner](docs/tasks/setup_orchestrator.md)
 - [x] [Déploiement Local & Test Runner](docs/tasks/deploy_local_cluster.md)
-- [ ] [Authentification Silencieuse DVC](docs/tasks/dvc_auth.md)
+- [x] [Authentification Silencieuse DVC](docs/tasks/dvc_auth.md)
 - [x] [Script d'Installation Client](docs/tasks/client_script.md)
+- [x] [Gestion de la Concurrence par Dépôt](docs/tasks/concurrency_management.md)

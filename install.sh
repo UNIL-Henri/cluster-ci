@@ -23,6 +23,10 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+concurrency:
+  group: \${{ github.repository }}
+  cancel-in-progress: true
+
 jobs:
   execute-on-cluster:
     name: Execute Research Pipeline
