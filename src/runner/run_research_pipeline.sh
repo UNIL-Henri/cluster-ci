@@ -89,6 +89,23 @@ log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont prése
 
 # 3. Lancement de l'environnement uv et de l'exécution
 log_info "[Etape 3/3] Synchronisation de l'environnement Python avec uv..."
+
+# Injection des variables d'environnement globales (.env et .env.secrets)
+log_info "Chargement des credentials globaux pour l'exécution..."
+if [ -f "$BASE_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$BASE_DIR/.env" || true
+    set +a
+    log_info "Configuration globale chargée (.env)"
+fi
+if [ -f "$BASE_DIR/.env.secrets" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$BASE_DIR/.env.secrets" || true
+    set +a
+    log_info "Secrets globaux chargés (.env.secrets)"
+fi
 if ! command -v uv &> /dev/null; then
     source "$HOME/.local/bin/env" || true
 fi
