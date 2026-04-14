@@ -106,6 +106,18 @@ if [ -f "$BASE_DIR/.env.secrets" ]; then
     set +a
     log_info "Secrets globaux chargés (.env.secrets)"
 fi
+
+log_info "Variables d'environnement disponibles :"
+while IFS='=' read -r name value; do
+    if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then continue; fi
+    if [[ -z "$value" ]]; then
+        log_info "   $name=(vide)"
+    else
+        first_chars="${value:0:3}"
+        log_info "   $name=${first_chars}***"
+    fi
+done < <(env | sort)
+
 if ! command -v uv &> /dev/null; then
     source "$HOME/.local/bin/env" || true
 fi

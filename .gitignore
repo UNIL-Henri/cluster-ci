@@ -6,3 +6,11 @@ repositories/
 .env
 runners/
 *.log
+gh_*
+runs.json
+cluster-ci-runs.log
+test_env.sh
+update_script.sh
+patch.txt
+patch_script.py
+repositories/
