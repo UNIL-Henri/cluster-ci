@@ -56,6 +56,17 @@ else
     REPO_URL="https://github.com/${TARGET_REPO}.git"
 fi
 
+# 1.5 JIT Garbage Collection & Metadata update
+log_info "[Etape 1.5/3] Gestion du ramasse-miettes (GC) JIT..."
+python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-gc
+python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
+
+function update_status_idle() {
+    log_info "Mise à jour des métadonnées (statut idle)..."
+    python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
+}
+trap update_status_idle EXIT
+
 # 2. Gestion de l'état Git
 if [ ! -d "$REPO_BASENAME/.git" ]; then
     log_info "[Etape 2/3] Premier fetch du dépôt. Clonage en cours..."
