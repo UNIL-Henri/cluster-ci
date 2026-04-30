@@ -14,3 +14,6 @@ La discussion avec l'utilisateur a mené à la décision d'implémenter une annu
 *   L'option `cancel-in-progress` est activée (`true`).
 *   Le déclenchement de la CI reste actif pour les `push` sur les branches principales et les `pull_request`.
 *   Un nouveau commit ou une nouvelle action annule immédiatement toute exécution en cours pour le dépôt concerné.
+
+## 4. Relation avec le Garbage Collector JIT
+L'annulation agressive des jobs permet au Garbage Collector JIT de marquer plus rapidement les environnements comme `idle` (via le mécanisme de `trap EXIT` dans l'orchestrateur), facilitant ainsi la libération d'espace disque si nécessaire pour d'autres tâches prioritaires.
