@@ -134,8 +134,8 @@ if [ ! -f ".cluster-ci" ]; then
 fi
 
 log_info "Lecture des paramètres depuis .cluster-ci..."
-# Nettoyage des commentaires et mise en une seule ligne des arguments
-DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | tr '\n' ' ' | xargs)
+# Nettoyage des commentaires, suppression des flags internes comme --ram, et mise en une seule ligne des arguments
+DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g' | tr '\n' ' ' | xargs)
 
 if [ -z "$DVC_ARGS" ]; then
     log_info "Aucun argument spécifié dans .cluster-ci. Exécution de tout le pipeline."
