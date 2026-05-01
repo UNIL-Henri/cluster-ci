@@ -49,55 +49,49 @@ if [ -z "$GITHUB_PAT" ]; then
 fi
 
 # 3. Préparation du dossier contenant le runner
-# On crée un dossier dédié par repo pour pouvoir en gérer plusieurs sur le compte personnel
-RUNNER_DIR="runners/${TARGET//\//-}"
-mkdir -p "$RUNNER_DIR"
-cd "$RUNNER_DIR"
+# On télécharge une fois le runner dans un dossier template
+TEMPLATE_DIR="runners/template"
+mkdir -p "$TEMPLATE_DIR"
 
-if [ ! -f "config.sh" ]; then
+if [ ! -f "$TEMPLATE_DIR/config.sh" ]; then
     echo "⬇️ Téléchargement du binaire Runner GitHub Actions..."
     RUNNER_VERSION="2.321.0"
     curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
-    tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
+    tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -C "$TEMPLATE_DIR"
     rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
 fi
 
-# 4. Enregistrement dynamique via l'API GitHub
-if [[ "$TARGET" == *"/"* ]]; then
-    API_URL="https://api.github.com/repos/$TARGET/actions/runners/registration-token"
-else
-    API_URL="https://api.github.com/orgs/$TARGET/actions/runners/registration-token"
-fi
-
-echo "🔑 Récupération du Registration Token temporaire via API ($API_URL)..."
-RESPONSE=$(curl -sL \
-  -X POST \
-  -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer $GITHUB_PAT" \
-  -H "X-GitHub-Api-Version: 2022-11-28" \
-  $API_URL)
-
-# Parse sécurisé avec python3 standard
-REG_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")
-
-if [ -z "$REG_TOKEN" ]; then
-    echo "❌ Échec de récupération du token. L'API a répondu: $RESPONSE"
-    echo "Vérifiez que votre PAT comporte bien le scope 'repo' et que le dépôt existe."
-    exit 1
-fi
-
-echo "⚙️ Configuration du Runner local..."
-./config.sh --url https://github.com/$TARGET --token $REG_TOKEN --unattended --replace --name "cluster-local-${TARGET//\//-}" --labels self-hosted,cluster-ci
-
-echo "✅ Runner installé et configuré avec succès dans $RUNNER_DIR"
-echo "👉 Pour le démarrer manuellement (Test DEV) : cd $RUNNER_DIR && ./run.sh"
+# On prépare 2 slots pour les runners éphémères
+for i in 1 2; do
+    SLOT_DIR="runners/slot$i"
+    if [ ! -d "$SLOT_DIR" ]; then
+        echo "📂 Initialisation du slot $i..."
+        cp -r "$TEMPLATE_DIR" "$SLOT_DIR"
+    fi
+done
 
 # 5. Installation Systemd
 if [ "$ROLE" == "headnode" ]; then
-    echo "⚙️ Installation du service systemd pour le Runner GitHub..."
-    sudo ./svc.sh install
-    sudo ./svc.sh start
-    echo "🚀 Service GitHub Runner installé et démarré."
+    echo "⚙️ Installation du service systemd pour le Runner Manager éphémère..."
+
+    # Création du service systemd pour le runner manager
+    cat <<EOF | sudo tee /etc/systemd/system/cluster-runner-manager.service
+[Unit]
+Description=Cluster-CI Ephemeral Runner Manager
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$BASE_DIR
+Environment="TARGET_REPO=$TARGET"
+Environment="GITHUB_PAT=$GITHUB_PAT"
+ExecStart=$(which python3) $BASE_DIR/src/scheduler/runner_manager.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
     echo "⚙️ Configuration du Scheduler Headnode..."
     # Installation des dépendances pour le scheduler
@@ -138,9 +132,9 @@ WantedBy=multi-user.target
 EOF
 
     sudo systemctl daemon-reload
-    sudo systemctl enable cluster-scheduler cluster-scheduler-loop
-    sudo systemctl start cluster-scheduler cluster-scheduler-loop
-    echo "🚀 Services Scheduler démarrés."
+    sudo systemctl enable cluster-scheduler cluster-scheduler-loop cluster-runner-manager
+    sudo systemctl start cluster-scheduler cluster-scheduler-loop cluster-runner-manager
+    echo "🚀 Services Scheduler et Runner Manager démarrés."
 
 else
     echo "⚙️ Configuration du Worker Agent..."
