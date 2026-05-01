@@ -15,18 +15,17 @@ curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.s
 L'installation se fait via un "One-Liner" curl qui configure automatiquement l'environnement et les services systemd.
 
 #### 1. Installer le Headnode (Ordonnanceur)
-Le Headnode gère la file d'attente des jobs et les runners éphémères.
+Le Headnode gère la file d'attente des jobs et les runners éphémères. Le script vous demandera votre **GitHub PAT** et la cible à surveiller.
 ```bash
-export GITHUB_PAT="ghp_xxxx"
-curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- headnode "owner/repo"
+curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- headnode
 ```
 
 #### 2. Installer un Worker (Exécuteur)
-Les Workers s'enregistrent auprès du Headnode pour exécuter les calculs.
+Une fois le Headnode installé, il vous fournira une commande prête à l'emploi à exécuter sur vos Workers. Alternativement, vous pouvez lancer l'installation manuellement :
 ```bash
-export HEADNODE_URL="http://ip-du-headnode:5000"
 curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- worker
 ```
+Le script vous demandera l'**URL du Headnode** et le **Token du Cluster** généré lors de l'installation du Headnode.
 
 #### Configuration Post-Installation
 Une fois installé, vous pouvez ajouter des secrets (GCP, HuggingFace) dans le fichier `.env.secrets` situé dans le dossier d'installation (par défaut `~/cluster-ci`).

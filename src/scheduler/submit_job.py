@@ -24,12 +24,17 @@ def submit_job(headnode_url, repo, branch):
     ram_req = get_ram_requirement()
     print(f"🚀 Submitting job for {repo}@{branch} (Required RAM: {ram_req}GB)")
 
+    token = os.environ.get("CLUSTER_TOKEN")
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     try:
         resp = requests.post(f"{headnode_url}/submit_job", json={
             "repo": repo,
             "branch": branch,
             "ram_required_gb": ram_req
-        })
+        }, headers=headers)
         resp.raise_for_status()
         job_data = resp.json()
         job_id = job_data['job_id']
