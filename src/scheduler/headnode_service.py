@@ -73,6 +73,14 @@ def submit_job():
 
     return jsonify({"job_id": job_id, "status": "pending"})
 
+@app.route('/workers', methods=['GET'])
+def list_workers():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM workers')
+        workers = [dict(row) for row in cursor.fetchall()]
+    return jsonify(workers)
+
 @app.route('/job_status/<job_id>', methods=['GET'])
 def job_status(job_id):
     with get_db_conn() as conn:

@@ -91,7 +91,9 @@ def execute_job(job):
     update_job_status(job_id, 'running')
 
     # We call the cluster-ci-run command which is supposed to be in /usr/local/bin/cluster-ci-run
-    cmd = ["/usr/local/bin/cluster-ci-run", repo, branch]
+    # or provided via CLUSTER_CI_RUN_PATH environment variable
+    executable = os.environ.get("CLUSTER_CI_RUN_PATH", "/usr/local/bin/cluster-ci-run")
+    cmd = [executable, repo, branch]
 
     env = os.environ.copy()
     env["CLUSTER_CI_MODE"] = "executor"
