@@ -21,7 +21,9 @@ L'allocation des jobs repose sur un algorithme de **Bin-Packing** basé sur la m
 2. L'ordonnanceur maintient une vue en temps réel de la RAM disponible sur chaque Worker.
 3. Le job est assigné au premier Worker ayant assez de RAM disponible, ou mis en attente si aucune ressource n'est libre.
 
-### Isolation et Protection (Protection OOM Artificielle)
-Pour garantir la stabilité des Workers, chaque job est exécuté via `systemd-run`.
-- **Cgroups :** Utilisation des limites `MemoryMax` et `MemorySwapMax`.
-- **Comportement :** Si un job dépasse la RAM qu'il a déclarée, le kernel (via systemd) tue immédiatement le processus. Cela évite les saturations système ("OOM Killer" global) et protège les autres jobs ou services tournant sur la même machine.
+### Isolation et Protection (Watchdog Mémoire Logiciel)
+Pour garantir la stabilité des Workers, chaque job est surveillé par un **Watchdog Logiciel** basé sur la librairie `psutil`.
+
+- **Mesure Récursive :** À intervalles réguliers (toutes les 2 secondes), le Worker calcule la somme de la mémoire physique (RSS) du processus de calcul et de tous ses processus enfants (par ex. sous-processus DVC).
+- **Interruption UX :** Si la somme dépasse la limite de RAM déclarée dans `.cluster-ci`, le Worker tue immédiatement l'arbre de processus.
+- **Feedback GitHub :** Un message d'erreur explicite est affiché sur la sortie standard d'erreur (stderr), permettant au chercheur de savoir exactement pourquoi son job a échoué et combien de RAM a été consommée par rapport à sa réservation.

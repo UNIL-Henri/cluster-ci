@@ -1,6 +1,7 @@
 import time
 import requests
 import os
+import sys
 import socket
 import psutil
 import subprocess
@@ -76,29 +77,59 @@ def execute_job(job):
     repo = job['repo']
     branch = job['branch']
     ram_limit_gb = job['ram_required_gb']
+    ram_limit_bytes = ram_limit_gb * (1024**3)
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
     update_job_status(job_id, 'running')
 
-    # Use systemd-run for memory isolation
     # We call the cluster-ci-run command which is supposed to be in /usr/local/bin/cluster-ci-run
-    # Note: In a real worker, we need to make sure this script is present.
+    cmd = ["/usr/local/bin/cluster-ci-run", repo, branch]
 
-    memory_limit = f"{int(ram_limit_gb * 1024)}M"
-
-    cmd = [
-        "sudo", "systemd-run", "--scope", "--quiet",
-        f"--property=MemoryMax={memory_limit}",
-        f"--property=MemorySwapMax={memory_limit}",
-        "--setenv=CLUSTER_CI_MODE=executor",
-        "cluster-ci-run", repo, branch
-    ]
+    env = os.environ.copy()
+    env["CLUSTER_CI_MODE"] = "executor"
 
     try:
-        process = subprocess.Popen(cmd)
+        process = subprocess.Popen(cmd, env=env)
+        oom_triggered = False
+
+        # Watchdog loop
+        while process.poll() is None:
+            try:
+                parent = psutil.Process(process.pid)
+                # RSS of parent
+                total_rss = parent.memory_info().rss
+                # RSS of all children recursively
+                for child in parent.children(recursive=True):
+                    try:
+                        total_rss += child.memory_info().rss
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+
+                if total_rss > ram_limit_bytes:
+                    oom_triggered = True
+                    total_rss_gb = total_rss / (1024**3)
+                    error_msg = f"❌ [OOM ARTIFICIEL CLUSTER] Exécution interrompue ! Vous aviez réservé {ram_limit_gb} Go de RAM dans '.cluster-ci', or votre pipeline vient d'atteindre {total_rss_gb:.2f} Go. Veuillez augmenter votre réservation.\n"
+                    sys.stderr.write(error_msg)
+                    sys.stderr.flush()
+
+                    # Kill the process tree
+                    for child in parent.children(recursive=True):
+                        try:
+                            child.terminate()
+                        except psutil.NoSuchProcess:
+                            pass
+                    parent.terminate()
+                    break
+            except psutil.NoSuchProcess:
+                break
+
+            time.sleep(2)
+
         exit_code = process.wait()
 
-        if exit_code == 0:
+        if oom_triggered:
+            update_job_status(job_id, 'failed', 137)
+        elif exit_code == 0:
             update_job_status(job_id, 'completed', exit_code)
         else:
             update_job_status(job_id, 'failed', exit_code)
