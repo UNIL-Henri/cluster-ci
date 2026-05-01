@@ -10,31 +10,31 @@ Pour intégrer un projet de recherche au cluster, exécutez la commande suivante
 curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash
 ```
 
-### Côté Serveur (Machine Ubuntu / Cluster)
-1. Clonez ce dépôt.
-2. Configurez vos variables d'environnement à la racine du dépôt :
-   - Fichier **`.env`** : Contient le `GITHUB_PAT` et les configurations générales.
-   - Fichier **`.env.secrets`** (optionnel) : Contient les tokens d'API et credentials Cloud.
-   
-   **Variables recommandées :**
-   - `GITHUB_PAT` : Token GitHub avec accès `repo` et `workflow`.
-   - `GCP_CREDENTIALS` : (JSON minifié sur une ligne) Credentials Google Drive.
-   - `GCP_TOKEN` : (JSON minifié sur une ligne) Token OAuth Google Drive.
-   - `HF_TOKEN` : Token HuggingFace pour l'accès aux modèles.
+### Déploiement du Cluster (Headnode & Workers)
 
-3. Lancez l'installation du runner :
+L'installation se fait via un "One-Liner" curl qui configure automatiquement l'environnement et les services systemd.
+
+#### 1. Installer le Headnode (Ordonnanceur)
+Le Headnode gère la file d'attente des jobs et les runners éphémères.
 ```bash
-./src/cluster/setup_runner.sh owner/repo
-# OU pour cibler une Organisation complète :
-./src/cluster/setup_runner.sh nom_organisation
+export GITHUB_PAT="ghp_xxxx"
+curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- headnode "owner/repo"
 ```
-Le script installera automatiquement le runner et l'enregistrera en tant que service `systemd`. Les fichiers `.env` seront automatiquement chargés par le runner lors de chaque job.
 
-4. Pour tout désinstaller proprement (service systemd, suppression sur GitHub, nettoyage local) :
+#### 2. Installer un Worker (Exécuteur)
+Les Workers s'enregistrent auprès du Headnode pour exécuter les calculs.
 ```bash
+export HEADNODE_URL="http://ip-du-headnode:5000"
+curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- worker
+```
+
+#### Configuration Post-Installation
+Une fois installé, vous pouvez ajouter des secrets (GCP, HuggingFace) dans le fichier `.env.secrets` situé dans le dossier d'installation (par défaut `~/cluster-ci`).
+
+Pour tout désinstaller proprement (services systemd, nettoyage local) :
+```bash
+cd ~/cluster-ci
 ./src/cluster/uninstall_runner.sh owner/repo
-# OU pour l'Organisation :
-./src/cluster/uninstall_runner.sh nom_organisation
 ```
 
 ## Description détaillée

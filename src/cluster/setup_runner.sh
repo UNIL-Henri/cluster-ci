@@ -1,17 +1,13 @@
 #!/bin/bash
 set -e
 
-if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <target_repo_or_org> [role]"
-    echo "Roles: headnode, worker (défaut: headnode)"
-    echo "Exemples :"
-    echo "  Headnode : $0 hjamet/cluster-ci headnode"
-    echo "  Worker   : $0 hjamet/cluster-ci worker"
+ROLE=${2:-headnode}
+TARGET=$1
+
+if [ "$ROLE" == "headnode" ] && [ -z "$TARGET" ]; then
+    echo "Usage: $0 <target_repo_or_org> headnode"
     exit 1
 fi
-
-TARGET=$1
-ROLE=${2:-headnode}
 
 # Se placer à la racine du projet
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
@@ -36,16 +32,17 @@ else
     echo "✅ dvc est déjà installé."
 fi
 
-# 2. Vérification du GITHUB_PAT
-if [ ! -f ".env" ]; then
-    echo "❌ Erreur: Fichier .env manquant à la racine. Veuillez le créer avec GITHUB_PAT=..."
-    exit 1
+# 2. Chargement de l'environnement
+if [ -f ".env" ]; then
+    source .env
 fi
-source .env
 
-if [ -z "$GITHUB_PAT" ]; then
-    echo "❌ Erreur: GITHUB_PAT non défini dans le .env."
-    exit 1
+# 2.5 Vérification des pré-requis par rôle
+if [ "$ROLE" == "headnode" ]; then
+    if [ -z "$GITHUB_PAT" ]; then
+        echo "❌ Erreur: GITHUB_PAT non défini. Requis pour le rôle headnode."
+        exit 1
+    fi
 fi
 
 # 3. Préparation du dossier contenant le runner
