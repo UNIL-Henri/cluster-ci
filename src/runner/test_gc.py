@@ -95,10 +95,10 @@ class TestGC(unittest.TestCase):
             gc_orchestrator.update_running("../escape")
 
     def test_gc_logic(self):
-        # Simulate low space
+        # Simulate low space (below 100GB threshold)
         import unittest.mock
         original_disk_usage = shutil.disk_usage
-        shutil.disk_usage = lambda path: unittest.mock.MagicMock(free=100 * 1024 * 1024 * 1024, total=1000 * 1024 * 1024 * 1024)
+        shutil.disk_usage = lambda path: unittest.mock.MagicMock(free=90 * 1024 * 1024 * 1024, total=1000 * 1024 * 1024 * 1024)
 
         try:
             projects = ["p1", "p2", "p3"]
