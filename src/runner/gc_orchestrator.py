@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 # Config
-DEFAULT_FREE_SPACE_THRESHOLD_GB = 200
+DEFAULT_FREE_SPACE_THRESHOLD_GB = 100
 FREE_SPACE_THRESHOLD_GB = int(os.environ.get("GC_FREE_SPACE_THRESHOLD_GB", DEFAULT_FREE_SPACE_THRESHOLD_GB))
 FREE_SPACE_THRESHOLD_BYTES = FREE_SPACE_THRESHOLD_GB * 1024 * 1024 * 1024
 REGISTRY_FILENAME = "registry.json"
@@ -111,6 +111,29 @@ def update_idle(project_name, project_path):
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
+def mark_sync_status(project_name, status):
+    validate_project_name(project_name)
+    registry_path = get_registry_path()
+
+    with open(registry_path, "a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            registry = load_registry(f)
+            if project_name not in registry:
+                registry[project_name] = {}
+            registry[project_name]["sync_status"] = status
+            save_registry(f, registry)
+            print(f"Project {project_name} sync_status marked as {status}.")
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+def get_free_space():
+    repo_dir = get_repositories_dir()
+    if not repo_dir.exists():
+        return 0
+    usage = shutil.disk_usage(repo_dir)
+    return usage.free
+
 def run_gc():
     repo_dir = get_repositories_dir()
     if not repo_dir.exists():
@@ -141,6 +164,7 @@ def run_gc():
                 ]
                 idle_projects.sort(key=lambda x: x[1].get("last_execution", 0))
 
+                any_deleted = False
                 for project_name, data in idle_projects:
                     if free_space >= FREE_SPACE_THRESHOLD_BYTES:
                         break
@@ -153,6 +177,7 @@ def run_gc():
                         print(f"Deleting oldest idle project: {project_name} at {project_path}")
                         try:
                             shutil.rmtree(project_path)
+                            any_deleted = True
                             # Update free space after deletion
                             usage = shutil.disk_usage(repo_dir)
                             free_space = usage.free
@@ -163,6 +188,15 @@ def run_gc():
                             print(f"Error deleting {project_name}: {e}")
 
                 save_registry(f, registry)
+
+                if any_deleted:
+                    # Notify headnode to trigger drain on workers
+                    headnode_url = os.environ.get("HEADNODE_URL", "http://localhost:5000")
+                    try:
+                        import requests
+                        requests.post(f"{headnode_url}/notify_cleanup", timeout=5)
+                    except Exception as e:
+                        print(f"Failed to notify cleanup: {e}")
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
     else:
@@ -182,6 +216,12 @@ if __name__ == "__main__":
             update_idle(sys.argv[2], sys.argv[3])
         elif command == "run-gc":
             run_gc()
+        elif command == "get-free-space":
+            print(get_free_space())
+        elif command == "mark-sync-pending":
+            mark_sync_status(sys.argv[2], "pending")
+        elif command == "mark-sync-done":
+            mark_sync_status(sys.argv[2], "done")
         else:
             print(f"Unknown command: {command}")
             sys.exit(1)

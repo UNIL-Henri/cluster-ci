@@ -6,6 +6,9 @@ import psutil
 import subprocess
 import logging
 import uuid
+import threading
+import json
+from flask import Flask, jsonify
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,6 +25,8 @@ else:
         f.write(WORKER_ID)
 
 HOSTNAME = socket.gethostname()
+AGENT_PORT = int(os.environ.get("AGENT_PORT", 6000))
+SERVICE_URL = os.environ.get("SERVICE_URL", f"http://{HOSTNAME}:{AGENT_PORT}")
 
 def get_ram_info():
     mem = psutil.virtual_memory()
@@ -35,6 +40,7 @@ def register():
         resp = requests.post(f"{HEADNODE_URL}/register_worker", json={
             "worker_id": WORKER_ID,
             "hostname": HOSTNAME,
+            "service_url": SERVICE_URL,
             "total_ram_gb": total_gb,
             "available_ram_gb": available_gb
         })
@@ -101,7 +107,70 @@ def execute_job(job):
         logger.error(f"Execution failed: {e}")
         update_job_status(job_id, 'failed', -1)
 
+def drain_pending_syncs():
+    logger.info("Starting drain of pending synchronizations...")
+
+    # Path to registry.json
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    registry_path = os.path.join(base_dir, "repositories", "registry.json")
+
+    logger.info(f"Looking for registry at: {registry_path}")
+    if not os.path.exists(registry_path):
+        logger.info("No registry.json found, nothing to drain.")
+        return
+
+    try:
+        with open(registry_path, 'r') as f:
+            registry = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load registry: {e}")
+        return
+
+    for project_name, data in registry.items():
+        if data.get("sync_status") == "pending":
+            logger.info(f"Project {project_name} has pending sync. Checking headnode space...")
+            try:
+                resp = requests.get(f"{HEADNODE_URL}/check_space", timeout=5)
+                resp.raise_for_status()
+                space_info = resp.json()
+
+                if space_info.get("sufficient"):
+                    logger.info(f"Headnode space sufficient. Pushing {project_name}...")
+                    project_dir = os.path.join(base_dir, "repositories", project_name)
+                    if os.path.exists(project_dir):
+                        # Execute dvc push via uv
+                        res = subprocess.run(["uv", "run", "dvc", "push"], cwd=project_dir)
+                        if res.returncode == 0:
+                            # Mark as done
+                            subprocess.run(["python3", os.path.join(base_dir, "src/runner/gc_orchestrator.py"), "mark-sync-done", project_name])
+                            logger.info(f"Successfully pushed and marked {project_name} as done.")
+                        else:
+                            logger.error(f"dvc push failed for {project_name}")
+                    else:
+                        logger.warning(f"Project directory {project_dir} not found for {project_name}")
+                else:
+                    logger.info(f"Headnode still full ({space_info.get('free_gb'):.2f} GB free). Stopping drain.")
+                    break
+            except Exception as e:
+                logger.error(f"Error during drain for {project_name}: {e}")
+
+# Webhook server
+app = Flask(__name__)
+
+@app.route('/webhook/drain_request', methods=['POST'])
+def drain_request():
+    logger.info("Received drain request webhook")
+    # Run drain in a separate thread to avoid blocking the webhook response
+    threading.Thread(target=drain_pending_syncs).start()
+    return jsonify({"status": "accepted"})
+
+def start_webhook_server():
+    app.run(host='0.0.0.0', port=AGENT_PORT)
+
 def main_loop():
+    # Start webhook server in background thread
+    threading.Thread(target=start_webhook_server, daemon=True).start()
+
     while True:
         if register():
             job = poll_for_job()
