@@ -9,6 +9,24 @@ import requests
 app = Flask(__name__)
 
 FREE_SPACE_THRESHOLD_GB = 100
+CLUSTER_TOKEN = os.environ.get("CLUSTER_TOKEN")
+
+def check_token():
+    if not CLUSTER_TOKEN:
+        return True # Default to no auth if not set
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return False
+    token = auth_header.split(" ")[1]
+    return token == CLUSTER_TOKEN
+
+@app.before_request
+def require_token():
+    # Only protect API endpoints that workers or users use to modify state
+    protected_endpoints = ['register_worker', 'submit_job', 'update_job_status', 'worker_poll', 'notify_cleanup']
+    if request.endpoint in protected_endpoints:
+        if not check_token():
+            return jsonify({"error": "Unauthorized"}), 401
 
 @app.route('/register_worker', methods=['POST'])
 def register_worker():

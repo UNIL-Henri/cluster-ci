@@ -15,6 +15,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 HEADNODE_URL = os.environ.get("HEADNODE_URL", "http://localhost:5000")
+CLUSTER_TOKEN = os.environ.get("CLUSTER_TOKEN")
+
+def get_headers():
+    headers = {}
+    if CLUSTER_TOKEN:
+        headers["Authorization"] = f"Bearer {CLUSTER_TOKEN}"
+    return headers
+
 # Generate or load a persistent worker ID
 WORKER_ID_FILE = "worker_id.txt"
 if os.path.exists(WORKER_ID_FILE):
@@ -44,7 +52,7 @@ def register():
             "service_url": SERVICE_URL,
             "total_ram_gb": total_gb,
             "available_ram_gb": available_gb
-        })
+        }, headers=get_headers())
         resp.raise_for_status()
         return True
     except Exception as e:
@@ -53,7 +61,7 @@ def register():
 
 def poll_for_job():
     try:
-        resp = requests.get(f"{HEADNODE_URL}/worker_poll/{WORKER_ID}")
+        resp = requests.get(f"{HEADNODE_URL}/worker_poll/{WORKER_ID}", headers=get_headers())
         resp.raise_for_status()
         data = resp.json()
         if data.get("job_id"):
@@ -67,7 +75,7 @@ def update_job_status(job_id, status, exit_code=None):
         payload = {"job_id": job_id, "status": status}
         if exit_code is not None:
             payload["exit_code"] = exit_code
-        resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload)
+        resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers())
         resp.raise_for_status()
     except Exception as e:
         logger.error(f"Failed to update job status: {e}")
@@ -161,7 +169,7 @@ def drain_pending_syncs():
         if data.get("sync_status") == "pending":
             logger.info(f"Project {project_name} has pending sync. Checking headnode space...")
             try:
-                resp = requests.get(f"{HEADNODE_URL}/check_space", timeout=5)
+                resp = requests.get(f"{HEADNODE_URL}/check_space", timeout=5, headers=get_headers())
                 resp.raise_for_status()
                 space_info = resp.json()
 
