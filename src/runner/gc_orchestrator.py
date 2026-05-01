@@ -12,6 +12,7 @@ DEFAULT_FREE_SPACE_THRESHOLD_GB = 100
 FREE_SPACE_THRESHOLD_GB = int(os.environ.get("GC_FREE_SPACE_THRESHOLD_GB", DEFAULT_FREE_SPACE_THRESHOLD_GB))
 FREE_SPACE_THRESHOLD_BYTES = FREE_SPACE_THRESHOLD_GB * 1024 * 1024 * 1024
 REGISTRY_FILENAME = "registry.json"
+LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024
 
 def get_base_dir():
     # Assuming script is in src/runner/gc_orchestrator.py
@@ -127,6 +128,61 @@ def mark_sync_status(project_name, status):
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
+def cleanup_level_1(project_path):
+    """Level 1: Purge DVC history (keep only the last 2 commits)."""
+    print(f"  [Level 1] Purging DVC history for {project_path}")
+    try:
+        # dvc gc -w (workspace) --keep-experiments --rev HEAD --rev HEAD~1
+        # Note: we use -f (force) to avoid interactive prompt
+        subprocess.run(
+            ["dvc", "gc", "-w", "-f", "--keep-experiments", "--rev", "HEAD", "--rev", "HEAD~1"],
+            cwd=project_path,
+            capture_output=True,
+            text=True
+        )
+    except Exception as e:
+        print(f"  Error in level 1 cleanup: {e}")
+
+def cleanup_level_2(project_path):
+    """Level 2: Delete large untracked files (> 500Mo) in working dirs, excluding .git and .dvc."""
+    print(f"  [Level 2] Deleting large untracked files in {project_path}")
+    try:
+        for root, dirs, files in os.walk(project_path):
+            # Skip .git and .dvc directories
+            if ".git" in dirs:
+                dirs.remove(".git")
+            if ".dvc" in dirs:
+                dirs.remove(".dvc")
+
+            for file in files:
+                file_path = Path(root) / file
+                try:
+                    if not file_path.is_symlink() and file_path.stat().st_size > LARGE_FILE_THRESHOLD_BYTES:
+                        print(f"    Deleting large file: {file_path}")
+                        file_path.unlink()
+                except OSError:
+                    pass
+    except Exception as e:
+        print(f"  Error in level 2 cleanup: {e}")
+
+def cleanup_level_3(project_path):
+    """Level 3: Delete local DVC cache."""
+    print(f"  [Level 3] Deleting DVC cache for {project_path}")
+    cache_path = project_path / ".dvc" / "cache"
+    if cache_path.exists():
+        try:
+            shutil.rmtree(cache_path)
+        except Exception as e:
+            print(f"  Error in level 3 cleanup: {e}")
+
+def cleanup_level_4(project_path):
+    """Level 4: Delete the entire project directory."""
+    print(f"  [Level 4] Deleting entire directory {project_path}")
+    try:
+        shutil.rmtree(project_path)
+    except Exception as e:
+        print(f"  Error in level 4 cleanup: {e}")
+
 def get_free_space():
     repo_dir = get_repositories_dir()
     if not repo_dir.exists():
@@ -140,13 +196,11 @@ def run_gc():
         print("Repositories directory does not exist. No GC needed.")
         return
 
-    usage = shutil.disk_usage(repo_dir)
-    free_space = usage.free
-
+    free_space = get_free_space()
     print(f"Free space: {free_space / (1024**3):.2f} GB (Threshold: {FREE_SPACE_THRESHOLD_GB} GB)")
 
     if free_space < FREE_SPACE_THRESHOLD_BYTES:
-        print(f"Free space below threshold. Starting cleanup...")
+        print(f"Free space below threshold. Starting tiered cleanup...")
         registry_path = get_registry_path()
         if not registry_path.exists():
             print("Registry file not found. Nothing to clean.")
@@ -164,34 +218,54 @@ def run_gc():
                 ]
                 idle_projects.sort(key=lambda x: x[1].get("last_execution", 0))
 
-                any_deleted = False
+                any_cleanup_done = False
                 for project_name, data in idle_projects:
-                    if free_space >= FREE_SPACE_THRESHOLD_BYTES:
+                    if get_free_space() >= FREE_SPACE_THRESHOLD_BYTES:
                         break
 
-                    # Double check project name for safety before deletion
                     validate_project_name(project_name)
                     project_path = repo_dir / project_name
+                    if not project_path.exists():
+                        continue
 
-                    if project_path.exists():
-                        print(f"Deleting oldest idle project: {project_name} at {project_path}")
-                        try:
-                            shutil.rmtree(project_path)
-                            any_deleted = True
-                            # Update free space after deletion
-                            usage = shutil.disk_usage(repo_dir)
-                            free_space = usage.free
-                            data["size_bytes"] = 0
+                    print(f"Cleaning project: {project_name}")
+
+                    # Tiered cleanup levels
+                    cleanup_levels = [
+                        (cleanup_level_1, "Level 1"),
+                        (cleanup_level_2, "Level 2"),
+                        (cleanup_level_3, "Level 3"),
+                        (cleanup_level_4, "Level 4")
+                    ]
+
+                    for cleanup_func, level_name in cleanup_levels:
+                        cleanup_func(project_path)
+                        any_cleanup_done = True
+
+                        current_free_space = get_free_space()
+                        print(f"  After {level_name}, free space: {current_free_space / (1024**3):.2f} GB")
+
+                        if current_free_space >= FREE_SPACE_THRESHOLD_BYTES:
+                            break
+
+                        if level_name == "Level 4": # Project is gone
                             data["status"] = "deleted"
-                            print(f"Deleted {project_name}. New free space: {free_space / (1024**3):.2f} GB")
-                        except Exception as e:
-                            print(f"Error deleting {project_name}: {e}")
+                            data["size_bytes"] = 0
+                            break
+
+                    # Update size in registry after partial or full cleanup
+                    if project_path.exists():
+                        data["size_bytes"] = get_dir_size(project_path)
+                    else:
+                        data["size_bytes"] = 0
+                        data["status"] = "deleted"
 
                 save_registry(f, registry)
 
-                if any_deleted:
+                if any_cleanup_done and get_free_space() >= FREE_SPACE_THRESHOLD_BYTES:
                     # Notify headnode to trigger drain on workers
                     headnode_url = os.environ.get("HEADNODE_URL", "http://localhost:5000")
+                    print(f"Threshold met. Notifying headnode at {headnode_url}...")
                     try:
                         import requests
                         requests.post(f"{headnode_url}/notify_cleanup", timeout=5)
