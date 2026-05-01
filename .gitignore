@@ -14,3 +14,6 @@ update_script.sh
 patch.txt
 patch_script.py
 repositories/
+__pycache__/
+*.pyc
+*.db

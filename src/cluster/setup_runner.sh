@@ -2,14 +2,16 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <target_repo_or_org>"
+    echo "Usage: $0 <target_repo_or_org> [role]"
+    echo "Roles: headnode, worker (défaut: headnode)"
     echo "Exemples :"
-    echo "  Mode Dépôt  : $0 hjamet/cluster-ci"
-    echo "  Mode Orga   : $0 hjamet-research"
+    echo "  Headnode : $0 hjamet/cluster-ci headnode"
+    echo "  Worker   : $0 hjamet/cluster-ci worker"
     exit 1
 fi
 
 TARGET=$1
+ROLE=${2:-headnode}
 
 # Se placer à la racine du projet
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
@@ -91,11 +93,81 @@ echo "✅ Runner installé et configuré avec succès dans $RUNNER_DIR"
 echo "👉 Pour le démarrer manuellement (Test DEV) : cd $RUNNER_DIR && ./run.sh"
 
 # 5. Installation Systemd
-echo "⚙️ Installation du service systemd..."
-sudo ./svc.sh install
-sudo ./svc.sh start
+if [ "$ROLE" == "headnode" ]; then
+    echo "⚙️ Installation du service systemd pour le Runner GitHub..."
+    sudo ./svc.sh install
+    sudo ./svc.sh start
+    echo "🚀 Service GitHub Runner installé et démarré."
 
-echo "🚀 Service systemd installé et démarré."
+    echo "⚙️ Configuration du Scheduler Headnode..."
+    # Installation des dépendances pour le scheduler
+    uv pip install flask psutil requests
+
+    # Création du service systemd pour le scheduler API
+    cat <<EOF | sudo tee /etc/systemd/system/cluster-scheduler.service
+[Unit]
+Description=Cluster-CI Scheduler API
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$BASE_DIR
+ExecStart=$(which python3) $BASE_DIR/src/scheduler/headnode_service.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Création du service systemd pour le scheduler loop
+    cat <<EOF | sudo tee /etc/systemd/system/cluster-scheduler-loop.service
+[Unit]
+Description=Cluster-CI Scheduler Loop
+After=cluster-scheduler.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$BASE_DIR
+ExecStart=$(which python3) $BASE_DIR/src/scheduler/scheduler_loop.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable cluster-scheduler cluster-scheduler-loop
+    sudo systemctl start cluster-scheduler cluster-scheduler-loop
+    echo "🚀 Services Scheduler démarrés."
+
+else
+    echo "⚙️ Configuration du Worker Agent..."
+    uv pip install requests psutil
+
+    cat <<EOF | sudo tee /etc/systemd/system/cluster-worker.service
+[Unit]
+Description=Cluster-CI Worker Agent
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$BASE_DIR
+EnvironmentFile=$BASE_DIR/.env
+ExecStart=$(which python3) $BASE_DIR/src/scheduler/worker_agent.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable cluster-worker
+    sudo systemctl start cluster-worker
+    echo "🚀 Service Worker Agent installé et démarré."
+fi
 echo "   Commandes utiles :"
 echo "   - sudo ./svc.sh status  : Voir l'état"
 echo "   - sudo ./svc.sh stop    : Arrêter"
