@@ -84,6 +84,7 @@ def execute_job(job):
         "sudo", "systemd-run", "--scope", "--quiet",
         f"--property=MemoryMax={memory_limit}",
         f"--property=MemorySwapMax={memory_limit}",
+        "--setenv=CLUSTER_CI_MODE=executor",
         "cluster-ci-run", repo, branch
     ]
 

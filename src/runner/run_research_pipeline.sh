@@ -16,6 +16,14 @@ SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
 BASE_DIR="$( cd "$( dirname "$SCRIPT_PATH" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
+# Mode délégation : Si on n'est pas explicitement en mode exécuteur,
+# on délègue la tâche à l'ordonnanceur via submit_job.py
+if [ "$CLUSTER_CI_MODE" != "executor" ]; then
+    echo "🌐 Mode Délégation activé. Soumission du job à l'ordonnanceur..."
+    python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
+    exit $?
+fi
+
 REPO_WORK_DIR="repositories/$TARGET_REPO"
 
 # Pipe toute la sortie (stdout et stderr) vers la console ET vers un fichier log local
