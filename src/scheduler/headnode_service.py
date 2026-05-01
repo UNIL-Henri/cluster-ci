@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from persistence import init_db, get_db_conn
 import uuid
 import datetime
@@ -125,6 +125,49 @@ def check_space():
         "threshold_gb": FREE_SPACE_THRESHOLD_GB,
         "sufficient": free_gb > FREE_SPACE_THRESHOLD_GB
     })
+
+REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
+
+@app.route('/artifacts/<repo_owner>/<repo_name>/<branch>/<path:file_path>', methods=['GET'])
+def artifacts(repo_owner, repo_name, branch, file_path):
+    repo = f"{repo_owner}/{repo_name}"
+    local_path = os.path.join(repo, file_path)
+
+    # 1. Try local storage first
+    if os.path.exists(os.path.join(REPOS_DIR, local_path)):
+        return send_from_directory(REPOS_DIR, local_path)
+
+    # 2. If not found locally, find which worker has it
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        # Find the last worker that completed a job for this repo and branch
+        cursor.execute('''
+            SELECT w.service_url
+            FROM jobs j
+            JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.repo = ? AND j.branch = ? AND j.status = 'completed'
+            ORDER BY j.finished_at DESC
+            LIMIT 1
+        ''', (repo, branch))
+        worker = cursor.fetchone()
+
+    if worker and worker['service_url']:
+        worker_url = worker['service_url']
+        try:
+            # Proxy the request to the worker
+            target_url = f"{worker_url}/fetch_artifact/{local_path}"
+            req = requests.get(target_url, stream=True, timeout=10)
+
+            # Return streamed response
+            return Response(
+                stream_with_context(req.iter_content(chunk_size=1024)),
+                content_type=req.headers.get('content-type'),
+                status=req.status_code
+            )
+        except Exception as e:
+            return jsonify({"error": f"Failed to proxy to worker: {str(e)}"}), 500
+
+    return jsonify({"error": "Artifact not found locally or on any known worker for this branch"}), 404
 
 @app.route('/notify_cleanup', methods=['POST'])
 def notify_cleanup():

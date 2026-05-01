@@ -8,7 +8,7 @@ import logging
 import uuid
 import threading
 import json
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -156,6 +156,17 @@ def drain_pending_syncs():
 
 # Webhook server
 app = Flask(__name__)
+
+REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
+
+@app.route('/fetch_artifact/<path:file_path>', methods=['GET'])
+def fetch_artifact(file_path):
+    """
+    Serves a file from the repositories directory.
+    send_from_directory provides protection against directory traversal.
+    """
+    logger.info(f"Worker received request for artifact: {file_path}")
+    return send_from_directory(REPOS_DIR, file_path)
 
 @app.route('/webhook/drain_request', methods=['POST'])
 def drain_request():
