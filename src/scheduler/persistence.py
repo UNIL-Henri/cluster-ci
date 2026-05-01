@@ -13,12 +13,19 @@ def init_db():
         CREATE TABLE IF NOT EXISTS workers (
             worker_id TEXT PRIMARY KEY,
             hostname TEXT,
+            service_url TEXT,
             total_ram_gb REAL,
             available_ram_gb REAL,
             last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'online'
         )
     ''')
+
+    # Add service_url if it doesn't exist (migration)
+    try:
+        cursor.execute('ALTER TABLE workers ADD COLUMN service_url TEXT')
+    except sqlite3.OperationalError:
+        pass # Already exists
 
     # Table des Jobs
     cursor.execute('''

@@ -165,6 +165,30 @@ fi
 log_info "Lancement de : uv run dvc repro $DVC_ARGS"
 uv run dvc repro $DVC_ARGS
 
+# 4. Data Router: Vérification avant Push
+log_info "[Etape 4/3] Data Router : Vérification de l'espace sur le headnode..."
+HEADNODE_URL=${HEADNODE_URL:-"http://localhost:5000"}
+
+# Interroger l'API du headnode pour connaître l'espace disque
+SPACE_CHECK=$(curl -s "$HEADNODE_URL/check_space" || echo '{"sufficient": false, "error": "unreachable"}')
+SUFFICIENT=$(echo "$SPACE_CHECK" | jq -r '.sufficient')
+
+if [ "$SUFFICIENT" == "true" ]; then
+    log_info "Espace suffisant sur le headnode. Synchronisation des artefacts..."
+    if uv run dvc push; then
+        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
+        log_success "Synchronisation terminée."
+    else
+        log_error "Échec du dvc push. Le projet reste en attente de synchro."
+        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
+    fi
+else
+    FREE_GB=$(echo "$SPACE_CHECK" | jq -r '.free_gb // "inconnu"')
+    log_error "Espace insuffisant sur le headnode ($FREE_GB GB libres). Push annulé."
+    log_info "Le projet est marqué 'en attente de synchro' pour un transfert ultérieur."
+    python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
+fi
+
 echo "=========================================================================="
 log_success "CLUSTER-CI: Exécution GitOps terminée avec succès."
 echo "=========================================================================="
