@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import argparse
+import signal
 
 def get_ram_requirement():
     """
@@ -46,6 +47,38 @@ def submit_job(headnode_url, repo, branch):
 
 def wait_for_job(headnode_url, job_id):
     print(f"⏳ Waiting for job {job_id} to complete...")
+
+    def signal_handler(sig, frame):
+        print(f"\n🛑 Signal received ({signal.Signals(sig).name}). Propagating cancellation...")
+        try:
+            resp = requests.get(f"{headnode_url}/job_status/{job_id}")
+            resp.raise_for_status()
+            job = resp.json()
+            worker_url = job.get('worker_service_url')
+
+            if worker_url:
+                print(f"📡 Sending cancellation to worker: {worker_url}")
+                requests.post(f"{worker_url}/cancel/{job_id}", timeout=10)
+                print("✅ Cancellation signal sent.")
+            else:
+                print("⚠️ Job was not yet assigned to a worker or worker info missing.")
+
+            # Mark job as failed/cancelled on headnode
+            token = os.environ.get("CLUSTER_TOKEN")
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            requests.post(f"{headnode_url}/update_job_status", json={
+                "job_id": job_id,
+                "status": "failed",
+                "exit_code": -signal.SIGTERM
+            }, headers=headers)
+
+        except Exception as e:
+            print(f"⚠️ Error during cancellation: {e}")
+        sys.exit(128 + sig)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     while True:
         try:
             resp = requests.get(f"{headnode_url}/job_status/{job_id}")
@@ -54,10 +87,10 @@ def wait_for_job(headnode_url, job_id):
             status = job['status']
 
             if status == 'completed':
-                print(f"✅ Job {job_id} completed successfully!")
+                print(f"\n✅ Job {job_id} completed successfully!")
                 return 0
             elif status == 'failed':
-                print(f"❌ Job {job_id} failed with exit code {job.get('exit_code')}")
+                print(f"\n❌ Job {job_id} failed with exit code {job.get('exit_code')}")
                 return job.get('exit_code', 1)
             elif status == 'running':
                 # Optional: could stream logs if we had a log service
