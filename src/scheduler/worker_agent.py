@@ -37,6 +37,11 @@ HOSTNAME = socket.gethostname()
 AGENT_PORT = int(os.environ.get("AGENT_PORT", 6000))
 SERVICE_URL = os.environ.get("SERVICE_URL", f"http://{HOSTNAME}:{AGENT_PORT}")
 
+# Global state for current job tracking
+current_job_id = None
+current_process = None
+job_lock = threading.Lock()
+
 def get_ram_info():
     mem = psutil.virtual_memory()
     total_gb = mem.total / (1024**3)
@@ -81,6 +86,7 @@ def update_job_status(job_id, status, exit_code=None):
         logger.error(f"Failed to update job status: {e}")
 
 def execute_job(job):
+    global current_job_id, current_process
     job_id = job['job_id']
     repo = job['repo']
     branch = job['branch']
@@ -89,6 +95,9 @@ def execute_job(job):
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
     update_job_status(job_id, 'running')
+
+    with job_lock:
+        current_job_id = job_id
 
     # We call the cluster-ci-run command which is supposed to be in /usr/local/bin/cluster-ci-run
     # or provided via CLUSTER_CI_RUN_PATH environment variable
@@ -100,6 +109,8 @@ def execute_job(job):
 
     try:
         process = subprocess.Popen(cmd, env=env)
+        with job_lock:
+            current_process = process
         oom_triggered = False
 
         # Watchdog loop
@@ -141,12 +152,20 @@ def execute_job(job):
             update_job_status(job_id, 'failed', 137)
         elif exit_code == 0:
             update_job_status(job_id, 'completed', exit_code)
+        elif exit_code < 0:
+            # Likely killed by a signal (cancellation)
+            logger.info(f"Job {job_id} was killed (exit code {exit_code})")
+            update_job_status(job_id, 'failed', exit_code)
         else:
             update_job_status(job_id, 'failed', exit_code)
 
     except Exception as e:
         logger.error(f"Execution failed: {e}")
         update_job_status(job_id, 'failed', -1)
+    finally:
+        with job_lock:
+            current_job_id = None
+            current_process = None
 
 def drain_pending_syncs():
     logger.info("Starting drain of pending synchronizations...")
@@ -199,6 +218,32 @@ def drain_pending_syncs():
 app = Flask(__name__)
 
 REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
+
+@app.route('/cancel/<job_id>', methods=['POST'])
+def cancel_job(job_id):
+    global current_job_id, current_process
+    logger.info(f"Received cancellation request for job {job_id}")
+
+    with job_lock:
+        if current_job_id == job_id and current_process:
+            logger.info(f"Killing process tree for job {job_id}")
+            try:
+                parent = psutil.Process(current_process.pid)
+                for child in parent.children(recursive=True):
+                    try:
+                        child.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+                parent.kill()
+                return jsonify({"status": "cancelled", "message": "Process tree terminated"}), 200
+            except psutil.NoSuchProcess:
+                return jsonify({"status": "already_finished", "message": "Process already finished"}), 200
+            except Exception as e:
+                logger.error(f"Error while killing process: {e}")
+                return jsonify({"status": "error", "message": str(e)}), 500
+        else:
+            logger.warning(f"No active job matches {job_id} (current: {current_job_id})")
+            return jsonify({"status": "not_found", "message": "Job not running on this worker"}), 404
 
 @app.route('/fetch_artifact/<path:file_path>', methods=['GET'])
 def fetch_artifact(file_path):

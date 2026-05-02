@@ -85,7 +85,12 @@ def list_workers():
 def job_status(job_id):
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM jobs WHERE job_id = ?', (job_id,))
+        cursor.execute('''
+            SELECT j.*, w.service_url as worker_service_url
+            FROM jobs j
+            LEFT JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.job_id = ?
+        ''', (job_id,))
         job = cursor.fetchone()
         if job:
             return jsonify(dict(job))
