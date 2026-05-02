@@ -16,26 +16,30 @@ from scheduler_loop import schedule_jobs
 class TestScheduler(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.environ["CLUSTER_DB_PATH"] = "test_cluster.db"
-        if os.path.exists("test_cluster.db"):
-            os.remove("test_cluster.db")
-        init_db()
+        cls.is_e2e = os.environ.get("E2E_TEST") == "1"
+        cls.headnode_url = os.environ.get("HEADNODE_URL", "http://localhost:5001")
 
-        # Start Headnode API in a thread
-        cls.api_thread = threading.Thread(target=lambda: app.run(port=5001, debug=False, use_reloader=False))
-        cls.api_thread.daemon = True
-        cls.api_thread.start()
+        if not cls.is_e2e:
+            os.environ["CLUSTER_DB_PATH"] = "test_cluster.db"
+            if os.path.exists("test_cluster.db"):
+                os.remove("test_cluster.db")
+            init_db()
 
-        # Start Scheduler Loop in a thread
-        cls.loop_thread = threading.Thread(target=schedule_jobs)
-        cls.loop_thread.daemon = True
-        cls.loop_thread.start()
+            # Start Headnode API in a thread
+            cls.api_thread = threading.Thread(target=lambda: app.run(port=5001, debug=False, use_reloader=False))
+            cls.api_thread.daemon = True
+            cls.api_thread.start()
 
-        # Wait for API to be ready
-        time.sleep(2)
+            # Start Scheduler Loop in a thread
+            cls.loop_thread = threading.Thread(target=schedule_jobs)
+            cls.loop_thread.daemon = True
+            cls.loop_thread.start()
+
+            # Wait for API to be ready
+            time.sleep(2)
 
     def test_full_flow(self):
-        headnode_url = "http://localhost:5001"
+        headnode_url = self.headnode_url
 
         # 1. Register a worker
         resp = requests.post(f"{headnode_url}/register_worker", json={
@@ -76,10 +80,67 @@ class TestScheduler(unittest.TestCase):
         resp = requests.get(f"{headnode_url}/job_status/{job_id}")
         self.assertEqual(resp.json()['status'], 'completed')
 
+    def test_e2e_real_worker(self):
+        if not self.is_e2e:
+            self.skipTest("Only for E2E mode")
+
+        headnode_url = self.headnode_url
+
+        # (a) Verify a worker is registered
+        print("Waiting for a worker to register...")
+        worker = None
+        for _ in range(30):
+            resp = requests.get(f"{headnode_url}/workers")
+            workers = resp.json()
+            if workers:
+                worker = workers[0]
+                break
+            time.sleep(1)
+
+        self.assertIsNotNone(worker, "No worker registered in time")
+        initial_ram = worker['available_ram_gb']
+        worker_id = worker['worker_id']
+        print(f"Worker {worker_id} found with {initial_ram}GB RAM")
+
+        # (b) Submit a job
+        ram_required = 4.0
+        print(f"Submitting job requiring {ram_required}GB RAM...")
+        resp = requests.post(f"{headnode_url}/submit_job", json={
+            "repo": "owner/repo-e2e",
+            "branch": "main",
+            "ram_required_gb": ram_required
+        })
+        self.assertEqual(resp.status_code, 200)
+        job_id = resp.json()['job_id']
+
+        # (c) Monitor job status until completed
+        print(f"Monitoring job {job_id}...")
+        final_status = None
+        for _ in range(60):
+            resp = requests.get(f"{headnode_url}/job_status/{job_id}")
+            status_data = resp.json()
+            final_status = status_data['status']
+            if final_status in ['completed', 'failed']:
+                # (d) Confirm job was assigned to a worker (Bin-Packing check)
+                self.assertIsNotNone(status_data['worker_id'], "Job was never assigned to a worker")
+                break
+            time.sleep(2)
+
+        self.assertEqual(final_status, 'completed', f"Job failed or timed out with status: {final_status}")
+        print("Job completed successfully")
+
+        # (e) Verify RAM restoration
+        resp = requests.get(f"{headnode_url}/workers")
+        workers = resp.json()
+        target_worker = next(w for w in workers if w['worker_id'] == worker_id)
+        print(f"Worker {worker_id} now has {target_worker['available_ram_gb']}GB RAM")
+        self.assertEqual(target_worker['available_ram_gb'], initial_ram, "RAM was not correctly restored")
+
     @classmethod
     def tearDownClass(cls):
-        if os.path.exists("test_cluster.db"):
-            os.remove("test_cluster.db")
+        if not cls.is_e2e:
+            if os.path.exists("test_cluster.db"):
+                os.remove("test_cluster.db")
 
 if __name__ == '__main__':
     unittest.main()
