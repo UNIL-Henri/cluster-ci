@@ -130,7 +130,7 @@ EOF
 
     sudo systemctl daemon-reload
     sudo systemctl enable cluster-scheduler cluster-scheduler-loop cluster-runner-manager
-    sudo systemctl start cluster-scheduler cluster-scheduler-loop cluster-runner-manager
+    sudo systemctl restart cluster-scheduler cluster-scheduler-loop cluster-runner-manager
     echo "🚀 Services Scheduler et Runner Manager démarrés."
 
 else
@@ -156,7 +156,7 @@ EOF
 
     sudo systemctl daemon-reload
     sudo systemctl enable cluster-worker
-    sudo systemctl start cluster-worker
+    sudo systemctl restart cluster-worker
     echo "🚀 Service Worker Agent installé et démarré."
 fi
 echo "   Commandes utiles :"
