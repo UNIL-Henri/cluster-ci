@@ -71,6 +71,7 @@ python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 
 function update_status_idle() {
     log_info "Mise à jour des métadonnées (statut idle)..."
+    [ -n "$DVC_VIEWER_PID" ] && kill "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
 }
 trap update_status_idle EXIT
@@ -147,6 +148,9 @@ else
     log_info "Aucun fichier pyproject.toml trouvé. Etape uv sync ignorée."
 fi
 
+log_info "Installation de dvc-viewer..."
+uv pip install git+https://github.com/UNIL-Henri/dvc-viewer.git
+
 if [ ! -f ".cluster-ci" ]; then
     log_error "Fichier .cluster-ci introuvable à la racine du dépôt. Exécution avortée."
     exit 1
@@ -161,6 +165,13 @@ if [ -z "$DVC_ARGS" ]; then
 else
     log_info "Arguments détectés : $DVC_ARGS"
 fi
+
+log_info "Analyse AST via dvc-viewer..."
+uv run dvc-viewer hash
+
+log_info "Lancement du serveur live dvc-viewer..."
+uv run dvc-viewer --port 8686 > "$BASE_DIR/dvc-viewer.log" 2>&1 &
+DVC_VIEWER_PID=$!
 
 log_info "Lancement de : uv run dvc repro $DVC_ARGS"
 uv run dvc repro $DVC_ARGS
