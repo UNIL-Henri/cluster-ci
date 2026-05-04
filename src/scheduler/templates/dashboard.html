@@ -91,6 +91,10 @@
 
             try {
                 const resp = await fetch('/api/projects');
+                if (!resp.ok) {
+                    const error = await resp.json();
+                    throw new Error(error.error || 'Failed to load projects');
+                }
                 const projects = await resp.json();
 
                 if (projects.length === 0) {
@@ -122,6 +126,10 @@
 
             try {
                 const resp = await fetch(`/api/projects/${repo}/runs`);
+                if (!resp.ok) {
+                    const error = await resp.json();
+                    throw new Error(error.error || 'Failed to load runs');
+                }
                 const runs = await resp.json();
 
                 if (runs.length === 0) {
@@ -196,8 +204,13 @@
                 files.forEach(item => {
                     const col = document.createElement('div');
                     col.className = 'col';
-                    // Robust directory detection: check for type if present, or absence of hash/size, or trailing slash
-                    const isDir = item.isout && (!item.hash && !item.size || item.path.endsWith('/'));
+
+                    // IMPROVED Folder detection:
+                    // In DVC list --json:
+                    // - Directories often have a trailing slash in 'path' (e.g., 'data/')
+                    // - They might have isout: true
+                    // - They NEVER have a 'hash' or 'size' in the list output for their own entry
+                    const isDir = item.path.endsWith('/') || (!item.hash && !item.size);
                     const icon = isDir ? 'bi-folder-fill folder-icon' : 'bi-file-earmark-text-fill file-icon';
 
                     // Construct download link using commit hash if available for consistency
@@ -209,7 +222,7 @@
                         <div class="card h-100 explorer-item shadow-sm" onclick="${isDir ? '' : `window.open('${downloadUrl}', '_blank')`}">
                             <i class="bi ${icon} explorer-icon"></i>
                             <h6 class="card-title text-truncate" title="${item.path}">${item.path}</h6>
-                            <small class="text-muted">${item.size ? (item.size / 1024).toFixed(1) + ' KB' : (isDir ? 'Directory' : 'File')}</small>
+                            <small class="text-muted">${item.size ? (item.size / 1024).toFixed(1) + ' KB' : (isDir ? 'Directory' : 'Tracked File')}</small>
                         </div>
                     `;
                     container.appendChild(col);

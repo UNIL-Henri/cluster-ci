@@ -261,19 +261,28 @@ def api_list_projects():
         return jsonify({"error": "Unauthorized"}), 401
 
     token = session.get('token')
-    target_org = os.environ.get("TARGET_REPO", "UNIL-DESI").lower()
+    target_config = os.environ.get("TARGET_REPO", "UNIL-DESI").lower()
 
     try:
         repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
+        if not repos_resp.ok:
+            return jsonify({"error": "Failed to fetch repositories from GitHub", "details": repos_resp.text}), 502
+
         repos = repos_resp.json()
         if not isinstance(repos, list):
-            return jsonify([]), 200
+            return jsonify({"error": "Unexpected response from GitHub"}), 502
 
-        allowed_repos = {
-            r['full_name'] for r in repos
-            if r.get('owner', {}).get('login', '').lower() == target_org
-            and r.get('permissions', {}).get('push', False)
-        }
+        allowed_repos = set()
+        for r in repos:
+            full_name = r['full_name'].lower()
+            owner = r.get('owner', {}).get('login', '').lower()
+            # User must have push permission
+            if not r.get('permissions', {}).get('push', False):
+                continue
+
+            # Match against target organization OR specific repository
+            if owner == target_config or full_name == target_config:
+                allowed_repos.add(r['full_name'])
 
         with get_db_conn() as conn:
             cursor = conn.cursor()
@@ -285,7 +294,7 @@ def api_list_projects():
         return jsonify(projects)
     except Exception as e:
         print(f"Error fetching repos in API: {e}")
-        return jsonify([]), 200
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 @app.route('/api/projects/<path:repo>/runs', methods=['GET'])
 def api_list_runs(repo):
