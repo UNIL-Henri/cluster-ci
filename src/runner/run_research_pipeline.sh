@@ -114,6 +114,9 @@ log_info "Checkout forcé de la branche et re-synchronisation..."
 git checkout -f -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
 git reset --hard "origin/$TARGET_BRANCH"
 
+# Enregistrement du hash du commit courant pour la traçabilité
+git rev-parse HEAD > .cluster-ci-commit
+
 log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont préservés pour la réutilisation."
 
 # 3. Lancement de l'environnement uv et de l'exécution

@@ -75,11 +75,13 @@ def poll_for_job():
         logger.error(f"Failed to poll: {e}")
     return None
 
-def update_job_status(job_id, status, exit_code=None):
+def update_job_status(job_id, status, exit_code=None, commit_hash=None):
     try:
         payload = {"job_id": job_id, "status": status}
         if exit_code is not None:
             payload["exit_code"] = exit_code
+        if commit_hash is not None:
+            payload["commit_hash"] = commit_hash
         resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers())
         resp.raise_for_status()
     except Exception as e:
@@ -148,16 +150,26 @@ def execute_job(job):
 
         exit_code = process.wait()
 
+        # Try to extract the commit hash from the job's directory
+        commit_hash = None
+        commit_file = os.path.join(REPOS_DIR, repo, ".cluster-ci-commit")
+        if os.path.exists(commit_file):
+            try:
+                with open(commit_file, 'r') as f:
+                    commit_hash = f.read().strip()
+            except Exception as e:
+                logger.error(f"Failed to read commit hash file: {e}")
+
         if oom_triggered:
-            update_job_status(job_id, 'failed', 137)
+            update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)
         elif exit_code == 0:
-            update_job_status(job_id, 'completed', exit_code)
+            update_job_status(job_id, 'completed', exit_code, commit_hash=commit_hash)
         elif exit_code < 0:
             # Likely killed by a signal (cancellation)
             logger.info(f"Job {job_id} was killed (exit code {exit_code})")
-            update_job_status(job_id, 'failed', exit_code)
+            update_job_status(job_id, 'failed', exit_code, commit_hash=commit_hash)
         else:
-            update_job_status(job_id, 'failed', exit_code)
+            update_job_status(job_id, 'failed', exit_code, commit_hash=commit_hash)
 
     except Exception as e:
         logger.error(f"Execution failed: {e}")
