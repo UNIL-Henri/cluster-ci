@@ -9,7 +9,7 @@ import logging
 import uuid
 import threading
 import json
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -281,6 +281,31 @@ def fetch_artifact(file_path):
     """
     logger.info(f"Worker received request for artifact: {file_path}")
     return send_from_directory(REPOS_DIR, file_path)
+
+@app.route('/check_cache', methods=['POST'])
+def check_cache():
+    """
+    Checks if the worker has the specified DVC cache files.
+    Input JSON: {"repo": "owner/repo", "hashes": ["hash1", "hash2", ...]}
+    Returns: JSON list of hashes present on this worker.
+    """
+    data = request.get_json()
+    if not data or 'repo' not in data or 'hashes' not in data:
+        return jsonify({"error": "Missing repo or hashes"}), 400
+
+    repo = data['repo']
+    hashes = data['hashes']
+    found_hashes = []
+
+    for h in hashes:
+        if len(h) < 2:
+            continue
+        # DVC CAS nomenclature: .dvc/cache/files/md5/<2_chars>/<rest>
+        cache_path = os.path.join(REPOS_DIR, repo, ".dvc", "cache", "files", "md5", h[:2], h[2:])
+        if os.path.exists(cache_path):
+            found_hashes.append(h)
+
+    return jsonify(found_hashes)
 
 @app.route('/webhook/drain_request', methods=['POST'])
 def drain_request():
