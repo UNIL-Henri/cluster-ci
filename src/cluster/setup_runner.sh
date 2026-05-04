@@ -83,7 +83,7 @@ User=$USER
 WorkingDirectory=$BASE_DIR
 Environment="TARGET_REPO=$TARGET"
 Environment="GITHUB_PAT=$GITHUB_PAT"
-ExecStart=$(which python3) $BASE_DIR/src/scheduler/runner_manager.py
+ExecStart=$(uv python find) $BASE_DIR/src/scheduler/runner_manager.py
 Restart=always
 
 [Install]
@@ -104,7 +104,7 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$BASE_DIR
-ExecStart=$(which python3) $BASE_DIR/src/scheduler/headnode_service.py
+ExecStart=$(uv python find) $BASE_DIR/src/scheduler/headnode_service.py
 Restart=always
 
 [Install]
@@ -121,7 +121,7 @@ After=cluster-scheduler.service
 Type=simple
 User=$USER
 WorkingDirectory=$BASE_DIR
-ExecStart=$(which python3) $BASE_DIR/src/scheduler/scheduler_loop.py
+ExecStart=$(uv python find) $BASE_DIR/src/scheduler/scheduler_loop.py
 Restart=always
 
 [Install]
@@ -135,7 +135,7 @@ EOF
 
 else
     echo "⚙️ Configuration du Worker Agent..."
-    uv pip install requests psutil
+    uv pip install flask requests psutil
 
     cat <<EOF | sudo tee /etc/systemd/system/cluster-worker.service
 [Unit]
@@ -147,7 +147,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$BASE_DIR
 EnvironmentFile=$BASE_DIR/.env
-ExecStart=$(which python3) $BASE_DIR/src/scheduler/worker_agent.py
+ExecStart=$(uv python find) $BASE_DIR/src/scheduler/worker_agent.py
 Restart=always
 
 [Install]
