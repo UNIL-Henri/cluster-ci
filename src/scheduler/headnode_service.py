@@ -10,6 +10,9 @@ import subprocess
 import time
 import threading
 import socket
+import re
+import json
+import tempfile
 from urllib.parse import urlparse
 
 app = Flask(__name__)
@@ -83,15 +86,42 @@ def submit_job():
     ram_required_gb = data.get('ram_required_gb', 0)
     job_id = str(uuid.uuid4())
 
+    # Metadata extraction (Pre-flight check)
+    required_hashes = []
+    repo_url = f"https://github.com/{repo}.git"
+    pat = os.environ.get("GITHUB_PAT")
+    if pat:
+        repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git"
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        # Shallow clone to get dvc.lock
+        subprocess.run(["git", "clone", "--depth", "1", "--branch", branch, "--no-checkout", repo_url, tmp_dir],
+                       check=True, capture_output=True, timeout=30)
+        # Checkout dvc.lock
+        res = subprocess.run(["git", "checkout", "origin/" + branch, "--", "dvc.lock"],
+                             cwd=tmp_dir, capture_output=True, timeout=10)
+        if res.returncode == 0:
+            lock_path = os.path.join(tmp_dir, "dvc.lock")
+            if os.path.exists(lock_path):
+                with open(lock_path, 'r') as f:
+                    content = f.read()
+                    # Extract MD5 hashes
+                    required_hashes = list(set(re.findall(r'md5:\s*([a-f0-9]{32})', content)))
+    except Exception as e:
+        app.logger.error(f"Metadata extraction failed for {repo}@{branch}: {e}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, status)
-            VALUES (?, ?, ?, ?, 'pending')
-        ''', (job_id, repo, branch, ram_required_gb))
+            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes)))
         conn.commit()
 
-    return jsonify({"job_id": job_id, "status": "pending"})
+    return jsonify({"job_id": job_id, "status": "pending", "required_hashes_count": len(required_hashes)})
 
 @app.route('/workers', methods=['GET'])
 def list_workers():

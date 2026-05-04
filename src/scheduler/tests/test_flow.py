@@ -9,7 +9,7 @@ import sqlite3
 # Add src/scheduler to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from persistence import init_db, DB_PATH
+from persistence import init_db
 from headnode_service import app
 from scheduler_loop import schedule_jobs
 
