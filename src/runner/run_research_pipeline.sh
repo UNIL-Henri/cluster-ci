@@ -16,6 +16,20 @@ SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
 BASE_DIR="$( cd "$( dirname "$SCRIPT_PATH" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
+# Injection des variables d'environnement globales (.env et .env.secrets)
+if [ -f "$BASE_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$BASE_DIR/.env" || true
+    set +a
+fi
+if [ -f "$BASE_DIR/.env.secrets" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$BASE_DIR/.env.secrets" || true
+    set +a
+fi
+
 # Mode délégation : Si on n'est pas explicitement en mode exécuteur,
 # on délègue la tâche à l'ordonnanceur via submit_job.py
 if [ "$CLUSTER_CI_MODE" != "executor" ]; then
@@ -124,20 +138,7 @@ log_info "[Etape 3/3] Synchronisation de l'environnement Python avec uv..."
 
 # Injection des variables d'environnement globales (.env et .env.secrets)
 log_info "Chargement des credentials globaux pour l'exécution..."
-if [ -f "$BASE_DIR/.env" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$BASE_DIR/.env" || true
-    set +a
-    log_info "Configuration globale chargée (.env)"
-fi
-if [ -f "$BASE_DIR/.env.secrets" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$BASE_DIR/.env.secrets" || true
-    set +a
-    log_info "Secrets globaux chargés (.env.secrets)"
-fi
+
 
 log_info "Variables d'environnement disponibles :"
 while IFS='=' read -r name value; do
