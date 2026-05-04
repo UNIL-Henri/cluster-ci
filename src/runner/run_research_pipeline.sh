@@ -116,6 +116,9 @@ git reset --hard "origin/$TARGET_BRANCH"
 
 log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont préservés pour la réutilisation."
 
+# Enregistrement du hash du commit courant pour la traçabilité
+git rev-parse HEAD > .cluster-ci-commit
+
 # 3. Lancement de l'environnement uv et de l'exécution
 log_info "[Etape 3/3] Synchronisation de l'environnement Python avec uv..."
 

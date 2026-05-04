@@ -33,6 +33,7 @@ def init_db():
             job_id TEXT PRIMARY KEY,
             repo TEXT,
             branch TEXT,
+            commit_hash TEXT,
             ram_required_gb REAL,
             status TEXT DEFAULT 'pending',
             worker_id TEXT,
@@ -43,6 +44,12 @@ def init_db():
             FOREIGN KEY (worker_id) REFERENCES workers (worker_id)
         )
     ''')
+
+    # Migration for commit_hash
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN commit_hash TEXT')
+    except sqlite3.OperationalError:
+        pass # Already exists
 
     conn.commit()
     conn.close()

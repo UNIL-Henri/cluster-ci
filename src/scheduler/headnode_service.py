@@ -139,11 +139,12 @@ def update_job_status():
     job_id = data.get('job_id')
     status = data.get('status')
     exit_code = data.get('exit_code')
+    commit_hash = data.get('commit_hash')
 
     with get_db_conn() as conn:
         cursor = conn.cursor()
         if status == 'running':
-            cursor.execute('UPDATE jobs SET status = ?, started_at = CURRENT_TIMESTAMP WHERE job_id = ?', (status, job_id))
+            cursor.execute('UPDATE jobs SET status = ?, started_at = CURRENT_TIMESTAMP, commit_hash = ? WHERE job_id = ?', (status, commit_hash, job_id))
         elif status in ['completed', 'failed']:
             # Restore RAM to the worker
             cursor.execute('SELECT worker_id, ram_required_gb FROM jobs WHERE job_id = ?', (job_id,))
@@ -155,7 +156,7 @@ def update_job_status():
                     WHERE worker_id = ?
                 ''', (job['ram_required_gb'], job['worker_id']))
 
-            cursor.execute('UPDATE jobs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = ? WHERE job_id = ?', (status, exit_code, job_id))
+            cursor.execute('UPDATE jobs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = ?, commit_hash = ? WHERE job_id = ?', (status, exit_code, commit_hash, job_id))
         else:
             cursor.execute('UPDATE jobs SET status = ? WHERE job_id = ?', (status, job_id))
         conn.commit()
