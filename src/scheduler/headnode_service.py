@@ -263,9 +263,13 @@ def dashboard():
             print(f"Unexpected response from GitHub: {repos}")
             repos = []
             
-        # Filter by organization (case-insensitive)
+        # Filter by organization (case-insensitive) and contributor access
         target_org_lower = target_org.lower()
-        filtered_repos = [r for r in repos if r.get('owner', {}).get('login', '').lower() == target_org_lower]
+        filtered_repos = [
+            r for r in repos 
+            if r.get('owner', {}).get('login', '').lower() == target_org_lower 
+            and r.get('permissions', {}).get('push', False)
+        ]
         
         # Check if DVC viewer is available (either running job or local cache exists)
         for r in filtered_repos:
