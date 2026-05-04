@@ -24,6 +24,30 @@ def client():
         os.remove(test_db)
 
 def test_history_apis(client):
+    # Mock authentication
+    with client.session_transaction() as sess:
+        sess['user'] = {'login': 'testuser'}
+        sess['token'] = {'access_token': 'fake'}
+
+    # Mock GitHub API for allowed repos
+    with patch('headnode_service.oauth.github.get') as mock_get:
+        mock_get.return_value.json.return_value = [
+            {
+                'full_name': 'owner/repo1',
+                'owner': {'login': 'UNIL-DESI'},
+                'permissions': {'push': True}
+            },
+            {
+                'full_name': 'owner/repo2',
+                'owner': {'login': 'UNIL-DESI'},
+                'permissions': {'push': True}
+            }
+        ]
+
+        # Now run the original test logic
+        run_history_test_logic(client)
+
+def run_history_test_logic(client):
     # 1. Inject some data
     conn = sqlite3.connect(test_db)
     cursor = conn.cursor()

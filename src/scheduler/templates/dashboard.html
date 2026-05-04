@@ -232,6 +232,7 @@
             previewContent.innerHTML = html;
         }
 
+
         const container = document.getElementById('explorer-container');
         const breadcrumb = document.getElementById('breadcrumb');
 
@@ -266,6 +267,7 @@
                 runLi.className = 'breadcrumb-item active';
                 runLi.textContent = currentState.jobId.substring(0, 8) + '...';
                 breadcrumb.appendChild(runLi);
+
             }
         }
 
@@ -278,7 +280,7 @@
                 const resp = await fetch('/api/projects');
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
                     throw new Error(error || 'Failed to load projects');
                 }
                 const projects = await resp.json();
@@ -308,6 +310,7 @@
                     card.appendChild(icon);
                     card.appendChild(title);
                     col.appendChild(card);
+
                     container.appendChild(col);
                 });
             } catch (err) {
@@ -324,7 +327,7 @@
                 const resp = await fetch(`/api/projects/${repo}/runs`);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
                     throw new Error(error || 'Failed to load runs');
                 }
                 const runs = await resp.json();
@@ -365,6 +368,7 @@
                     card.appendChild(statusDiv);
                     card.appendChild(date);
                     col.appendChild(card);
+
                     container.appendChild(col);
                 });
             } catch (err) {
@@ -401,7 +405,7 @@
                 const resp = await fetch(`/api/runs/${jobId}/files`);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
                     throw new Error(error || 'Failed to load files');
                 }
                 const files = await resp.json();
@@ -417,9 +421,15 @@
                     const col = document.createElement('div');
                     col.className = 'col';
 
+                    // IMPROVED Folder detection:
+                    // In DVC list --json:
+                    // - Directories often have a trailing slash in 'path' (e.g., 'data/')
+                    // - They might have isout: true
+                    // - They NEVER have a 'hash' or 'size' in the list output for their own entry
                     const isDir = item.path.endsWith('/') || (!item.hash && !item.size);
                     const iconClass = isDir ? 'bi-folder-fill folder-icon' : 'bi-file-earmark-text-fill file-icon';
 
+                    // Construct download link using commit hash if available for consistency
                     const [owner, name] = repo.split('/');
                     const rev = currentState.commitHash || currentState.branch || 'main';
                     const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(item.path)}`;
@@ -446,6 +456,7 @@
                     card.appendChild(title);
                     card.appendChild(info);
                     col.appendChild(card);
+
                     container.appendChild(col);
                 });
             } catch (err) {

@@ -188,46 +188,51 @@ def check_space():
 
 REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
 
-@app.route('/artifacts/<repo_owner>/<repo_name>/<branch>/<path:file_path>', methods=['GET'])
-def artifacts(repo_owner, repo_name, branch, file_path):
-    repo = f"{repo_owner}/{repo_name}"
-    local_path = os.path.join(repo, file_path)
+@app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
+def artifacts(repo_owner, repo_name, rev, file_path):
+    repo_slug = f"{repo_owner}/{repo_name}"
+    repo_url = f"https://github.com/{repo_slug}"
 
-    # 1. Try local storage first
-    if os.path.exists(os.path.join(REPOS_DIR, local_path)):
-        return send_from_directory(REPOS_DIR, local_path)
+    # --- Case 1: REAL DVC EXTRACTION (Historical Integrity) ---
+    # We extract the file exactly as it was at the given revision
+    request_id = str(uuid.uuid4())
+    tmp_dir = os.path.join(REPOS_DIR, "_tmp_artifacts", request_id)
+    os.makedirs(tmp_dir, exist_ok=True)
 
-    # 2. If not found locally, find which worker has it
-    with get_db_conn() as conn:
-        cursor = conn.cursor()
-        # Find the last worker that completed a job for this repo and branch
-        cursor.execute('''
-            SELECT w.service_url
-            FROM jobs j
-            JOIN workers w ON j.worker_id = w.worker_id
-            WHERE j.repo = ? AND j.branch = ? AND j.status = 'completed'
-            ORDER BY j.finished_at DESC
-            LIMIT 1
-        ''', (repo, branch))
-        worker = cursor.fetchone()
+    try:
+        local_repo_path = os.path.join(REPOS_DIR, repo_slug)
+        source = local_repo_path if os.path.exists(local_repo_path) else repo_url
+        cmd = ["dvc", "get", source, file_path, "--rev", rev, "--out", tmp_dir]
+        result = subprocess.run(cmd, capture_output=True, text=True)
 
-    if worker and worker['service_url']:
-        worker_url = worker['service_url']
-        try:
-            # Proxy the request to the worker
-            target_url = f"{worker_url}/fetch_artifact/{local_path}"
-            req = requests.get(target_url, stream=True, timeout=10)
+        if result.returncode == 0:
+            filename = os.path.basename(file_path)
+            full_path = os.path.join(tmp_dir, filename)
 
-            # Return streamed response
-            return Response(
-                stream_with_context(req.iter_content(chunk_size=1024)),
-                content_type=req.headers.get('content-type'),
-                status=req.status_code
-            )
-        except Exception as e:
-            return jsonify({"error": f"Failed to proxy to worker: {str(e)}"}), 500
+            def generate():
+                try:
+                    with open(full_path, 'rb') as f:
+                        while True:
+                            chunk = f.read(4096)
+                            if not chunk:
+                                break
+                            yield chunk
+                finally:
+                    # Robust cleanup: delete the whole tmp directory for this request
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    return jsonify({"error": "Artifact not found locally or on any known worker for this branch"}), 404
+            return Response(generate(), mimetype='application/octet-stream',
+                            headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+        # If DVC get failed, we DO NOT fallback to worker for historical revisions (rev looks like a hash)
+        # However, if rev is a branch name, Case 2 might still be valid for the 'latest' of that branch.
+        # But per requirements: "Supprime ce repli en cascade pour les requêtes historiques"
+        # We consider any request with a 'rev' as a historical request needing integrity.
+        return jsonify({"error": f"Failed to extract historical artifact: {result.stderr}"}), 404
+
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({"error": f"Internal error during extraction: {str(e)}"}), 500
 
 @app.route('/notify_cleanup', methods=['POST'])
 def notify_cleanup():
@@ -257,11 +262,44 @@ def notify_cleanup():
 
 @app.route('/api/projects', methods=['GET'])
 def api_list_projects():
-    with get_db_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT repo FROM jobs')
-        projects = [row['repo'] for row in cursor.fetchall()]
-    return jsonify(projects)
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    token = session.get('token')
+    target_config = os.environ.get("TARGET_REPO", "UNIL-DESI").lower()
+
+    try:
+        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
+        if not repos_resp.ok:
+            return jsonify({"error": "Failed to fetch repositories from GitHub", "details": repos_resp.text}), 502
+
+        repos = repos_resp.json()
+        if not isinstance(repos, list):
+            return jsonify({"error": "Unexpected response from GitHub"}), 502
+
+        allowed_repos = set()
+        for r in repos:
+            full_name = r['full_name'].lower()
+            owner = r.get('owner', {}).get('login', '').lower()
+            # User must have push permission
+            if not r.get('permissions', {}).get('push', False):
+                continue
+
+            # Match against target organization OR specific repository
+            if owner == target_config or full_name == target_config:
+                allowed_repos.add(r['full_name'])
+
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT DISTINCT repo FROM jobs')
+            projects_in_db = [row['repo'] for row in cursor.fetchall()]
+
+        # Only return projects that are in the database AND the user has access to
+        projects = [p for p in projects_in_db if p in allowed_repos]
+        return jsonify(projects)
+    except Exception as e:
+        print(f"Error fetching repos in API: {e}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 @app.route('/api/projects/<path:repo>/runs', methods=['GET'])
 def api_list_runs(repo):
