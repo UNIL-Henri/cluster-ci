@@ -245,6 +245,65 @@ def notify_cleanup():
 
     return jsonify({"status": "ok", "notified": notified, "errors": errors})
 
+# --- History & DVC Exploration APIs ---
+
+@app.route('/api/projects', methods=['GET'])
+def api_list_projects():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT repo FROM jobs')
+        projects = [row['repo'] for row in cursor.fetchall()]
+    return jsonify(projects)
+
+@app.route('/api/projects/<path:repo>/runs', methods=['GET'])
+def api_list_runs(repo):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT job_id, branch, status, commit_hash, created_at, started_at, finished_at, exit_code
+            FROM jobs
+            WHERE repo = ?
+            ORDER BY created_at DESC
+        ''', (repo,))
+        runs = [dict(row) for row in cursor.fetchall()]
+    return jsonify(runs)
+
+@app.route('/api/runs/<job_id>/files', methods=['GET'])
+def api_run_files(job_id):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT repo, commit_hash FROM jobs WHERE job_id = ?', (job_id,))
+        job = cursor.fetchone()
+
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    repo = job['repo']
+    commit_hash = job['commit_hash']
+
+    if not commit_hash:
+        return jsonify({"error": "Commit hash not found for this job. Historical exploration is unavailable."}), 400
+
+    repo_url = f"https://github.com/{repo}"
+
+    try:
+        env = os.environ.copy()
+        # If GITHUB_PAT is available, dvc list might be able to use it if configured,
+        # though dvc list usually uses git credentials.
+
+        cmd = ["dvc", "list", repo_url, "--rev", commit_hash, "--json"]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+        if result.returncode != 0:
+            return jsonify({
+                "error": "Failed to list DVC files",
+                "details": result.stderr
+            }), 500
+
+        return Response(result.stdout, mimetype='application/json')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # --- Portal & OAuth Routes ---
 
 @app.route('/')
