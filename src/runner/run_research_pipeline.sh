@@ -16,6 +16,20 @@ SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
 BASE_DIR="$( cd "$( dirname "$SCRIPT_PATH" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
+# Injection des variables d'environnement globales (.env et .env.secrets)
+if [ -f "$BASE_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$BASE_DIR/.env" || true
+    set +a
+fi
+if [ -f "$BASE_DIR/.env.secrets" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$BASE_DIR/.env.secrets" || true
+    set +a
+fi
+
 # Mode délégation : Si on n'est pas explicitement en mode exécuteur,
 # on délègue la tâche à l'ordonnanceur via submit_job.py
 if [ "$CLUSTER_CI_MODE" != "executor" ]; then
@@ -114,27 +128,16 @@ log_info "Checkout forcé de la branche et re-synchronisation..."
 git checkout -f -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
 git reset --hard "origin/$TARGET_BRANCH"
 
+# Enregistrement du hash du commit courant pour la traçabilité
+git rev-parse HEAD > .cluster-ci-commit
+
 log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont préservés pour la réutilisation."
 
 # 3. Lancement de l'environnement uv et de l'exécution
 log_info "[Etape 3/3] Synchronisation de l'environnement Python avec uv..."
 
-# Injection des variables d'environnement globales (.env et .env.secrets)
 log_info "Chargement des credentials globaux pour l'exécution..."
-if [ -f "$BASE_DIR/.env" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$BASE_DIR/.env" || true
-    set +a
-    log_info "Configuration globale chargée (.env)"
-fi
-if [ -f "$BASE_DIR/.env.secrets" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$BASE_DIR/.env.secrets" || true
-    set +a
-    log_info "Secrets globaux chargés (.env.secrets)"
-fi
+# Note: .env et .env.secrets ont déjà été sourcés au début du script
 
 log_info "Variables d'environnement disponibles :"
 while IFS='=' read -r name value; do
