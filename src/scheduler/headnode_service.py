@@ -256,13 +256,16 @@ def dashboard():
     
     # Fetch user repos from GitHub API
     try:
-        repos_resp = oauth.github.get('user/repos', token=token)
+        # Increase per_page to 100 to avoid missing repos due to pagination
+        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
         repos = repos_resp.json()
         if not isinstance(repos, list):
+            print(f"Unexpected response from GitHub: {repos}")
             repos = []
             
-        # Filter by organization
-        filtered_repos = [r for r in repos if r['owner']['login'] == target_org]
+        # Filter by organization (case-insensitive)
+        target_org_lower = target_org.lower()
+        filtered_repos = [r for r in repos if r.get('owner', {}).get('login', '').lower() == target_org_lower]
         
         # Check if DVC viewer is available (either running job or local cache exists)
         for r in filtered_repos:
