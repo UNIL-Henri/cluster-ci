@@ -133,7 +133,7 @@
 
             try {
                 if (isImage) {
-                    previewContent.innerHTML = `<div class="text-center"><img src="${url}" alt="${path}"></div>`;
+                    previewContent.innerHTML = `<div class="text-center"><img src="${url}" alt="${escapeHtml(path)}"></div>`;
                 } else if (isCSV) {
                     const resp = await fetch(url);
                     const text = await resp.text();
@@ -156,15 +156,61 @@
             return div.innerHTML;
         }
 
+        function parseCSV(text, limit = 101) {
+            const result = [];
+            let row = [];
+            let cell = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+
+                if (inQuotes) {
+                    if (char === '"' && nextChar === '"') {
+                        cell += '"';
+                        i++;
+                    } else if (char === '"') {
+                        inQuotes = false;
+                    } else {
+                        cell += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQuotes = true;
+                    } else if (char === ',') {
+                        row.push(cell);
+                        cell = '';
+                    } else if (char === '\n' || char === '\r') {
+                        row.push(cell);
+                        result.push(row);
+                        row = [];
+                        cell = '';
+                        if (char === '\r' && nextChar === '\n') i++;
+                        if (result.length >= limit) return result;
+                    } else {
+                        cell += char;
+                    }
+                }
+            }
+
+            if (row.length > 0 || cell !== '') {
+                row.push(cell);
+                result.push(row);
+            }
+
+            return result;
+        }
+
         function renderCSV(text) {
-            const rows = text.split('\n').filter(r => r.trim()).slice(0, 101); // Limit to 100 rows
+            const rows = parseCSV(text, 101);
             if (rows.length === 0) {
                 previewContent.innerHTML = '<div class="alert alert-info">CSV file is empty.</div>';
                 return;
             }
 
             let html = '<div class="table-responsive"><table class="table table-sm table-bordered table-striped table-preview"><thead><tr>';
-            const headers = rows[0].split(',');
+            const headers = rows[0];
             headers.forEach(h => {
                 html += `<th>${escapeHtml(h)}</th>`;
             });
@@ -172,15 +218,15 @@
 
             for (let i = 1; i < rows.length; i++) {
                 html += '<tr>';
-                const cells = rows[i].split(',');
+                const cells = rows[i];
                 cells.forEach(c => {
-                    html += `<td>${escapeHtml(c)}</td>`;
+                    html += `<td>${escapeHtml(c || '')}</td>`;
                 });
                 html += '</tr>';
             }
 
             html += '</tbody></table></div>';
-            if (text.split('\n').length > 101) {
+            if (rows.length > 100) {
                 html += '<div class="text-muted small mt-2 text-center">Showing first 100 rows. Download the file for full content.</div>';
             }
             previewContent.innerHTML = html;
@@ -198,14 +244,28 @@
         };
 
         function updateBreadcrumb() {
-            breadcrumb.innerHTML = '<li class="breadcrumb-item ' + (currentState.view === 'root' ? 'active' : '') + '" onclick="navigateToRoot()">Home</li>';
+            breadcrumb.innerHTML = '';
+
+            const homeLi = document.createElement('li');
+            homeLi.className = 'breadcrumb-item ' + (currentState.view === 'root' ? 'active' : '');
+            homeLi.textContent = 'Home';
+            homeLi.onclick = navigateToRoot;
+            breadcrumb.appendChild(homeLi);
 
             if (currentState.repo) {
-                breadcrumb.innerHTML += '<li class="breadcrumb-item ' + (currentState.view === 'project' ? 'active' : '') + '" onclick="navigateToProject(\'' + currentState.repo + '\')">' + currentState.repo + '</li>';
+                const projectLi = document.createElement('li');
+                projectLi.className = 'breadcrumb-item ' + (currentState.view === 'project' ? 'active' : '');
+                projectLi.textContent = currentState.repo;
+                const repo = currentState.repo;
+                projectLi.onclick = () => navigateToProject(repo);
+                breadcrumb.appendChild(projectLi);
             }
 
             if (currentState.jobId) {
-                breadcrumb.innerHTML += '<li class="breadcrumb-item active">' + currentState.jobId.substring(0, 8) + '...</li>';
+                const runLi = document.createElement('li');
+                runLi.className = 'breadcrumb-item active';
+                runLi.textContent = currentState.jobId.substring(0, 8) + '...';
+                breadcrumb.appendChild(runLi);
             }
         }
 
@@ -232,12 +292,22 @@
                 projects.forEach(repo => {
                     const col = document.createElement('div');
                     col.className = 'col';
-                    col.innerHTML = `
-                        <div class="card h-100 explorer-item shadow-sm" onclick="navigateToProject('${repo}')">
-                            <i class="bi bi-folder-fill explorer-icon folder-icon"></i>
-                            <h6 class="card-title text-truncate" title="${repo}">${repo}</h6>
-                        </div>
-                    `;
+
+                    const card = document.createElement('div');
+                    card.className = 'card h-100 explorer-item shadow-sm';
+                    card.onclick = () => navigateToProject(repo);
+
+                    const icon = document.createElement('i');
+                    icon.className = 'bi bi-folder-fill explorer-icon folder-icon';
+
+                    const title = document.createElement('h6');
+                    title.className = 'card-title text-truncate';
+                    title.textContent = repo;
+                    title.title = repo;
+
+                    card.appendChild(icon);
+                    card.appendChild(title);
+                    col.appendChild(card);
                     container.appendChild(col);
                 });
             } catch (err) {
@@ -266,21 +336,35 @@
 
                 container.innerHTML = '';
                 runs.forEach(run => {
-                    const statusClass = run.status === 'completed' ? 'text-success' : (run.status === 'running' ? 'text-primary' : 'text-danger');
-                    const statusIcon = run.status === 'completed' ? 'bi-check-circle-fill' : (run.status === 'running' ? 'bi-play-circle-fill' : 'bi-exclamation-circle-fill');
-
                     const col = document.createElement('div');
                     col.className = 'col';
-                    col.innerHTML = `
-                        <div class="card h-100 explorer-item shadow-sm" onclick="navigateToRun('${run.job_id}', '${run.status}', '${repo}', '${run.branch}', '${run.commit_hash}')">
-                            <i class="bi bi-folder-fill explorer-icon folder-icon"></i>
-                            <h6 class="card-title mb-1">${run.job_id.substring(0, 8)}...</h6>
-                            <div class="${statusClass} mb-2">
-                                <i class="bi ${statusIcon}"></i> ${run.status}
-                            </div>
-                            <small class="text-muted">${new Date(run.created_at).toLocaleString()}</small>
-                        </div>
-                    `;
+
+                    const card = document.createElement('div');
+                    card.className = 'card h-100 explorer-item shadow-sm';
+                    card.onclick = () => navigateToRun(run.job_id, run.status, repo, run.branch, run.commit_hash);
+
+                    const icon = document.createElement('i');
+                    icon.className = 'bi bi-folder-fill explorer-icon folder-icon';
+
+                    const title = document.createElement('h6');
+                    title.className = 'card-title mb-1';
+                    title.textContent = run.job_id.substring(0, 8) + '...';
+
+                    const statusDiv = document.createElement('div');
+                    const statusClass = run.status === 'completed' ? 'text-success' : (run.status === 'running' ? 'text-primary' : 'text-danger');
+                    const statusIcon = run.status === 'completed' ? 'bi-check-circle-fill' : (run.status === 'running' ? 'bi-play-circle-fill' : 'bi-exclamation-circle-fill');
+                    statusDiv.className = statusClass + ' mb-2';
+                    statusDiv.innerHTML = `<i class="bi ${statusIcon}"></i> ${escapeHtml(run.status)}`;
+
+                    const date = document.createElement('small');
+                    date.className = 'text-muted';
+                    date.textContent = new Date(run.created_at).toLocaleString();
+
+                    card.appendChild(icon);
+                    card.appendChild(title);
+                    card.appendChild(statusDiv);
+                    card.appendChild(date);
+                    col.appendChild(card);
                     container.appendChild(col);
                 });
             } catch (err) {
@@ -304,7 +388,7 @@
                         <div class="card shadow-sm p-5">
                             <h3>Run is currently in progress</h3>
                             <p class="text-muted">Files are being processed and are not yet pushed to the headnode.</p>
-                            <a href="/view/${owner}/${name}/" class="btn btn-primary btn-lg mt-3">
+                            <a href="/view/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/" class="btn btn-primary btn-lg mt-3">
                                 <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
                             </a>
                         </div>
@@ -333,26 +417,35 @@
                     const col = document.createElement('div');
                     col.className = 'col';
 
-                    // IMPROVED Folder detection:
-                    // In DVC list --json:
-                    // - Directories often have a trailing slash in 'path' (e.g., 'data/')
-                    // - They might have isout: true
-                    // - They NEVER have a 'hash' or 'size' in the list output for their own entry
                     const isDir = item.path.endsWith('/') || (!item.hash && !item.size);
-                    const icon = isDir ? 'bi-folder-fill folder-icon' : 'bi-file-earmark-text-fill file-icon';
+                    const iconClass = isDir ? 'bi-folder-fill folder-icon' : 'bi-file-earmark-text-fill file-icon';
 
-                    // Construct download link using commit hash if available for consistency
                     const [owner, name] = repo.split('/');
                     const rev = currentState.commitHash || currentState.branch || 'main';
                     const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(item.path)}`;
 
-                    col.innerHTML = `
-                        <div class="card h-100 explorer-item shadow-sm" onclick="${isDir ? '' : `previewFile('${downloadUrl}', '${item.path.replace(/'/g, "\\'")}', ${item.size || 0})`}">
-                            <i class="bi ${icon} explorer-icon"></i>
-                            <h6 class="card-title text-truncate" title="${item.path}">${item.path}</h6>
-                            <small class="text-muted">${item.size ? (item.size / 1024).toFixed(1) + ' KB' : (isDir ? 'Directory' : 'Tracked File')}</small>
-                        </div>
-                    `;
+                    const card = document.createElement('div');
+                    card.className = 'card h-100 explorer-item shadow-sm';
+                    if (!isDir) {
+                        card.onclick = () => previewFile(downloadUrl, item.path, item.size || 0);
+                    }
+
+                    const icon = document.createElement('i');
+                    icon.className = 'bi ' + iconClass + ' explorer-icon';
+
+                    const title = document.createElement('h6');
+                    title.className = 'card-title text-truncate';
+                    title.textContent = item.path;
+                    title.title = item.path;
+
+                    const info = document.createElement('small');
+                    info.className = 'text-muted';
+                    info.textContent = item.size ? (item.size / 1024).toFixed(1) + ' KB' : (isDir ? 'Directory' : 'Tracked File');
+
+                    card.appendChild(icon);
+                    card.appendChild(title);
+                    card.appendChild(info);
+                    col.appendChild(card);
                     container.appendChild(col);
                 });
             } catch (err) {
