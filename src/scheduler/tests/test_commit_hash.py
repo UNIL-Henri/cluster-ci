@@ -39,7 +39,7 @@ class TestCommitHash(unittest.TestCase):
         # Pre-insert a job
         with get_db_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO jobs (job_id, repo, branch, status) VALUES (?, ?, ?, ?)', 
+            cursor.execute('INSERT INTO jobs (job_id, repo, branch, status) VALUES (?, ?, ?, ?)',
                            (job_id, repo, branch, 'pending'))
             conn.commit()
 
