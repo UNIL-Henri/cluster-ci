@@ -193,37 +193,22 @@ def artifacts(repo_owner, repo_name, rev, file_path):
     repo_slug = f"{repo_owner}/{repo_name}"
     repo_url = f"https://github.com/{repo_slug}"
 
-    # --- Case 1: Try to serve via DVC directly from the remote/local cache ---
-    # We use dvc get-url or dvc get to fetch the specific revision.
-    # dvc get <url> <path> --rev <rev> --to <tmp>
+    # --- Case 1: REAL DVC EXTRACTION (Historical Intregrity) ---
+    # We extract the file exactly as it was at the given revision
     tmp_dir = os.path.join(REPOS_DIR, "_tmp_artifacts", str(uuid.uuid4()))
     os.makedirs(tmp_dir, exist_ok=True)
-
     try:
-        # We try to use the local repo if it exists for speed, else use the remote URL
         local_repo_path = os.path.join(REPOS_DIR, repo_slug)
         source = local_repo_path if os.path.exists(local_repo_path) else repo_url
-
         cmd = ["dvc", "get", source, file_path, "--rev", rev, "--out", tmp_dir]
         result = subprocess.run(cmd, capture_output=True, text=True)
-
         if result.returncode == 0:
-            # Successfully extracted the file
             filename = os.path.basename(file_path)
-            extracted_file = os.path.join(tmp_dir, filename)
-            if os.path.isfile(extracted_file):
-                resp = send_from_directory(tmp_dir, filename)
-                # Cleanup after response is sent might be tricky with Flask's streaming,
-                # but for small files it's fine. A better way is to stream it then delete.
-                return resp
+            return send_from_directory(tmp_dir, filename)
     except Exception as e:
         print(f"DVC get failed: {e}")
-    finally:
-        # Note: In a production environment, we'd need a more robust cleanup mechanism
-        # or use a streaming response to delete the file after sending.
-        pass
 
-    # --- Case 2: Proxy to Worker if DVC get failed (e.g. not pushed to headnode yet) ---
+    # --- Case 2: Proxy to Worker (Fallback) ---
     with get_db_conn() as conn:
         cursor = conn.cursor()
         # Find the last worker that completed a job for this repo and revision (commit_hash or branch)

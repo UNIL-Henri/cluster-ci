@@ -93,7 +93,7 @@
                 const resp = await fetch('/api/projects');
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } } catch(e) {}
                     throw new Error(error || 'Failed to load projects');
                 }
                 const projects = await resp.json();
@@ -129,7 +129,7 @@
                 const resp = await fetch(`/api/projects/${repo}/runs`);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } } catch(e) {}
                     throw new Error(error || 'Failed to load runs');
                 }
                 const runs = await resp.json();
@@ -192,7 +192,7 @@
                 const resp = await fetch(`/api/runs/${jobId}/files`);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } } catch(e) {}
                     throw new Error(error || 'Failed to load files');
                 }
                 const files = await resp.json();
