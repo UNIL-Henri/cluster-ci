@@ -16,7 +16,7 @@
     </nav>
 
     <div class="container mt-4">
-        <h2>Vos Projets</h2>
+        <h2>Vos Projets ({{ target_org }})</h2>
         <div class="row">
             {% for repo in repos %}
             <div class="col-md-4 mb-3">
@@ -26,14 +26,18 @@
                         <p class="card-text text-muted">{{ repo.description or 'Aucune description' }}</p>
                     </div>
                     <div class="card-footer bg-white border-top-0">
+                        {% if repo.has_viewer %}
                         <a href="{{ url_for('view_project', owner=repo.owner.login, repo=repo.name) }}" class="btn btn-primary w-100">Consulter les résultats (DVC Viewer)</a>
+                        {% else %}
+                        <button class="btn btn-secondary w-100" disabled>Aucun résultat (DVC Viewer inactif)</button>
+                        {% endif %}
                     </div>
                 </div>
             </div>
             {% endfor %}
             {% if not repos %}
             <div class="col-12">
-                <div class="alert alert-info">Aucun projet trouvé sur GitHub.</div>
+                <div class="alert alert-info">Aucun projet trouvé sur GitHub pour l'organisation {{ target_org }}.</div>
             </div>
             {% endif %}
         </div>
