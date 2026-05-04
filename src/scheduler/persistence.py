@@ -41,6 +41,7 @@ def init_db():
             started_at TIMESTAMP,
             finished_at TIMESTAMP,
             exit_code INTEGER,
+            viewer_port INTEGER,
             FOREIGN KEY (worker_id) REFERENCES workers (worker_id)
         )
     ''')
@@ -48,6 +49,12 @@ def init_db():
     # Migration for commit_hash
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN commit_hash TEXT')
+    except sqlite3.OperationalError:
+        pass # Already exists
+
+    # Migration for viewer_port
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN viewer_port INTEGER')
     except sqlite3.OperationalError:
         pass # Already exists
 

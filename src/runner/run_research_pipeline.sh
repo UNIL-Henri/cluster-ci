@@ -185,8 +185,13 @@ fi
 log_info "Analyse AST via dvc-viewer..."
 uv run dvc-viewer hash
 
-log_info "Lancement du serveur live dvc-viewer..."
-uv run dvc-viewer --port 8686 > "$BASE_DIR/dvc-viewer.log" 2>&1 &
+log_info "Recherche d'un port libre pour dvc-viewer..."
+VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+log_info "Port sélectionné : $VIEWER_PORT"
+echo "$VIEWER_PORT" > .cluster-ci-viewer-port
+
+log_info "Lancement du serveur live dvc-viewer sur le port $VIEWER_PORT..."
+uv run dvc-viewer --port "$VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
 DVC_VIEWER_PID=$!
 
 log_info "Lancement de : uv run dvc repro $DVC_ARGS"

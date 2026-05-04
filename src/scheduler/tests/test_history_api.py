@@ -28,17 +28,17 @@ def test_history_apis(client):
     conn = sqlite3.connect(test_db)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', ("job1", "owner/repo1", "main", "hash1", "completed", "2023-01-01 10:00:00"))
+        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', ("job1", "owner/repo1", "main", "hash1", "completed", "2023-01-01 10:00:00", 0))
     cursor.execute('''
-        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', ("job2", "owner/repo1", "feat", "hash2", "completed", "2023-01-01 11:00:00"))
+        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', ("job2", "owner/repo1", "feat", "hash2", "completed", "2023-01-01 11:00:00", 0))
     cursor.execute('''
-        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', ("job3", "owner/repo2", "main", "hash3", "completed", "2023-01-01 12:00:00"))
+        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', ("job3", "owner/repo2", "main", "hash3", "completed", "2023-01-01 12:00:00", 0))
     conn.commit()
     conn.close()
 
@@ -86,7 +86,7 @@ def test_history_apis(client):
     # Test job without commit_hash
     conn = sqlite3.connect(test_db)
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO jobs (job_id, repo, branch, status) VALUES (?, ?, ?, ?)', ("job_no_hash", "owner/repo1", "main", "completed"))
+    cursor.execute('INSERT INTO jobs (job_id, repo, branch, status, ram_required_gb) VALUES (?, ?, ?, ?, ?)', ("job_no_hash", "owner/repo1", "main", "completed", 0))
     conn.commit()
     conn.close()
 

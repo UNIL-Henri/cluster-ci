@@ -140,11 +140,19 @@ def update_job_status():
     status = data.get('status')
     exit_code = data.get('exit_code')
     commit_hash = data.get('commit_hash')
+    viewer_port = data.get('viewer_port')
 
     with get_db_conn() as conn:
         cursor = conn.cursor()
         if status == 'running':
-            cursor.execute('UPDATE jobs SET status = ?, started_at = CURRENT_TIMESTAMP, commit_hash = ? WHERE job_id = ?', (status, commit_hash, job_id))
+            cursor.execute('''
+                UPDATE jobs SET
+                    status = ?,
+                    started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                    commit_hash = COALESCE(?, commit_hash),
+                    viewer_port = COALESCE(?, viewer_port)
+                WHERE job_id = ?
+            ''', (status, commit_hash, viewer_port, job_id))
         elif status in ['completed', 'failed']:
             # Restore RAM to the worker
             cursor.execute('SELECT worker_id, ram_required_gb FROM jobs WHERE job_id = ?', (job_id,))
@@ -429,7 +437,7 @@ def view_project(owner, repo, path=''):
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT w.service_url
+            SELECT w.service_url, j.viewer_port
             FROM jobs j
             JOIN workers w ON j.worker_id = w.worker_id
             WHERE j.repo = ? AND j.status = 'running'
@@ -439,10 +447,12 @@ def view_project(owner, repo, path=''):
 
     if job and job['service_url']:
         worker_base_url = job['service_url']
+        # Use dynamic port if available, otherwise fallback to default
+        viewer_port = job.get('viewer_port') or DVC_VIEWER_PORT
         # Extract hostname/IP from service_url (e.g., http://worker1:6000 -> worker1)
         parsed = urlparse(worker_base_url)
         target_host = parsed.hostname
-        target_url = f"http://{target_host}:{DVC_VIEWER_PORT}/{path}"
+        target_url = f"http://{target_host}:{viewer_port}/{path}"
         return proxy_request(target_url)
 
     # --- Case 2: Historical (Local) ---
