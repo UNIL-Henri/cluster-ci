@@ -319,50 +319,7 @@ def dashboard():
     if 'user' not in session:
         return render_template('login.html')
 
-    token = session.get('token')
-    target_org = os.environ.get("TARGET_REPO", "UNIL-DESI")
-    
-    # Fetch user repos from GitHub API
-    try:
-        # Increase per_page to 100 to avoid missing repos due to pagination
-        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
-        repos = repos_resp.json()
-        if not isinstance(repos, list):
-            print(f"Unexpected response from GitHub: {repos}")
-            repos = []
-            
-        # Filter by organization (case-insensitive) and contributor access
-        target_org_lower = target_org.lower()
-        filtered_repos = [
-            r for r in repos 
-            if r.get('owner', {}).get('login', '').lower() == target_org_lower 
-            and r.get('permissions', {}).get('push', False)
-        ]
-        
-        # Check if DVC viewer is available (either running job or local cache exists)
-        for r in filtered_repos:
-            r['has_viewer'] = False
-            
-            # Check local cache first
-            repo_path = os.path.join(REPOS_DIR, r['owner']['login'], r['name'])
-            if os.path.exists(repo_path):
-                r['has_viewer'] = True
-            else:
-                # Check DB for running job
-                with get_db_conn() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute('''
-                        SELECT 1 FROM jobs WHERE repo = ? AND status = 'running' LIMIT 1
-                    ''', (r['full_name'],))
-                    if cursor.fetchone():
-                        r['has_viewer'] = True
-                        
-        repos = filtered_repos
-    except Exception as e:
-        print(f"Error fetching repos: {e}")
-        repos = []
-
-    return render_template('dashboard.html', user=session['user'], repos=repos, target_org=target_org)
+    return render_template('dashboard.html', user=session['user'])
 
 @app.route('/login')
 def login():
