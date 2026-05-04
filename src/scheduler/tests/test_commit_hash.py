@@ -5,6 +5,7 @@ import time
 import threading
 import requests
 import sqlite3
+import uuid
 
 # Add src/scheduler to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -30,7 +31,7 @@ class TestCommitHash(unittest.TestCase):
 
     def test_commit_hash_propagation(self):
         headnode_url = "http://localhost:5002"
-        job_id = "test-job-1"
+        job_id = str(uuid.uuid4())
         repo = "owner/repo"
         branch = "main"
         commit_hash = "abc123def456"

@@ -13,7 +13,7 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     fi
 
     INSTALL_DIR=${INSTALL_DIR:-"$HOME/cluster-ci"}
-    REPO_URL="https://github.com/UNIL-Henri/cluster-ci.git"
+    REPO_URL="https://github.com/UNIL-DESI/cluster-ci.git"
 
     # Charger l'existant si disponible
     if [ -f "$INSTALL_DIR/.env" ]; then
@@ -21,6 +21,8 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
         [ -z "$GITHUB_PAT" ] && GITHUB_PAT=$(grep "^GITHUB_PAT=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
         [ -z "$HEADNODE_URL" ] && HEADNODE_URL=$(grep "^HEADNODE_URL=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
         [ -z "$CLUSTER_TOKEN" ] && CLUSTER_TOKEN=$(grep "^CLUSTER_TOKEN=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        [ -z "$GITHUB_CLIENT_ID" ] && GITHUB_CLIENT_ID=$(grep "^GITHUB_CLIENT_ID=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        [ -z "$GITHUB_CLIENT_SECRET" ] && GITHUB_CLIENT_SECRET=$(grep "^GITHUB_CLIENT_SECRET=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
     fi
 
     if [ "$ROLE" == "headnode" ]; then
@@ -33,6 +35,17 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
         if [ -z "$TARGET_REPO" ]; then
             echo "🎯 Cible non détectée (owner/repo ou organisation)."
             read -p "Veuillez entrer la cible GitHub à surveiller : " TARGET_REPO
+        fi
+
+        if [ -z "$GITHUB_CLIENT_ID" ]; then
+            echo "🔑 GITHUB_CLIENT_ID non détecté (Optionnel mais recommandé pour le Dashboard)."
+            read -p "Veuillez entrer l'ID Client OAuth GitHub (laissez vide pour ignorer) : " GITHUB_CLIENT_ID
+            echo ""
+        fi
+        if [ -n "$GITHUB_CLIENT_ID" ] && [ -z "$GITHUB_CLIENT_SECRET" ]; then
+            echo "🔑 GITHUB_CLIENT_SECRET non détecté."
+            read -rs -p "Veuillez entrer le Secret Client OAuth GitHub : " GITHUB_CLIENT_SECRET
+            echo ""
         fi
 
         if [ -z "$GITHUB_PAT" ] || [ -z "$TARGET_REPO" ]; then
@@ -95,6 +108,8 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     update_env_var "GITHUB_PAT" "$GITHUB_PAT"
     update_env_var "HEADNODE_URL" "$HEADNODE_URL"
     update_env_var "CLUSTER_TOKEN" "$CLUSTER_TOKEN"
+    update_env_var "GITHUB_CLIENT_ID" "$GITHUB_CLIENT_ID"
+    update_env_var "GITHUB_CLIENT_SECRET" "$GITHUB_CLIENT_SECRET"
 
     # 3. Exécution du setup local
     echo "🚀 Lancement de l'installation système..."

@@ -245,6 +245,65 @@ def notify_cleanup():
 
     return jsonify({"status": "ok", "notified": notified, "errors": errors})
 
+# --- History & DVC Exploration APIs ---
+
+@app.route('/api/projects', methods=['GET'])
+def api_list_projects():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT repo FROM jobs')
+        projects = [row['repo'] for row in cursor.fetchall()]
+    return jsonify(projects)
+
+@app.route('/api/projects/<path:repo>/runs', methods=['GET'])
+def api_list_runs(repo):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT job_id, branch, status, commit_hash, created_at, started_at, finished_at, exit_code
+            FROM jobs
+            WHERE repo = ?
+            ORDER BY created_at DESC
+        ''', (repo,))
+        runs = [dict(row) for row in cursor.fetchall()]
+    return jsonify(runs)
+
+@app.route('/api/runs/<job_id>/files', methods=['GET'])
+def api_run_files(job_id):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT repo, commit_hash FROM jobs WHERE job_id = ?', (job_id,))
+        job = cursor.fetchone()
+
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    repo = job['repo']
+    commit_hash = job['commit_hash']
+
+    if not commit_hash:
+        return jsonify({"error": "Commit hash not found for this job. Historical exploration is unavailable."}), 400
+
+    repo_url = f"https://github.com/{repo}"
+
+    try:
+        env = os.environ.copy()
+        # If GITHUB_PAT is available, dvc list might be able to use it if configured,
+        # though dvc list usually uses git credentials.
+
+        cmd = ["dvc", "list", repo_url, "--rev", commit_hash, "--json"]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+        if result.returncode != 0:
+            return jsonify({
+                "error": "Failed to list DVC files",
+                "details": result.stderr
+            }), 500
+
+        return Response(result.stdout, mimetype='application/json')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # --- Portal & OAuth Routes ---
 
 @app.route('/')
@@ -253,17 +312,49 @@ def dashboard():
         return render_template('login.html')
 
     token = session.get('token')
+    target_org = os.environ.get("TARGET_REPO", "UNIL-DESI")
+    
     # Fetch user repos from GitHub API
     try:
-        repos_resp = oauth.github.get('user/repos', token=token)
+        # Increase per_page to 100 to avoid missing repos due to pagination
+        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
         repos = repos_resp.json()
         if not isinstance(repos, list):
+            print(f"Unexpected response from GitHub: {repos}")
             repos = []
+            
+        # Filter by organization (case-insensitive) and contributor access
+        target_org_lower = target_org.lower()
+        filtered_repos = [
+            r for r in repos 
+            if r.get('owner', {}).get('login', '').lower() == target_org_lower 
+            and r.get('permissions', {}).get('push', False)
+        ]
+        
+        # Check if DVC viewer is available (either running job or local cache exists)
+        for r in filtered_repos:
+            r['has_viewer'] = False
+            
+            # Check local cache first
+            repo_path = os.path.join(REPOS_DIR, r['owner']['login'], r['name'])
+            if os.path.exists(repo_path):
+                r['has_viewer'] = True
+            else:
+                # Check DB for running job
+                with get_db_conn() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT 1 FROM jobs WHERE repo = ? AND status = 'running' LIMIT 1
+                    ''', (r['full_name'],))
+                    if cursor.fetchone():
+                        r['has_viewer'] = True
+                        
+        repos = filtered_repos
     except Exception as e:
         print(f"Error fetching repos: {e}")
         repos = []
 
-    return render_template('dashboard.html', user=session['user'], repos=repos)
+    return render_template('dashboard.html', user=session['user'], repos=repos, target_org=target_org)
 
 @app.route('/login')
 def login():

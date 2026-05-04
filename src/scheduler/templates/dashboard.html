@@ -9,31 +9,33 @@
         <div class="container">
             <a class="navbar-brand" href="#">Cluster-CI</a>
             <div class="navbar-text text-light">
-                Connecté en tant que <strong>{{ user.login }}</strong>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm ms-3">Déconnexion</a>
+                Logged in as <strong>{{ user.login }}</strong>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm ms-3">Logout</a>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
-        <h2>Vos Projets</h2>
+        <h2>Your Projects ({{ target_org }})</h2>
         <div class="row">
             {% for repo in repos %}
             <div class="col-md-4 mb-3">
                 <div class="card h-100">
                     <div class="card-body">
                         <h5 class="card-title">{{ repo.full_name }}</h5>
-                        <p class="card-text text-muted">{{ repo.description or 'Aucune description' }}</p>
+                        <p class="card-text text-muted">{{ repo.description or 'No description' }}</p>
                     </div>
+                    {% if repo.has_viewer %}
                     <div class="card-footer bg-white border-top-0">
-                        <a href="{{ url_for('view_project', owner=repo.owner.login, repo=repo.name) }}" class="btn btn-primary w-100">Consulter les résultats (DVC Viewer)</a>
+                        <a href="{{ url_for('view_project', owner=repo.owner.login, repo=repo.name) }}" class="btn btn-primary w-100">View Results (DVC Viewer)</a>
                     </div>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
             {% if not repos %}
             <div class="col-12">
-                <div class="alert alert-info">Aucun projet trouvé sur GitHub.</div>
+                <div class="alert alert-info">No projects found on GitHub for organization {{ target_org }}.</div>
             </div>
             {% endif %}
         </div>
