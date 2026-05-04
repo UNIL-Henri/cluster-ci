@@ -7,7 +7,7 @@ Système d'intégration continue asynchrone pour pipeline de recherche, conçu c
 ### Côté Client (Projet de recherche)
 Pour intégrer un projet de recherche au cluster, exécutez la commande suivante à la racine de votre dépôt :
 ```bash
-curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash
 ```
 
 ### Déploiement du Cluster (Headnode & Workers)
@@ -17,13 +17,13 @@ L'installation se fait via un "One-Liner" curl qui configure automatiquement l'e
 #### 1. Installer le Headnode (Ordonnanceur)
 Le Headnode gère la file d'attente des jobs et les runners éphémères. Le script vous demandera votre **GitHub PAT** et la cible à surveiller.
 ```bash
-curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- headnode
+curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode
 ```
 
 #### 2. Installer un Worker (Exécuteur)
 Une fois le Headnode installé, il vous fournira une commande prête à l'emploi à exécuter sur vos Workers. Alternativement, vous pouvez lancer l'installation manuellement :
 ```bash
-curl -sSL https://raw.githubusercontent.com/UNIL-Henri/cluster-ci/main/install.sh | bash -s -- worker
+curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- worker
 ```
 Le script vous demandera l'**URL du Headnode** et le **Token du Cluster** généré lors de l'installation du Headnode.
 

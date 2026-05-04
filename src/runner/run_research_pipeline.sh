@@ -158,7 +158,7 @@ else
 fi
 
 log_info "Installation de dvc-viewer..."
-uv pip install git+https://github.com/UNIL-Henri/dvc-viewer.git
+uv pip install git+https://github.com/UNIL-DESI/dvc-viewer.git
 
 if [ ! -f ".cluster-ci" ]; then
     log_error "Fichier .cluster-ci introuvable à la racine du dépôt. Exécution avortée."

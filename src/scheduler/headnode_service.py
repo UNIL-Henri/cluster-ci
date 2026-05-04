@@ -252,7 +252,7 @@ def dashboard():
         return render_template('login.html')
 
     token = session.get('token')
-    target_org = os.environ.get("TARGET_REPO", "UNIL-Henri")
+    target_org = os.environ.get("TARGET_REPO", "UNIL-DESI")
     
     # Fetch user repos from GitHub API
     try:
