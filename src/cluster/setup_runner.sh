@@ -92,7 +92,7 @@ EOF
 
     echo "⚙️ Configuration du Scheduler Headnode..."
     # Installation des dépendances pour le scheduler
-    uv pip install flask psutil requests
+    uv pip install flask psutil requests authlib
 
     # Création du service systemd pour le scheduler API
     cat <<EOF | sudo tee /etc/systemd/system/cluster-scheduler.service
