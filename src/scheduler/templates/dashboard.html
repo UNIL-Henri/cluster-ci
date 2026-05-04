@@ -92,8 +92,9 @@
             try {
                 const resp = await fetch('/api/projects');
                 if (!resp.ok) {
-                    const error = await resp.json();
-                    throw new Error(error.error || 'Failed to load projects');
+                    const contentType = resp.headers.get('content-type');
+                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    throw new Error(error || 'Failed to load projects');
                 }
                 const projects = await resp.json();
 
@@ -127,8 +128,9 @@
             try {
                 const resp = await fetch(`/api/projects/${repo}/runs`);
                 if (!resp.ok) {
-                    const error = await resp.json();
-                    throw new Error(error.error || 'Failed to load runs');
+                    const contentType = resp.headers.get('content-type');
+                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    throw new Error(error || 'Failed to load runs');
                 }
                 const runs = await resp.json();
 
@@ -189,8 +191,9 @@
             try {
                 const resp = await fetch(`/api/runs/${jobId}/files`);
                 if (!resp.ok) {
-                    const error = await resp.json();
-                    throw new Error(error.error || 'Failed to load files');
+                    const contentType = resp.headers.get('content-type');
+                    const error = (contentType && contentType.includes('application/json')) ? (await resp.json()).error : 'Internal Server Error';
+                    throw new Error(error || 'Failed to load files');
                 }
                 const files = await resp.json();
 

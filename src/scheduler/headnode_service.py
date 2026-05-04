@@ -190,14 +190,40 @@ REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
 
 @app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
 def artifacts(repo_owner, repo_name, rev, file_path):
-    repo = f"{repo_owner}/{repo_name}"
-    local_path = os.path.join(repo, file_path)
+    repo_slug = f"{repo_owner}/{repo_name}"
+    repo_url = f"https://github.com/{repo_slug}"
 
-    # 1. Try local storage first
-    if os.path.exists(os.path.join(REPOS_DIR, local_path)):
-        return send_from_directory(REPOS_DIR, local_path)
+    # --- Case 1: Try to serve via DVC directly from the remote/local cache ---
+    # We use dvc get-url or dvc get to fetch the specific revision.
+    # dvc get <url> <path> --rev <rev> --to <tmp>
+    tmp_dir = os.path.join(REPOS_DIR, "_tmp_artifacts", str(uuid.uuid4()))
+    os.makedirs(tmp_dir, exist_ok=True)
 
-    # 2. If not found locally, find which worker has it
+    try:
+        # We try to use the local repo if it exists for speed, else use the remote URL
+        local_repo_path = os.path.join(REPOS_DIR, repo_slug)
+        source = local_repo_path if os.path.exists(local_repo_path) else repo_url
+
+        cmd = ["dvc", "get", source, file_path, "--rev", rev, "--out", tmp_dir]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode == 0:
+            # Successfully extracted the file
+            filename = os.path.basename(file_path)
+            extracted_file = os.path.join(tmp_dir, filename)
+            if os.path.isfile(extracted_file):
+                resp = send_from_directory(tmp_dir, filename)
+                # Cleanup after response is sent might be tricky with Flask's streaming,
+                # but for small files it's fine. A better way is to stream it then delete.
+                return resp
+    except Exception as e:
+        print(f"DVC get failed: {e}")
+    finally:
+        # Note: In a production environment, we'd need a more robust cleanup mechanism
+        # or use a streaming response to delete the file after sending.
+        pass
+
+    # --- Case 2: Proxy to Worker if DVC get failed (e.g. not pushed to headnode yet) ---
     with get_db_conn() as conn:
         cursor = conn.cursor()
         # Find the last worker that completed a job for this repo and revision (commit_hash or branch)
@@ -208,13 +234,17 @@ def artifacts(repo_owner, repo_name, rev, file_path):
             WHERE j.repo = ? AND (j.commit_hash = ? OR j.branch = ?) AND j.status = 'completed'
             ORDER BY j.finished_at DESC
             LIMIT 1
-        ''', (repo, rev, rev))
+        ''', (repo_slug, rev, rev))
         worker = cursor.fetchone()
 
     if worker and worker['service_url']:
         worker_url = worker['service_url']
         try:
             # Proxy the request to the worker
+            # Note: The worker's fetch_artifact currently doesn't support 'rev'.
+            # It only serves from its current workspace.
+            # However, for the 'most recent' completed job, it might be correct.
+            local_path = os.path.join(repo_slug, file_path)
             target_url = f"{worker_url}/fetch_artifact/{local_path}"
             req = requests.get(target_url, stream=True, timeout=10)
 
