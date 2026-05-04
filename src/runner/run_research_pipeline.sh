@@ -71,17 +71,26 @@ python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 
 function update_status_idle() {
     log_info "Mise à jour des métadonnées (statut idle)..."
-    [ -n "$DVC_VIEWER_PID" ] && kill "$DVC_VIEWER_PID" 2>/dev/null || true
+    [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
 }
 trap update_status_idle EXIT
 
-# 2. Gestion de l'état Git
+# 2. Purge préventive & Gestion de l'état Git
+log_info "[Etape 2/3] Purge préventive des processus dvc-viewer résiduels..."
+# On cherche les processus dvc-viewer dont le CWD correspond au répertoire de travail du projet
+for pid in $(pgrep -f "dvc-viewer" || true); do
+    if pwdx "$pid" 2>/dev/null | grep -q ": $BASE_DIR/$REPO_WORK_DIR$"; then
+        log_info "Nettoyage du processus dvc-viewer fantôme (PID: $pid)..."
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+done
+
 if [ ! -d "$REPO_BASENAME/.git" ]; then
-    log_info "[Etape 2/3] Premier fetch du dépôt. Clonage en cours..."
+    log_info "[Etape 2.1/3] Premier fetch du dépôt. Clonage en cours..."
     git clone "$REPO_URL" "$REPO_BASENAME"
 else
-    log_info "[Etape 2/3] Dépôt existant trouvé. Mise à jour..."
+    log_info "[Etape 2.1/3] Dépôt existant trouvé. Mise à jour..."
 fi
 
 cd "$REPO_BASENAME"

@@ -133,13 +133,13 @@ def execute_job(job):
                     sys.stderr.write(error_msg)
                     sys.stderr.flush()
 
-                    # Kill the process tree
+                    # Kill the process tree aggressively
                     for child in parent.children(recursive=True):
                         try:
-                            child.terminate()
+                            child.kill()
                         except psutil.NoSuchProcess:
                             pass
-                    parent.terminate()
+                    parent.kill()
                     break
             except psutil.NoSuchProcess:
                 break
