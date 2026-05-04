@@ -93,7 +93,7 @@
                 const resp = await fetch('/api/projects');
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } } catch(e) {}
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
                     throw new Error(error || 'Failed to load projects');
                 }
                 const projects = await resp.json();
@@ -129,7 +129,7 @@
                 const resp = await fetch(`/api/projects/${repo}/runs`);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } } catch(e) {}
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
                     throw new Error(error || 'Failed to load runs');
                 }
                 const runs = await resp.json();
@@ -192,7 +192,7 @@
                 const resp = await fetch(`/api/runs/${jobId}/files`);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
-                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } } catch(e) {}
+                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
                     throw new Error(error || 'Failed to load files');
                 }
                 const files = await resp.json();

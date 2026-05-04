@@ -193,56 +193,46 @@ def artifacts(repo_owner, repo_name, rev, file_path):
     repo_slug = f"{repo_owner}/{repo_name}"
     repo_url = f"https://github.com/{repo_slug}"
 
-    # --- Case 1: REAL DVC EXTRACTION (Historical Intregrity) ---
+    # --- Case 1: REAL DVC EXTRACTION (Historical Integrity) ---
     # We extract the file exactly as it was at the given revision
-    tmp_dir = os.path.join(REPOS_DIR, "_tmp_artifacts", str(uuid.uuid4()))
+    request_id = str(uuid.uuid4())
+    tmp_dir = os.path.join(REPOS_DIR, "_tmp_artifacts", request_id)
     os.makedirs(tmp_dir, exist_ok=True)
+
     try:
         local_repo_path = os.path.join(REPOS_DIR, repo_slug)
         source = local_repo_path if os.path.exists(local_repo_path) else repo_url
         cmd = ["dvc", "get", source, file_path, "--rev", rev, "--out", tmp_dir]
         result = subprocess.run(cmd, capture_output=True, text=True)
+
         if result.returncode == 0:
             filename = os.path.basename(file_path)
-            return send_from_directory(tmp_dir, filename)
+            full_path = os.path.join(tmp_dir, filename)
+
+            def generate():
+                try:
+                    with open(full_path, 'rb') as f:
+                        while True:
+                            chunk = f.read(4096)
+                            if not chunk:
+                                break
+                            yield chunk
+                finally:
+                    # Robust cleanup: delete the whole tmp directory for this request
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+            return Response(generate(), mimetype='application/octet-stream',
+                            headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+        # If DVC get failed, we DO NOT fallback to worker for historical revisions (rev looks like a hash)
+        # However, if rev is a branch name, Case 2 might still be valid for the 'latest' of that branch.
+        # But per requirements: "Supprime ce repli en cascade pour les requêtes historiques"
+        # We consider any request with a 'rev' as a historical request needing integrity.
+        return jsonify({"error": f"Failed to extract historical artifact: {result.stderr}"}), 404
+
     except Exception as e:
-        print(f"DVC get failed: {e}")
-
-    # --- Case 2: Proxy to Worker (Fallback) ---
-    with get_db_conn() as conn:
-        cursor = conn.cursor()
-        # Find the last worker that completed a job for this repo and revision (commit_hash or branch)
-        cursor.execute('''
-            SELECT w.service_url
-            FROM jobs j
-            JOIN workers w ON j.worker_id = w.worker_id
-            WHERE j.repo = ? AND (j.commit_hash = ? OR j.branch = ?) AND j.status = 'completed'
-            ORDER BY j.finished_at DESC
-            LIMIT 1
-        ''', (repo_slug, rev, rev))
-        worker = cursor.fetchone()
-
-    if worker and worker['service_url']:
-        worker_url = worker['service_url']
-        try:
-            # Proxy the request to the worker
-            # Note: The worker's fetch_artifact currently doesn't support 'rev'.
-            # It only serves from its current workspace.
-            # However, for the 'most recent' completed job, it might be correct.
-            local_path = os.path.join(repo_slug, file_path)
-            target_url = f"{worker_url}/fetch_artifact/{local_path}"
-            req = requests.get(target_url, stream=True, timeout=10)
-
-            # Return streamed response
-            return Response(
-                stream_with_context(req.iter_content(chunk_size=1024)),
-                content_type=req.headers.get('content-type'),
-                status=req.status_code
-            )
-        except Exception as e:
-            return jsonify({"error": f"Failed to proxy to worker: {str(e)}"}), 500
-
-    return jsonify({"error": "Artifact not found locally or on any known worker for this branch"}), 404
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({"error": f"Internal error during extraction: {str(e)}"}), 500
 
 @app.route('/notify_cleanup', methods=['POST'])
 def notify_cleanup():
