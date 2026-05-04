@@ -68,7 +68,8 @@
             view: 'root', // root, project, run
             repo: null,
             jobId: null,
-            branch: null
+            branch: null,
+            commitHash: null
         };
 
         function updateBreadcrumb() {
@@ -136,7 +137,7 @@
                     const col = document.createElement('div');
                     col.className = 'col';
                     col.innerHTML = `
-                        <div class="card h-100 explorer-item shadow-sm" onclick="navigateToRun('${run.job_id}', '${run.status}', '${repo}', '${run.branch}')">
+                        <div class="card h-100 explorer-item shadow-sm" onclick="navigateToRun('${run.job_id}', '${run.status}', '${repo}', '${run.branch}', '${run.commit_hash}')">
                             <i class="bi bi-folder-fill explorer-icon folder-icon"></i>
                             <h6 class="card-title mb-1">${run.job_id.substring(0, 8)}...</h6>
                             <div class="${statusClass} mb-2">
@@ -156,8 +157,8 @@
             loadProjects();
         }
 
-        async function loadRunDetails(jobId, status, repo, branch) {
-            currentState = { view: 'run', repo: repo, jobId: jobId, branch: branch };
+        async function loadRunDetails(jobId, status, repo, branch, commitHash) {
+            currentState = { view: 'run', repo: repo, jobId: jobId, branch: branch, commitHash: commitHash };
             updateBreadcrumb();
             container.innerHTML = '<div class="col-12 text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
 
@@ -195,20 +196,20 @@
                 files.forEach(item => {
                     const col = document.createElement('div');
                     col.className = 'col';
-                    // In dvc list --json, directories typically don't have 'hash' or 'size'
-                    // and might have a trailing slash in 'path' or not.
-                    const isDir = !item.hash && !item.size;
+                    // Robust directory detection: check for type if present, or absence of hash/size, or trailing slash
+                    const isDir = item.isout && (!item.hash && !item.size || item.path.endsWith('/'));
                     const icon = isDir ? 'bi-folder-fill folder-icon' : 'bi-file-earmark-text-fill file-icon';
 
-                    // Construct download link
+                    // Construct download link using commit hash if available for consistency
                     const [owner, name] = repo.split('/');
-                    const downloadUrl = `/artifacts/${owner}/${name}/${currentState.branch || 'main'}/${item.path}`;
+                    const rev = currentState.commitHash || currentState.branch || 'main';
+                    const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(item.path)}`;
 
                     col.innerHTML = `
                         <div class="card h-100 explorer-item shadow-sm" onclick="${isDir ? '' : `window.open('${downloadUrl}', '_blank')`}">
                             <i class="bi ${icon} explorer-icon"></i>
                             <h6 class="card-title text-truncate" title="${item.path}">${item.path}</h6>
-                            <small class="text-muted">${item.size ? (item.size / 1024).toFixed(1) + ' KB' : (isDir ? 'Directory' : '')}</small>
+                            <small class="text-muted">${item.size ? (item.size / 1024).toFixed(1) + ' KB' : (isDir ? 'Directory' : 'File')}</small>
                         </div>
                     `;
                     container.appendChild(col);
@@ -222,8 +223,8 @@
             loadRuns(repo);
         }
 
-        function navigateToRun(jobId, status, repo, branch) {
-            loadRunDetails(jobId, status, repo, branch);
+        function navigateToRun(jobId, status, repo, branch, commitHash) {
+            loadRunDetails(jobId, status, repo, branch, commitHash);
         }
 
         // Initialize

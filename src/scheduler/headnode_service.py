@@ -188,8 +188,8 @@ def check_space():
 
 REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
 
-@app.route('/artifacts/<repo_owner>/<repo_name>/<branch>/<path:file_path>', methods=['GET'])
-def artifacts(repo_owner, repo_name, branch, file_path):
+@app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
+def artifacts(repo_owner, repo_name, rev, file_path):
     repo = f"{repo_owner}/{repo_name}"
     local_path = os.path.join(repo, file_path)
 
@@ -200,15 +200,15 @@ def artifacts(repo_owner, repo_name, branch, file_path):
     # 2. If not found locally, find which worker has it
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        # Find the last worker that completed a job for this repo and branch
+        # Find the last worker that completed a job for this repo and revision (commit_hash or branch)
         cursor.execute('''
             SELECT w.service_url
             FROM jobs j
             JOIN workers w ON j.worker_id = w.worker_id
-            WHERE j.repo = ? AND j.branch = ? AND j.status = 'completed'
+            WHERE j.repo = ? AND (j.commit_hash = ? OR j.branch = ?) AND j.status = 'completed'
             ORDER BY j.finished_at DESC
             LIMIT 1
-        ''', (repo, branch))
+        ''', (repo, rev, rev))
         worker = cursor.fetchone()
 
     if worker and worker['service_url']:
@@ -257,11 +257,35 @@ def notify_cleanup():
 
 @app.route('/api/projects', methods=['GET'])
 def api_list_projects():
-    with get_db_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT repo FROM jobs')
-        projects = [row['repo'] for row in cursor.fetchall()]
-    return jsonify(projects)
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    token = session.get('token')
+    target_org = os.environ.get("TARGET_REPO", "UNIL-DESI").lower()
+
+    try:
+        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
+        repos = repos_resp.json()
+        if not isinstance(repos, list):
+            return jsonify([]), 200
+
+        allowed_repos = {
+            r['full_name'] for r in repos
+            if r.get('owner', {}).get('login', '').lower() == target_org
+            and r.get('permissions', {}).get('push', False)
+        }
+
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT DISTINCT repo FROM jobs')
+            projects_in_db = [row['repo'] for row in cursor.fetchall()]
+
+        # Only return projects that are in the database AND the user has access to
+        projects = [p for p in projects_in_db if p in allowed_repos]
+        return jsonify(projects)
+    except Exception as e:
+        print(f"Error fetching repos in API: {e}")
+        return jsonify([]), 200
 
 @app.route('/api/projects/<path:repo>/runs', methods=['GET'])
 def api_list_runs(repo):
