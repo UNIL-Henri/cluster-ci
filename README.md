@@ -96,7 +96,8 @@ cluster-ci/
 - [x] [Gestion de la Concurrence par Dépôt](docs/tasks/concurrency_management.md)
 
 **Phase 2 (Fiabilité & UX — En cours)**
-- [ ] Refonte des tests unitaires & E2E (Pytest)
-- [ ] Configuration de build standard (`pyproject.toml`)
+- [x] Déploiement Automatisé (`update_cluster.sh`) avec tests E2E
+- [x] Configuration de build standard (`pyproject.toml`)
+- [x] Support OAuth GitHub pour le Dashboard
 - [ ] Log Streaming temps réel via le Headnode
 - [ ] Monitoring complet et Healthcheck
