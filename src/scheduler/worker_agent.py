@@ -95,6 +95,7 @@ def execute_job(job):
     repo = job['repo']
     branch = job['branch']
     ram_limit_gb = job['ram_required_gb']
+    p2p_url = job.get('p2p_url')
     ram_limit_bytes = ram_limit_gb * (1024**3)
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
@@ -110,6 +111,9 @@ def execute_job(job):
 
     env = os.environ.copy()
     env["CLUSTER_CI_MODE"] = "executor"
+    if p2p_url:
+        logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
+        env["DVC_REMOTE_P2P_URL"] = p2p_url
 
     try:
         process = subprocess.Popen(cmd, env=env)

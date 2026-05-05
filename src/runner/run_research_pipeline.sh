@@ -194,6 +194,20 @@ log_info "Lancement du serveur live dvc-viewer sur le port $VIEWER_PORT..."
 uv run dvc-viewer --port "$VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
 DVC_VIEWER_PID=$!
 
+if [ -n "$DVC_REMOTE_P2P_URL" ]; then
+    log_info "Data Plane: Configuration d'un remote P2P éphémère vers $DVC_REMOTE_P2P_URL..."
+    # On ajoute un remote HTTP temporaire
+    uv run dvc remote add peer-source "$DVC_REMOTE_P2P_URL" --local
+    uv run dvc remote modify peer-source auth custom --local
+    uv run dvc remote modify peer-source custom_auth_header Authorization --local
+    if [ -n "$CLUSTER_TOKEN" ]; then
+        uv run dvc remote modify peer-source password "Bearer $CLUSTER_TOKEN" --local
+    fi
+
+    log_info "Récupération des données depuis le pair (P2P pull)..."
+    uv run dvc pull -r peer-source || log_info "Certains fichiers n'ont pas pu être récupérés via P2P. Continuation..."
+fi
+
 log_info "Lancement de : uv run dvc repro $DVC_ARGS"
 uv run dvc repro $DVC_ARGS
 
