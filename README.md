@@ -84,6 +84,7 @@ cluster-ci/
 |----------|-------------|
 | `src/scheduler/submit_job.py` | Script client (CLI) pour soumettre manuellement un job au Headnode |
 | `src/scheduler/runner_manager.py` | Gère le cycle de vie des runners GitHub Actions éphémères (slot1, slot2) |
+| `update_cluster.sh` | Met à jour le Headnode et les Workers via SSH, utilise un fichier `.env` pour stocker les identifiants |
 
 ## Roadmap
 
