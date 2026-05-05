@@ -145,7 +145,7 @@ if [ ! -f ".cluster-ci" ]; then
 fi
 
 # Extraction de la limite de RAM depuis .cluster-ci (--ram 16)
-RAM_LIMIT=$(grep -oE '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n 1)
+RAM_LIMIT=$(grep -oE -e '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n 1)
 [ -z "$RAM_LIMIT" ] && RAM_LIMIT="2"
 log_info "Limite de RAM détectée : ${RAM_LIMIT}GB"
 

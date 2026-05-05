@@ -39,11 +39,13 @@ fi
 if ! command -v docker &> /dev/null; then
     echo "📦 Installation de Docker..."
     curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
     echo "⚠️ Docker a été installé. Vous devrez peut-être vous reconnecter pour que les changements de groupe prennent effet."
 else
     echo "✅ Docker est déjà installé."
 fi
+
+# Always ensure user is in docker group
+sudo usermod -aG docker $USER
 
 # Pré-pull de l'image de base pour éviter les timeouts
 if [ -n "$DOCKER_BASE_IMAGE" ]; then
