@@ -156,18 +156,18 @@ if [ -f "$BASE_DIR/.env.secrets" ]; then
     ENV_FILE_FLAG="--env-file $BASE_DIR/.env.secrets"
 fi
 
-# On crée un volume pour le cache pip de l'utilisateur afin de ne pas retélécharger dvc à chaque fois
-PIP_CACHE_VOLUME="cluster-ci-pip-cache"
-if ! docker volume inspect "$PIP_CACHE_VOLUME" >/dev/null 2>&1; then
-    docker volume create "$PIP_CACHE_VOLUME" >/dev/null
+# On crée un volume pour le home de l'utilisateur afin de ne pas retélécharger dvc à chaque fois et conserver les caches uv/pip
+HOME_CACHE_VOLUME="cluster-ci-home-cache"
+if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
+    docker volume create "$HOME_CACHE_VOLUME" >/dev/null
 fi
 # Ensure the volume is owned by the current user
-docker run --rm -v "$PIP_CACHE_VOLUME:/home/user/.local" "$DOCKER_IMAGE" chown -R "$(id -u):$(id -g)" /home/user/.local
+docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" chown -R "$(id -u):$(id -g)" /home/user
 
 function docker_exec() {
     docker run --rm \
         -v "$(pwd):/workspace" \
-        -v "$PIP_CACHE_VOLUME:/home/user/.local" \
+        -v "$HOME_CACHE_VOLUME:/home/user" \
         -w /workspace \
         --ipc=host \
         --user "$(id -u):$(id -g)" \
