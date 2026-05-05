@@ -49,22 +49,22 @@ def test_history_apis(client):
 
 def run_history_test_logic(client):
     # 1. Inject some data
-    conn = sqlite3.connect(test_db)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', ("job1", "owner/repo1", "main", "hash1", "completed", "2023-01-01 10:00:00", 0))
-    cursor.execute('''
-        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', ("job2", "owner/repo1", "feat", "hash2", "completed", "2023-01-01 11:00:00", 0))
-    cursor.execute('''
-        INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', ("job3", "owner/repo2", "main", "hash3", "completed", "2023-01-01 12:00:00", 0))
-    conn.commit()
-    conn.close()
+    from persistence import get_db_conn
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', ("job1", "owner/repo1", "main", "hash1", "completed", "2023-01-01 10:00:00", 0))
+        cursor.execute('''
+            INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', ("job2", "owner/repo1", "feat", "hash2", "completed", "2023-01-01 11:00:00", 0))
+        cursor.execute('''
+            INSERT INTO jobs (job_id, repo, branch, commit_hash, status, created_at, ram_required_gb)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', ("job3", "owner/repo2", "main", "hash3", "completed", "2023-01-01 12:00:00", 0))
+        conn.commit()
 
     # 2. Test /api/projects
     resp = client.get('/api/projects')
@@ -108,11 +108,10 @@ def run_history_test_logic(client):
     assert resp.status_code == 404
 
     # Test job without commit_hash
-    conn = sqlite3.connect(test_db)
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO jobs (job_id, repo, branch, status, ram_required_gb) VALUES (?, ?, ?, ?, ?)', ("job_no_hash", "owner/repo1", "main", "completed", 0))
-    conn.commit()
-    conn.close()
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO jobs (job_id, repo, branch, status, ram_required_gb) VALUES (?, ?, ?, ?, ?)', ("job_no_hash", "owner/repo1", "main", "completed", 0))
+        conn.commit()
 
     resp = client.get('/api/runs/job_no_hash/files')
     assert resp.status_code == 400

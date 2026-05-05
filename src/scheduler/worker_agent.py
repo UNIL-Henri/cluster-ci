@@ -119,10 +119,9 @@ def execute_job(job):
         process = subprocess.Popen(cmd, env=env)
         with job_lock:
             current_process = process
-        oom_triggered = False
         port_reported = False
 
-        # Watchdog loop
+        # Status monitoring loop (no more manual watchdog as it is handled by Docker)
         while process.poll() is None:
             # Try to report dynamic viewer port if not already done
             if not port_reported:
@@ -136,35 +135,6 @@ def execute_job(job):
                         port_reported = True
                     except Exception as e:
                         logger.error(f"Failed to read/report viewer port: {e}")
-
-            try:
-                parent = psutil.Process(process.pid)
-                # RSS of parent
-                total_rss = parent.memory_info().rss
-                # RSS of all children recursively
-                for child in parent.children(recursive=True):
-                    try:
-                        total_rss += child.memory_info().rss
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-
-                if total_rss > ram_limit_bytes:
-                    oom_triggered = True
-                    total_rss_gb = total_rss / (1024**3)
-                    error_msg = f"❌ [OOM ARTIFICIEL CLUSTER] Exécution interrompue ! Vous aviez réservé {ram_limit_gb} Go de RAM dans '.cluster-ci', or votre pipeline vient d'atteindre {total_rss_gb:.2f} Go. Veuillez augmenter votre réservation.\n"
-                    sys.stderr.write(error_msg)
-                    sys.stderr.flush()
-
-                    # Kill the process tree aggressively
-                    for child in parent.children(recursive=True):
-                        try:
-                            child.kill()
-                        except psutil.NoSuchProcess:
-                            pass
-                    parent.kill()
-                    break
-            except psutil.NoSuchProcess:
-                break
 
             time.sleep(2)
 
@@ -180,7 +150,8 @@ def execute_job(job):
             except Exception as e:
                 logger.error(f"Failed to read commit hash file: {e}")
 
-        if oom_triggered:
+        if exit_code == 137:
+            # Docker returns 137 when OOM-killed
             update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)
         elif exit_code == 0:
             update_job_status(job_id, 'completed', exit_code, commit_hash=commit_hash)

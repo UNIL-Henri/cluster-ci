@@ -23,6 +23,7 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
         [ -z "$CLUSTER_TOKEN" ] && CLUSTER_TOKEN=$(grep "^CLUSTER_TOKEN=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
         [ -z "$GITHUB_CLIENT_ID" ] && GITHUB_CLIENT_ID=$(grep "^GITHUB_CLIENT_ID=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
         [ -z "$GITHUB_CLIENT_SECRET" ] && GITHUB_CLIENT_SECRET=$(grep "^GITHUB_CLIENT_SECRET=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        [ -z "$DOCKER_BASE_IMAGE" ] && DOCKER_BASE_IMAGE=$(grep "^DOCKER_BASE_IMAGE=" "$INSTALL_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
     fi
 
     if [ "$ROLE" == "headnode" ]; then
@@ -110,6 +111,10 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     update_env_var "CLUSTER_TOKEN" "$CLUSTER_TOKEN"
     update_env_var "GITHUB_CLIENT_ID" "$GITHUB_CLIENT_ID"
     update_env_var "GITHUB_CLIENT_SECRET" "$GITHUB_CLIENT_SECRET"
+
+    # Default Docker image for NVIDIA ARM (Jetson/Grace)
+    [ -z "$DOCKER_BASE_IMAGE" ] && DOCKER_BASE_IMAGE="nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3"
+    update_env_var "DOCKER_BASE_IMAGE" "$DOCKER_BASE_IMAGE"
 
     # 3. Exécution du setup local
     echo "🚀 Lancement de l'installation système..."

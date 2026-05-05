@@ -7,6 +7,7 @@ import os
 import shutil
 import requests
 import subprocess
+import sys
 import time
 import threading
 import socket
@@ -498,7 +499,7 @@ def cleanup_inactive_viewers():
 @app.route('/view/<owner>/<repo>/<path:path>')
 def view_project(owner, repo, path=''):
     if 'user' not in session:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('dashboard'), code=302)
 
     repo_full_name = f"{owner}/{repo}"
 

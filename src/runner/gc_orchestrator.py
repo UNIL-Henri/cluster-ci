@@ -192,8 +192,17 @@ def get_free_space():
 
 def run_gc():
     repo_dir = get_repositories_dir()
+
+    # Docker cleanup
+    print("🐳 Cleaning up Docker resources...")
+    try:
+        # Purge stopped containers, unused networks, and dangling images
+        subprocess.run(["docker", "system", "prune", "-f"], capture_output=True)
+    except Exception as e:
+        print(f"  Error during Docker prune: {e}")
+
     if not repo_dir.exists():
-        print("Repositories directory does not exist. No GC needed.")
+        print("Repositories directory does not exist. No further GC needed.")
         return
 
     free_space = get_free_space()

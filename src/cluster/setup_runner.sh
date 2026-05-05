@@ -30,6 +30,28 @@ fi
 
 echo "🎯 Préparation du Cluster pour la cible : $TARGET"
 
+# 2. Chargement de l'environnement (Needed for DOCKER_BASE_IMAGE)
+if [ -f ".env" ]; then
+    source .env
+fi
+
+# 0. Vérification / Installation de Docker
+if ! command -v docker &> /dev/null; then
+    echo "📦 Installation de Docker..."
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker $USER
+    echo "⚠️ Docker a été installé. Vous devrez peut-être vous reconnecter pour que les changements de groupe prennent effet."
+else
+    echo "✅ Docker est déjà installé."
+fi
+
+# Pré-pull de l'image de base pour éviter les timeouts
+if [ -n "$DOCKER_BASE_IMAGE" ]; then
+    echo "🐳 Pré-chargement de l'image Docker : $DOCKER_BASE_IMAGE..."
+    # On utilise sudo ici pour le cas où l'utilisateur vient d'être ajouté au groupe mais n'a pas encore redémarré sa session
+    sudo docker pull "$DOCKER_BASE_IMAGE" || echo "⚠️ Échec du pull de l'image $DOCKER_BASE_IMAGE, elle sera téléchargée au premier job."
+fi
+
 # 1. Vérification / Installation de uv
 if ! command -v uv &> /dev/null; then
     echo "📦 Installation de uv..."
@@ -45,11 +67,6 @@ if ! command -v dvc &> /dev/null; then
     uv tool install dvc
 else
     echo "✅ dvc est déjà installé."
-fi
-
-# 2. Chargement de l'environnement
-if [ -f ".env" ]; then
-    source .env
 fi
 
 # 2.5 Vérification des pré-requis par rôle

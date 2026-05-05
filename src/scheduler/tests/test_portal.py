@@ -33,6 +33,9 @@ class TestPortalAndProxy(unittest.TestCase):
     def setUp(self):
         with local_viewers_lock:
             local_viewers.clear()
+        # Clear session for each test to ensure isolation
+        with self.client.session_transaction() as sess:
+            sess.clear()
 
     def test_dashboard_renders_login_template(self):
         response = self.client.get('/')
@@ -104,6 +107,8 @@ class TestPortalAndProxy(unittest.TestCase):
             }
 
         from src.scheduler.headnode_service import cleanup_inactive_viewers
+        import src.scheduler.headnode_service
+        src.scheduler.headnode_service.DVC_VIEWER_TIMEOUT_MIN = 0
 
         with patch('time.sleep', side_effect=[None, Exception("Stop loop")]):
             try:
