@@ -369,7 +369,7 @@ def api_list_runs(repo):
         if hashes:
             try:
                 res = subprocess.run(
-                    ["git", "show", "-s", "--format=%H|%s"] + hashes,
+                    ["git", "--no-pager", "show", "-s", "--format=%H|%s"] + hashes,
                     cwd=local_repo_path,
                     capture_output=True,
                     text=True

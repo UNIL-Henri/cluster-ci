@@ -13,26 +13,25 @@ def schedule_jobs():
     """
     while True:
         try:
-            with get_db_conn() as conn:
-                cursor = conn.cursor()
+                with get_db_conn() as conn:
+                    cursor = conn.cursor()
 
-                # 1. Fetch pending jobs ordered by creation time
-                cursor.execute('SELECT * FROM jobs WHERE status = "pending" ORDER BY created_at ASC')
-                pending_jobs = [dict(row) for row in cursor.fetchall()]
+                    # 1. Fetch pending jobs ordered by creation time
+                    cursor.execute('SELECT * FROM jobs WHERE status = "pending" ORDER BY created_at ASC')
+                    pending_jobs = [dict(row) for row in cursor.fetchall()]
 
-                if not pending_jobs:
-                    time.sleep(5)
-                    continue
+                    if not pending_jobs:
+                        time.sleep(5)
+                        continue
 
-                # 2. Fetch online workers
-                # We consider a worker online if it has been seen in the last 60 seconds
-                cursor.execute('''
-                    SELECT * FROM workers
-                    WHERE status = "online"
-                    AND last_seen >= datetime('now', '-60 seconds')
-                    ORDER BY available_ram_gb DESC
-                ''')
-                workers = [dict(row) for row in cursor.fetchall()]
+                    # 2. Fetch online workers
+                    cursor.execute('''
+                        SELECT * FROM workers
+                        WHERE status = "online"
+                        AND last_seen >= datetime('now', '-60 seconds')
+                        ORDER BY available_ram_gb DESC
+                    ''')
+                    workers = [dict(row) for row in cursor.fetchall()]
 
                 if not workers:
                     logger.warning("No online workers available.")
@@ -40,7 +39,6 @@ def schedule_jobs():
                     continue
 
                 for job in pending_jobs:
-                    # pending_jobs are already converted to dict above
                     job_id = job['job_id']
                     ram_required = job['ram_required_gb']
                     repo = job['repo']
@@ -76,9 +74,6 @@ def schedule_jobs():
                     # Injection du Data Plane (P2P URL)
                     p2p_url = None
                     if winner_score < len(required_hashes) and len(worker_scores) > 1:
-                        # Find a peer that has some of the missing data
-                        # In this simple implementation, we pick the one with most hashes overall (can be the same as winner if winner has some but not all)
-                        # Or better: the one with most hashes that isn't the winner.
                         peers = [ws for ws in worker_scores if ws[0]['worker_id'] != assigned_worker['worker_id']]
                         if peers:
                             best_peer, peer_score = peers[0]
@@ -88,24 +83,24 @@ def schedule_jobs():
                     logger.info(f"Assigning job {job_id} to worker {assigned_worker['worker_id']} (Score: {winner_score}, P2P: {p2p_url})")
 
                     # Update Job status
-                    cursor.execute('''
-                        UPDATE jobs
-                        SET status = 'assigned', worker_id = ?, p2p_url = ?
-                        WHERE job_id = ?
-                    ''', (assigned_worker['worker_id'], p2p_url, job_id))
+                    with get_db_conn() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE jobs
+                            SET status = 'assigned', worker_id = ?, p2p_url = ?
+                            WHERE job_id = ? AND status = 'pending'
+                        ''', (assigned_worker['worker_id'], p2p_url, job_id))
 
-                    # Optimistically decrease available RAM on worker for subsequent jobs in this loop
-                    new_available_ram = assigned_worker['available_ram_gb'] - ram_required
-                    cursor.execute('''
-                        UPDATE workers
-                        SET available_ram_gb = ?
-                        WHERE worker_id = ?
-                    ''', (new_available_ram, assigned_worker['worker_id']))
-
-                    # Update local workers list for the next job in the loop
-                    assigned_worker['available_ram_gb'] = new_available_ram
-
-                    conn.commit()
+                        if cursor.rowcount > 0:
+                            # Optimistically decrease available RAM on worker for subsequent jobs in this loop
+                            new_available_ram = assigned_worker['available_ram_gb'] - ram_required
+                            cursor.execute('''
+                                UPDATE workers
+                                SET available_ram_gb = ?
+                                WHERE worker_id = ?
+                            ''', (new_available_ram, assigned_worker['worker_id']))
+                            conn.commit()
+                            assigned_worker['available_ram_gb'] = new_available_ram
 
         except Exception as e:
             logger.error(f"Error in scheduler loop: {e}")

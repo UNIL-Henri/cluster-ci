@@ -78,7 +78,9 @@ def init_db():
 
 @contextmanager
 def get_db_conn():
-    conn = sqlite3.connect(get_db_path())
+    conn = sqlite3.connect(get_db_path(), timeout=10.0)
+    conn.execute('pragma journal_mode=wal')
+    conn.execute('pragma synchronous=normal')
     conn.row_factory = sqlite3.Row
     try:
         yield conn
