@@ -203,21 +203,31 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
 
     uv run dvc remote add peer_remote "$PEER_REMOTE_URL" --local
 
-    # Mesure de la taille du cache avant le pull (en octets)
-    CACHE_BEFORE=$(du -sb .dvc/cache 2>/dev/null | cut -f1 || echo 0)
+    log_info "Récupération des données depuis le pair (P2P pull strict avec retries)..."
 
-    log_info "Récupération des données depuis le pair (P2P pull strict)..."
-    if ! uv run dvc pull -r peer_remote; then
-        log_error "Échec critique du transfert P2P depuis $PEER_REMOTE_URL. Abandon pour éviter un recalcul coûteux."
+    MAX_RETRIES=3
+    RETRY_DELAY=5
+    RETRY_COUNT=0
+    PULL_SUCCESS=false
+
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if uv run dvc pull -r peer_remote; then
+            PULL_SUCCESS=true
+            break
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            log_info "Échec du pull P2P (tentative $RETRY_COUNT/$MAX_RETRIES). Nouvel essai dans ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+        fi
+    done
+
+    if [ "$PULL_SUCCESS" = false ]; then
+        log_error "Échec critique du transfert P2P depuis $PEER_REMOTE_URL après $MAX_RETRIES tentatives. Abandon."
         exit 1
     fi
 
-    # Mesure après et calcul de la différence
-    CACHE_AFTER=$(du -sb .dvc/cache 2>/dev/null | cut -f1 || echo 0)
-    VOL_BYTES=$((CACHE_AFTER - CACHE_BEFORE))
-    VOL_MB=$(python3 -c "print(round($VOL_BYTES / (1024*1024), 2))")
-
-    log_success "Transfert P2P réussi : $VOL_MB Mo rapatriés depuis le pair."
+    log_success "Transfert P2P réussi."
 fi
 
 log_info "Lancement de : uv run dvc repro $DVC_ARGS"
