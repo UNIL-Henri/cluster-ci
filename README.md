@@ -98,7 +98,7 @@ cluster-ci/
 **Phase 2 (Fiabilité & UX — En cours)**
 - [x] Déploiement Automatisé (`update_cluster.sh`) avec tests E2E
 - [x] Configuration de build standard (`pyproject.toml`)
-- [x] Support OAuth GitHub pour le Dashboard
+- [x] Support OAuth GitHub pour le Dashboard (avec support reverse proxy et IPv4 fallback)
 - [x] Amélioration UX Dashboard (formatage dates, corrections chemins DVC sous systemd)
 - [x] Migration vers exécution Worker Docker (Support NVIDIA/ARM)
 - [ ] Log Streaming temps réel via le Headnode

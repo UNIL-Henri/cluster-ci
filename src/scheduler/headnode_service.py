@@ -16,6 +16,14 @@ import json
 import tempfile
 from urllib.parse import urlparse
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+# Force IPv4 to prevent infinite hangs on broken IPv6 networks (common on headless servers)
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
 
 load_dotenv()
 
@@ -35,6 +43,7 @@ DVC_CMD = get_executable("dvc")
 UV_CMD = get_executable("uv")
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
 oauth = OAuth(app)
@@ -47,7 +56,7 @@ oauth.register(
     authorize_url='https://github.com/login/oauth/authorize',
     authorize_params=None,
     api_base_url='https://api.github.com/',
-    client_kwargs={'scope': 'repo,user:email'},
+    client_kwargs={'scope': 'repo,user:email', 'timeout': 10.0},
 )
 
 FREE_SPACE_THRESHOLD_GB = 100
