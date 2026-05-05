@@ -1,5 +1,9 @@
 stages:
-  fake_test:
-    cmd: echo 'Pipeline DVC factice exécutée avec succès !'
+  research:
+    cmd: python3 simulate_research.py
     deps:
-    - .cluster-ci
+      - simulate_research.py
+    outs:
+      - artifacts/data.csv
+      - artifacts/metrics.json
+      - artifacts/plot.png
