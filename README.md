@@ -99,5 +99,6 @@ cluster-ci/
 - [x] Déploiement Automatisé (`update_cluster.sh`) avec tests E2E
 - [x] Configuration de build standard (`pyproject.toml`)
 - [x] Support OAuth GitHub pour le Dashboard
+- [x] Amélioration UX Dashboard (formatage dates, corrections chemins DVC sous systemd)
 - [ ] Log Streaming temps réel via le Headnode
 - [ ] Monitoring complet et Healthcheck

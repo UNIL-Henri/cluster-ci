@@ -241,7 +241,8 @@
             repo: null,
             jobId: null,
             branch: null,
-            commitHash: null
+            commitHash: null,
+            createdAt: null
         };
 
         function updateBreadcrumb() {
@@ -265,9 +266,16 @@
             if (currentState.jobId) {
                 const runLi = document.createElement('li');
                 runLi.className = 'breadcrumb-item active';
-                runLi.textContent = currentState.jobId.substring(0, 8) + '...';
+                if (currentState.createdAt) {
+                    const runDate = new Date(currentState.createdAt);
+                    runLi.textContent = runDate.toLocaleString('fr-FR', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    }).replace(',', '');
+                } else {
+                    runLi.textContent = currentState.jobId.substring(0, 8) + '...';
+                }
                 breadcrumb.appendChild(runLi);
-
             }
         }
 
@@ -344,14 +352,18 @@
 
                     const card = document.createElement('div');
                     card.className = 'card h-100 explorer-item shadow-sm';
-                    card.onclick = () => navigateToRun(run.job_id, run.status, repo, run.branch, run.commit_hash);
+                    card.onclick = () => navigateToRun(run.job_id, run.status, repo, run.branch, run.commit_hash, run.created_at);
 
                     const icon = document.createElement('i');
                     icon.className = 'bi bi-folder-fill explorer-icon folder-icon';
 
                     const title = document.createElement('h6');
                     title.className = 'card-title mb-1';
-                    title.textContent = run.job_id.substring(0, 8) + '...';
+                    const runDate = new Date(run.created_at);
+                    title.textContent = runDate.toLocaleString('fr-FR', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    }).replace(',', '');
 
                     const statusDiv = document.createElement('div');
                     const statusClass = run.status === 'completed' ? 'text-success' : (run.status === 'running' ? 'text-primary' : 'text-danger');
@@ -380,8 +392,8 @@
             loadProjects();
         }
 
-        async function loadRunDetails(jobId, status, repo, branch, commitHash) {
-            currentState = { view: 'run', repo: repo, jobId: jobId, branch: branch, commitHash: commitHash };
+        async function loadRunDetails(jobId, status, repo, branch, commitHash, createdAt) {
+            currentState = { view: 'run', repo: repo, jobId: jobId, branch: branch, commitHash: commitHash, createdAt: createdAt };
             updateBreadcrumb();
             container.innerHTML = '<div class="col-12 text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
 
@@ -468,8 +480,8 @@
             loadRuns(repo);
         }
 
-        function navigateToRun(jobId, status, repo, branch, commitHash) {
-            loadRunDetails(jobId, status, repo, branch, commitHash);
+        function navigateToRun(jobId, status, repo, branch, commitHash, createdAt) {
+            loadRunDetails(jobId, status, repo, branch, commitHash, createdAt);
         }
 
         // Initialize

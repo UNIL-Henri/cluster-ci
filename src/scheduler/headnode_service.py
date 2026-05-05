@@ -18,6 +18,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Helper to find executables
+def get_executable(name):
+    cmd = shutil.which(name)
+    if cmd: return cmd
+    # Fallback to local user installation
+    local_path = os.path.expanduser(f"~/.local/bin/{name}")
+    if os.path.exists(local_path): return local_path
+    # Fallback to virtual environment
+    venv_path = os.path.join(os.path.dirname(sys.executable), name)
+    if os.path.exists(venv_path): return venv_path
+    return name
+
+DVC_CMD = get_executable("dvc")
+UV_CMD = get_executable("uv")
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
@@ -235,7 +250,7 @@ def artifacts(repo_owner, repo_name, rev, file_path):
     try:
         local_repo_path = os.path.join(REPOS_DIR, repo_slug)
         source = local_repo_path if os.path.exists(local_repo_path) else repo_url
-        cmd = ["dvc", "get", source, file_path, "--rev", rev, "--out", tmp_dir]
+        cmd = [DVC_CMD, "get", source, file_path, "--rev", rev, "--out", tmp_dir]
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode == 0:
@@ -370,7 +385,7 @@ def api_run_files(job_id):
         # If GITHUB_PAT is available, dvc list might be able to use it if configured,
         # though dvc list usually uses git credentials.
 
-        cmd = ["dvc", "list", repo_url, "--rev", commit_hash, "--json"]
+        cmd = [DVC_CMD, "list", repo_url, "--rev", commit_hash, "--json"]
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:
@@ -505,7 +520,7 @@ def view_project(owner, repo, path=''):
             # We assume dvc-viewer is available in the environment
             # and it supports a --port argument.
             # Using 'uv run' if possible or direct call
-            cmd = ["uv", "run", "dvc-viewer", "serve", "--port", str(port)]
+            cmd = [UV_CMD, "run", "dvc-viewer", "serve", "--port", str(port)]
             # If dvc-viewer is not a uv project, might need just ["dvc-viewer", "serve", ...]
             # Given the context of the project, it's likely uv-managed or installed as a tool.
             proc = subprocess.Popen(cmd, cwd=repo_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
