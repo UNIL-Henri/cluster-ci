@@ -35,8 +35,9 @@ class TestDataRouter(unittest.TestCase):
         self.agent_url = "http://localhost:6001"
 
         # Setup dummy repositories dir
-        # Correctly point to /app/repositories
-        self.repo_dir = Path("/app/repositories")
+        # Correctly point to a local repositories dir
+        base_dir = Path(__file__).parent.parent.parent.parent.resolve()
+        self.repo_dir = base_dir / "repositories"
         self.repo_dir.mkdir(exist_ok=True)
         self.registry_path = self.repo_dir / "registry.json"
         if self.registry_path.exists():
