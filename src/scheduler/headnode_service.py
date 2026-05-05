@@ -385,7 +385,7 @@ def api_run_files(job_id):
         # If GITHUB_PAT is available, dvc list might be able to use it if configured,
         # though dvc list usually uses git credentials.
 
-        cmd = [DVC_CMD, "list", repo_url, "--rev", commit_hash, "--json"]
+        cmd = [DVC_CMD, "list", repo_url, "--rev", commit_hash, "--dvc-only", "--json"]
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:
