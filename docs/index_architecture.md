@@ -2,9 +2,9 @@
 
 | Titre de la note | Courte Description | Dernière modif | Tag |
 |------------------|-------------------|----------------|-----|
-| [Topologie Headnode/Worker](#topologie-headnode-worker-et-ordonnancement-dynamique) | Description de la nouvelle architecture de calcul distribué | 2024-05-23 | Architecture |
-| [JIT GC](tasks/jit_gc.md) | Garbage Collector basé sur LRU pour gérer l'espace disque. | 2024-05-22 | Infrastructure |
-| [Concurrency Management](tasks/concurrency_management.md) | Gestion de l'annulation des jobs obsolètes. | 2024-05-22 | Infrastructure |
+| [Topologie Headnode/Worker](#topologie-headnode-worker-et-ordonnancement-dynamique) | Description de la nouvelle architecture de calcul distribué | 2026-05-05 | Architecture |
+| [JIT GC](tasks/jit_gc.md) | Garbage Collector basé sur LRU pour gérer l'espace disque. | 2026-05-05 | Infrastructure |
+| [Concurrency Management](tasks/concurrency_management.md) | Gestion de l'annulation des jobs obsolètes. | 2026-05-05 | Infrastructure |
 
 ## Topologie Headnode/Worker et Ordonnancement Dynamique
 

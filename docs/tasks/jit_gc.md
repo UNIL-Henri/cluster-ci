@@ -12,9 +12,9 @@ Le système s'appuie sur un registre local de métadonnées (`repositories/regis
 
 ### Politique de nettoyage (LRU)
 Avant chaque job, l'orchestrateur vérifie l'espace disque disponible sur la partition des dépôts.
-- **Seuil de sécurité :** 200 Go.
+- **Seuil de sécurité :** 100 Go.
 - Si l'espace libre est inférieur à ce seuil, le GC identifie les projets marqués comme `idle`.
-- Il supprime les dossiers locaux en commençant par le plus ancien (Least Recently Used) jusqu'à ce que le seuil de 200 Go soit respecté.
+- Il supprime les dossiers locaux en commençant par le plus ancien (Least Recently Used) jusqu'à ce que le seuil de 100 Go soit respecté.
 - Les projets en cours (`running`) ne sont jamais supprimés.
 
 ## 3. Composants

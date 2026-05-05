@@ -66,7 +66,8 @@ cluster-ci/
 ├── install.sh      # Script d'installation côté client 
 └── src/            # Scripts du Runner et de l'Orchestrateur
     ├── cluster/    # Setup et gestion du runner local (systemd)
-    └── runner/     # Orchestrateur GitOps (run_research_pipeline.sh)
+    ├── runner/     # Orchestrateur GitOps (run_research_pipeline.sh)
+    └── scheduler/  # Headnode API, Worker Agent et Persistence (SQLite)
 ```
 
 ## Scripts d'entrée principaux
@@ -79,12 +80,22 @@ cluster-ci/
 
 ## Scripts exécutables secondaires & Utilitaires
 
-*(En construction)*
+| Commande | Description |
+|----------|-------------|
+| `src/scheduler/submit_job.py` | Script client (CLI) pour soumettre manuellement un job au Headnode |
+| `src/scheduler/runner_manager.py` | Gère le cycle de vie des runners GitHub Actions éphémères (slot1, slot2) |
 
 ## Roadmap
 
+**Phase 1 (Fondation — Complétée)**
 - [x] [Setup Orchestrateur Runner](docs/tasks/setup_orchestrator.md)
 - [x] [Déploiement Local & Test Runner](docs/tasks/deploy_local_cluster.md)
 - [x] [Authentification Silencieuse DVC](docs/tasks/dvc_auth.md)
 - [x] [Script d'Installation Client](docs/tasks/client_script.md)
 - [x] [Gestion de la Concurrence par Dépôt](docs/tasks/concurrency_management.md)
+
+**Phase 2 (Fiabilité & UX — En cours)**
+- [ ] Refonte des tests unitaires & E2E (Pytest)
+- [ ] Configuration de build standard (`pyproject.toml`)
+- [ ] Log Streaming temps réel via le Headnode
+- [ ] Monitoring complet et Healthcheck
