@@ -195,17 +195,39 @@ uv run dvc-viewer --port "$VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
 DVC_VIEWER_PID=$!
 
 if [ -n "$DVC_REMOTE_P2P_URL" ]; then
-    log_info "Data Plane: Configuration d'un remote P2P éphémère vers $DVC_REMOTE_P2P_URL..."
-    # On ajoute un remote HTTP temporaire
-    uv run dvc remote add peer-source "$DVC_REMOTE_P2P_URL" --local
-    uv run dvc remote modify peer-source auth custom --local
-    uv run dvc remote modify peer-source custom_auth_header Authorization --local
-    if [ -n "$CLUSTER_TOKEN" ]; then
-        uv run dvc remote modify peer-source password "Bearer $CLUSTER_TOKEN" --local
+    log_info "Data Plane: Configuration d'un remote P2P dynamique vers $DVC_REMOTE_P2P_URL..."
+
+    # Construction de l'URL vers le cache du pair via le Data Plane (Worker Agent /fetch_artifact)
+    # L'agent sert 'repositories/' à la racine, donc on pointe vers .dvc/cache/files/md5
+    PEER_REMOTE_URL="$DVC_REMOTE_P2P_URL/$TARGET_REPO/.dvc/cache/files/md5"
+
+    uv run dvc remote add peer_remote "$PEER_REMOTE_URL" --local
+
+    log_info "Récupération des données depuis le pair (P2P pull strict avec retries)..."
+
+    MAX_RETRIES=3
+    RETRY_DELAY=5
+    RETRY_COUNT=0
+    PULL_SUCCESS=false
+
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        if uv run dvc pull -r peer_remote; then
+            PULL_SUCCESS=true
+            break
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            log_info "Échec du pull P2P (tentative $RETRY_COUNT/$MAX_RETRIES). Nouvel essai dans ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+        fi
+    done
+
+    if [ "$PULL_SUCCESS" = false ]; then
+        log_error "Échec critique du transfert P2P depuis $PEER_REMOTE_URL après $MAX_RETRIES tentatives. Abandon."
+        exit 1
     fi
 
-    log_info "Récupération des données depuis le pair (P2P pull)..."
-    uv run dvc pull -r peer-source || log_info "Certains fichiers n'ont pas pu être récupérés via P2P. Continuation..."
+    log_success "Transfert P2P réussi."
 fi
 
 log_info "Lancement de : uv run dvc repro $DVC_ARGS"
