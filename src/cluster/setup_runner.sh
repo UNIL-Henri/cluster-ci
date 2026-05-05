@@ -91,8 +91,8 @@ WantedBy=multi-user.target
 EOF
 
     echo "⚙️ Configuration du Scheduler Headnode..."
-    # Installation des dépendances pour le scheduler
-    uv pip install flask psutil requests authlib
+    # Installation des dépendances pour le scheduler depuis le pyproject.toml
+    uv pip install -e $BASE_DIR
 
     # Création du service systemd pour le scheduler API
     cat <<EOF | sudo tee /etc/systemd/system/cluster-scheduler.service
@@ -135,7 +135,7 @@ EOF
 
 else
     echo "⚙️ Configuration du Worker Agent..."
-    uv pip install flask requests psutil
+    uv pip install -e $BASE_DIR
 
     cat <<EOF | sudo tee /etc/systemd/system/cluster-worker.service
 [Unit]

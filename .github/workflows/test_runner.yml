@@ -22,7 +22,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install flask psutil requests authlib
+          pip install -e .[dev]
 
       - name: Setup Mock Runner
         run: |
@@ -49,4 +49,4 @@ jobs:
           export HEADNODE_URL=http://localhost:5000
           export CLUSTER_CI_RUN_PATH=/usr/local/bin/cluster-ci-run
           export PYTHONPATH=$PYTHONPATH:$(pwd)/src/scheduler
-          python3 src/scheduler/tests/test_flow.py
+          pytest src/scheduler/tests/

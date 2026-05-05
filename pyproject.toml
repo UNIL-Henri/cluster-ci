@@ -1,0 +1,19 @@
+[project]
+name = "cluster-ci"
+version = "0.1.0"
+description = "GitOps continuous integration for DVC research pipelines"
+authors = [
+    { name = "UNIL-DESI" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "flask",
+    "psutil",
+    "requests",
+    "authlib"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest"
+]
