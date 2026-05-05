@@ -360,6 +360,32 @@ def api_list_runs(repo):
             ORDER BY created_at DESC
         ''', (repo,))
         runs = [dict(row) for row in cursor.fetchall()]
+
+    repo_slug = repo.replace("/", "_")
+    local_repo_path = os.path.join(REPOS_DIR, repo_slug)
+    
+    if os.path.exists(local_repo_path):
+        hashes = [run['commit_hash'] for run in runs if run.get('commit_hash')]
+        if hashes:
+            try:
+                res = subprocess.run(
+                    ["git", "show", "-s", "--format=%H|%s"] + hashes,
+                    cwd=local_repo_path,
+                    capture_output=True,
+                    text=True
+                )
+                title_map = {}
+                for line in res.stdout.strip().split('\n'):
+                    if '|' in line:
+                        h, t = line.split('|', 1)
+                        title_map[h] = t
+                for run in runs:
+                    run['commit_title'] = title_map.get(run.get('commit_hash'), "")
+            except Exception:
+                for run in runs: run['commit_title'] = ""
+    else:
+        for run in runs: run['commit_title'] = ""
+
     return jsonify(runs)
 
 @app.route('/api/runs/<job_id>/files', methods=['GET'])
