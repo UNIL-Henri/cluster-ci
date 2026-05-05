@@ -10,7 +10,8 @@ dependencies = [
     "flask",
     "psutil",
     "requests",
-    "authlib"
+    "authlib",
+    "python-dotenv"
 ]
 
 [project.optional-dependencies]

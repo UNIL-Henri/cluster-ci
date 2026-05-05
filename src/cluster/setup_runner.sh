@@ -96,8 +96,7 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$BASE_DIR
-Environment="TARGET_REPO=$TARGET"
-Environment="GITHUB_PAT=$GITHUB_PAT"
+EnvironmentFile=$BASE_DIR/.env
 ExecStart=$(uv python find) $BASE_DIR/src/scheduler/runner_manager.py
 Restart=always
 
@@ -119,6 +118,7 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$BASE_DIR
+EnvironmentFile=$BASE_DIR/.env
 ExecStart=$(uv python find) $BASE_DIR/src/scheduler/headnode_service.py
 Restart=always
 
@@ -136,6 +136,7 @@ After=cluster-scheduler.service
 Type=simple
 User=$USER
 WorkingDirectory=$BASE_DIR
+EnvironmentFile=$BASE_DIR/.env
 ExecStart=$(uv python find) $BASE_DIR/src/scheduler/scheduler_loop.py
 Restart=always
 

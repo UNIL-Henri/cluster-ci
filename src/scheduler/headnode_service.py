@@ -14,6 +14,9 @@ import re
 import json
 import tempfile
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
