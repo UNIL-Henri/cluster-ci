@@ -136,43 +136,53 @@ log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont prése
 # Enregistrement du hash du commit courant pour la traçabilité
 git rev-parse HEAD > .cluster-ci-commit
 
-# 3. Lancement de l'environnement uv et de l'exécution
-log_info "[Etape 3/3] Synchronisation de l'environnement Python avec uv..."
-
-# Injection des variables d'environnement globales (.env et .env.secrets)
-log_info "Chargement des credentials globaux pour l'exécution..."
-
-
-log_info "Variables d'environnement disponibles :"
-while IFS='=' read -r name value; do
-    if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then continue; fi
-    if [[ -z "$value" ]]; then
-        log_info "   $name=(vide)"
-    else
-        first_chars="${value:0:3}"
-        log_info "   $name=${first_chars}***"
-    fi
-done < <(env | sort)
-
-if ! command -v uv &> /dev/null; then
-    source "$HOME/.local/bin/env" || true
-fi
-
-if [ -f "pyproject.toml" ]; then
-    uv sync
-else
-    log_info "Aucun fichier pyproject.toml trouvé. Etape uv sync ignorée."
-fi
-
-log_info "Installation de dvc-viewer..."
-uv pip install git+https://github.com/UNIL-DESI/dvc-viewer.git
+# 3. Lancement de l'exécution Dockerisée
+log_info "[Etape 3/3] Préparation de l'exécution Dockerisée..."
 
 if [ ! -f ".cluster-ci" ]; then
     log_error "Fichier .cluster-ci introuvable à la racine du dépôt. Exécution avortée."
     exit 1
 fi
 
-log_info "Lecture des paramètres depuis .cluster-ci..."
+# Extraction de la limite de RAM depuis .cluster-ci (--ram 16)
+RAM_LIMIT=$(grep -oE '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n 1)
+[ -z "$RAM_LIMIT" ] && RAM_LIMIT="2"
+log_info "Limite de RAM détectée : ${RAM_LIMIT}GB"
+
+# Configuration Docker
+DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3"}
+ENV_FILE_FLAG=""
+if [ -f "$BASE_DIR/.env.secrets" ]; then
+    ENV_FILE_FLAG="--env-file $BASE_DIR/.env.secrets"
+fi
+
+# On crée un volume pour le cache pip de l'utilisateur afin de ne pas retélécharger dvc à chaque fois
+PIP_CACHE_VOLUME="cluster-ci-pip-cache"
+if ! docker volume inspect "$PIP_CACHE_VOLUME" >/dev/null 2>&1; then
+    docker volume create "$PIP_CACHE_VOLUME" >/dev/null
+fi
+
+function docker_exec() {
+    docker run --rm \
+        -v "$(pwd):/workspace" \
+        -v "$PIP_CACHE_VOLUME:/home/user/.local" \
+        -w /workspace \
+        --ipc=host \
+        --user "$(id -u):$(id -g)" \
+        -e HOME=/home/user \
+        --memory="${RAM_LIMIT}g" \
+        $ENV_FILE_FLAG \
+        -e HEADNODE_URL="$HEADNODE_URL" \
+        -e CLUSTER_CI_MODE=executor \
+        "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
+}
+
+log_info "Image utilisée : $DOCKER_IMAGE"
+
+log_info "Installation des dépendances de base dans le volume persistant..."
+docker_exec "pip install dvc git+https://github.com/UNIL-DESI/dvc-viewer.git --user >/dev/null 2>&1"
+
+log_info "Lecture des paramètres DVC depuis .cluster-ci..."
 # Nettoyage des commentaires, suppression des flags internes comme --ram, et mise en une seule ligne des arguments
 DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g' | tr '\n' ' ' | xargs)
 
@@ -183,7 +193,7 @@ else
 fi
 
 log_info "Analyse AST via dvc-viewer..."
-uv run dvc-viewer hash
+docker_exec "dvc-viewer hash"
 
 log_info "Recherche d'un port libre pour dvc-viewer..."
 VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
@@ -191,27 +201,31 @@ log_info "Port sélectionné : $VIEWER_PORT"
 echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 
 log_info "Lancement du serveur live dvc-viewer sur le port $VIEWER_PORT..."
-uv run dvc-viewer --port "$VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
+# Pour le viewer en background, on expose le port
+docker run --rm \
+    -v "$(pwd):/workspace" -w /workspace \
+    -v "$PIP_CACHE_VOLUME:/home/user/.local" \
+    -p "$VIEWER_PORT:$VIEWER_PORT" \
+    --user "$(id -u):$(id -g)" -e HOME=/home/user \
+    $ENV_FILE_FLAG \
+    $DOCKER_IMAGE \
+    bash -c "export PATH=\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
 DVC_VIEWER_PID=$!
 
 if [ -n "$DVC_REMOTE_P2P_URL" ]; then
     log_info "Data Plane: Configuration d'un remote P2P dynamique vers $DVC_REMOTE_P2P_URL..."
-
-    # Construction de l'URL vers le cache du pair via le Data Plane (Worker Agent /fetch_artifact)
-    # L'agent sert 'repositories/' à la racine, donc on pointe vers .dvc/cache/files/md5
     PEER_REMOTE_URL="$DVC_REMOTE_P2P_URL/$TARGET_REPO/.dvc/cache/files/md5"
 
-    uv run dvc remote add peer_remote "$PEER_REMOTE_URL" --local
+    docker_exec "dvc remote add peer_remote '$PEER_REMOTE_URL' --local"
 
     log_info "Récupération des données depuis le pair (P2P pull strict avec retries)..."
-
     MAX_RETRIES=3
     RETRY_DELAY=5
     RETRY_COUNT=0
     PULL_SUCCESS=false
 
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        if uv run dvc pull -r peer_remote; then
+        if docker_exec "dvc pull -r peer_remote"; then
             PULL_SUCCESS=true
             break
         fi
@@ -226,12 +240,18 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
         log_error "Échec critique du transfert P2P depuis $PEER_REMOTE_URL après $MAX_RETRIES tentatives. Abandon."
         exit 1
     fi
-
     log_success "Transfert P2P réussi."
 fi
 
-log_info "Lancement de : uv run dvc repro $DVC_ARGS"
-uv run dvc repro $DVC_ARGS
+log_info "Lancement de : dvc repro $DVC_ARGS via Docker"
+# Exécution du repro et des dépendances uv si présentes
+if [ -f "pyproject.toml" ]; then
+    EXEC_CMD="(command -v uv || pip install uv --user >/dev/null 2>&1) && uv sync && uv run dvc repro $DVC_ARGS"
+else
+    EXEC_CMD="dvc repro $DVC_ARGS"
+fi
+
+docker_exec "$EXEC_CMD"
 
 # 4. Data Router: Vérification avant Push
 log_info "[Etape 4/3] Data Router : Vérification de l'espace sur le headnode..."
@@ -243,7 +263,7 @@ SUFFICIENT=$(echo "$SPACE_CHECK" | jq -r '.sufficient')
 
 if [ "$SUFFICIENT" == "true" ]; then
     log_info "Espace suffisant sur le headnode. Synchronisation des artefacts..."
-    if uv run dvc push; then
+    if docker_exec "dvc push"; then
         python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
         log_success "Synchronisation terminée."
     else

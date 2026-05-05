@@ -1,7 +1,7 @@
 import time
 import json
 import requests
-from persistence import get_db_conn
+from persistence import get_db_conn, init_db
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -108,4 +108,5 @@ def schedule_jobs():
         time.sleep(5)
 
 if __name__ == '__main__':
+    init_db()
     schedule_jobs()

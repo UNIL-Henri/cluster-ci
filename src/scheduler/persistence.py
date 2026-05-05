@@ -5,6 +5,8 @@ from contextlib import contextmanager
 def get_db_path():
     return os.environ.get("CLUSTER_DB_PATH", "cluster_scheduler.db")
 
+DB_PATH = get_db_path()
+
 def init_db():
     conn = sqlite3.connect(get_db_path())
     cursor = conn.cursor()
