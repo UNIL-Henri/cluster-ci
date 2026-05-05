@@ -128,3 +128,22 @@ for ((i=1; i<=WORKER_COUNT; i++)); do
 done
 
 echo "✅ Mise à jour du cluster terminée !"
+
+echo "==========================================================="
+echo "🧪 Test de l'infrastructure : Soumission de 2 jobs de test..."
+echo "==========================================================="
+echo "Mise en pause de 10s pour laisser le temps aux services de démarrer..."
+sleep 10
+
+echo "🚀 Soumission du Job 1..."
+uv run src/scheduler/submit_job.py "$TARGET_REPO/cluster-ci" "main" --headnode "http://$HEADNODE_IP:5000" &
+JOB1=$!
+
+echo "🚀 Soumission du Job 2..."
+uv run src/scheduler/submit_job.py "$TARGET_REPO/cluster-ci" "main" --headnode "http://$HEADNODE_IP:5000" &
+JOB2=$!
+
+wait $JOB1
+wait $JOB2
+
+echo "🎉 Test du cluster terminé ! Tous les noeuds sont opérationnels."
