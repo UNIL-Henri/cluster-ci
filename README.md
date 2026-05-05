@@ -101,5 +101,5 @@ cluster-ci/
 - [x] Support OAuth GitHub pour le Dashboard (avec support reverse proxy et IPv4 fallback)
 - [x] Amélioration UX Dashboard (formatage dates, corrections chemins DVC sous systemd)
 - [x] Migration vers exécution Worker Docker (Support NVIDIA/ARM)
-- [ ] Log Streaming temps réel via le Headnode
+- [x] Log Streaming temps réel via le Headnode
 - [ ] Monitoring complet et Healthcheck

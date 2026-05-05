@@ -79,12 +79,32 @@ def wait_for_job(headnode_url, job_id):
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    log_offset = 0
+    status_printed = False
+
     while True:
         try:
             resp = requests.get(f"{headnode_url}/job_status/{job_id}")
             resp.raise_for_status()
             job = resp.json()
             status = job['status']
+            worker_url = job.get('worker_service_url')
+
+            if worker_url:
+                try:
+                    logs_resp = requests.get(f"{worker_url}/job_logs/{job_id}?offset={log_offset}", timeout=5)
+                    if logs_resp.status_code == 200:
+                        logs_data = logs_resp.json()
+                        new_logs = logs_data.get('logs', '')
+                        if new_logs:
+                            if not status_printed:
+                                print(f"\n\n[Streaming logs from {worker_url}]")
+                                status_printed = True
+                            sys.stdout.write(new_logs)
+                            sys.stdout.flush()
+                            log_offset = logs_data.get('offset', log_offset)
+                except Exception as e:
+                    pass
 
             if status == 'completed':
                 print(f"\n✅ Job {job_id} completed successfully!")
@@ -92,17 +112,15 @@ def wait_for_job(headnode_url, job_id):
             elif status == 'failed':
                 print(f"\n❌ Job {job_id} failed with exit code {job.get('exit_code')}")
                 return job.get('exit_code', 1)
-            elif status == 'running':
-                # Optional: could stream logs if we had a log service
-                pass
 
-            sys.stdout.write(f"\rStatus: {status}... ")
-            sys.stdout.flush()
+            if not status_printed:
+                sys.stdout.write(f"\rStatus: {status}... ")
+                sys.stdout.flush()
 
         except Exception as e:
             print(f"\n⚠️ Error checking status: {e}")
 
-        time.sleep(10)
+        time.sleep(2)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Submit a job to Cluster-CI Scheduler")
