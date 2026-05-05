@@ -13,6 +13,21 @@ fi
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
+if [ -n "$SUDO_PASSWORD" ]; then
+    ASKPASS_SCRIPT=$(mktemp)
+    echo '#!/bin/bash' > "$ASKPASS_SCRIPT"
+    echo 'echo "$SUDO_PASSWORD"' >> "$ASKPASS_SCRIPT"
+    chmod +x "$ASKPASS_SCRIPT"
+    export SUDO_ASKPASS="$ASKPASS_SCRIPT"
+    
+    sudo() {
+        command sudo -A "$@"
+    }
+    
+    # Cleanup trap
+    trap 'rm -f "$ASKPASS_SCRIPT"' EXIT
+fi
+
 echo "🎯 Préparation du Cluster pour la cible : $TARGET"
 
 # 1. Vérification / Installation de uv

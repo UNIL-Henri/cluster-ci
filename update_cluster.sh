@@ -32,10 +32,16 @@ update_needed=false
 
 if [ -z "$HEADNODE_IP" ] || [ -z "$HEADNODE_USER" ] || [ -z "$HEADNODE_PASS" ]; then
     echo "--- Configuration du Headnode ---"
-    read -p "IP du Headnode : " HEADNODE_IP
-    read -p "Utilisateur SSH : " HEADNODE_USER
-    read -rs -p "Mot de passe SSH : " HEADNODE_PASS
+    [ -z "$HEADNODE_IP" ] && read -p "IP du Headnode : " HEADNODE_IP
+    [ -z "$HEADNODE_USER" ] && read -p "Utilisateur SSH : " HEADNODE_USER
+    [ -z "$HEADNODE_PASS" ] && read -rs -p "Mot de passe SSH : " HEADNODE_PASS
     echo ""
+    update_needed=true
+fi
+
+if [ -z "$TARGET_REPO" ]; then
+    read -p "Cible GitHub (ex: UNIL-DESI) : " TARGET_REPO
+    [ -z "$TARGET_REPO" ] && TARGET_REPO="UNIL-DESI"
     update_needed=true
 fi
 
@@ -65,7 +71,7 @@ while true; do
         fi
     fi
     
-    ((WORKER_COUNT++))
+    WORKER_COUNT=$((WORKER_COUNT + 1))
     read -p "IP du Worker $WORKER_COUNT : " w_ip
     read -p "Utilisateur SSH : " w_user
     read -rs -p "Mot de passe SSH : " w_pass
@@ -84,6 +90,7 @@ if [ "$update_needed" = true ]; then
     update_env "HEADNODE_IP" "$HEADNODE_IP"
     update_env "HEADNODE_USER" "$HEADNODE_USER"
     update_env "HEADNODE_PASS" "$HEADNODE_PASS"
+    update_env "TARGET_REPO" "$TARGET_REPO"
     update_env "WORKER_COUNT" "$WORKER_COUNT"
     
     for ((i=1; i<=WORKER_COUNT; i++)); do
@@ -100,7 +107,7 @@ echo "==========================================================="
 echo "🚀 Mise à jour du Headnode ($HEADNODE_IP)..."
 echo "==========================================================="
 export SSHPASS="$HEADNODE_PASS"
-sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HEADNODE_USER@$HEADNODE_IP" "curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode"
+sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HEADNODE_USER@$HEADNODE_IP" "export SUDO_PASSWORD='$HEADNODE_PASS'; curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode $TARGET_REPO"
 
 for ((i=1; i<=WORKER_COUNT; i++)); do
     ip_var="WORKER_${i}_IP"
@@ -116,7 +123,7 @@ for ((i=1; i<=WORKER_COUNT; i++)); do
         echo "🚀 Mise à jour du Worker $i ($ip_val)..."
         echo "==========================================================="
         export SSHPASS="$pass_val"
-        sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$user_val@$ip_val" "curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- worker"
+        sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$user_val@$ip_val" "export SUDO_PASSWORD='$pass_val'; curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- worker"
     fi
 done
 
