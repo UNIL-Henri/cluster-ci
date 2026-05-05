@@ -109,6 +109,15 @@ echo "==========================================================="
 export SSHPASS="$HEADNODE_PASS"
 sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HEADNODE_USER@$HEADNODE_IP" "export SUDO_PASSWORD='$HEADNODE_PASS'; curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode $TARGET_REPO"
 
+# Récupération du CLUSTER_TOKEN depuis le headnode pour les tests locaux
+echo "🔑 Récupération du Token de sécurité depuis le headnode..."
+REMOTE_TOKEN=$(sshpass -e ssh -o StrictHostKeyChecking=no "$HEADNODE_USER@$HEADNODE_IP" "grep '^CLUSTER_TOKEN=' /home/$HEADNODE_USER/cluster-ci/.env | cut -d= -f2-")
+if [ -n "$REMOTE_TOKEN" ]; then
+    update_env "CLUSTER_TOKEN" "$REMOTE_TOKEN"
+    export CLUSTER_TOKEN="$REMOTE_TOKEN"
+    echo "✅ Token récupéré et sauvegardé."
+fi
+
 for ((i=1; i<=WORKER_COUNT; i++)); do
     ip_var="WORKER_${i}_IP"
     user_var="WORKER_${i}_USER"
