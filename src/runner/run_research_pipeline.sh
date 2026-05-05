@@ -161,6 +161,8 @@ PIP_CACHE_VOLUME="cluster-ci-pip-cache"
 if ! docker volume inspect "$PIP_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$PIP_CACHE_VOLUME" >/dev/null
 fi
+# Ensure the volume is owned by the current user
+docker run --rm -v "$PIP_CACHE_VOLUME:/home/user/.local" "$DOCKER_IMAGE" chown -R "$(id -u):$(id -g)" /home/user/.local
 
 function docker_exec() {
     docker run --rm \
@@ -180,7 +182,9 @@ function docker_exec() {
 log_info "Image utilisée : $DOCKER_IMAGE"
 
 log_info "Installation des dépendances de base dans le volume persistant..."
-docker_exec "pip install dvc git+https://github.com/UNIL-DESI/dvc-viewer.git --user >/dev/null 2>&1"
+docker_exec "if ! command -v uv &> /dev/null; then python3 -m pip install uv --user >/dev/null 2>&1; fi"
+docker_exec "if ! command -v dvc &> /dev/null; then uv tool install dvc >/dev/null 2>&1; fi"
+docker_exec "if ! command -v dvc-viewer &> /dev/null; then uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1; fi"
 
 log_info "Lecture des paramètres DVC depuis .cluster-ci..."
 # Nettoyage des commentaires, suppression des flags internes comme --ram, et mise en une seule ligne des arguments

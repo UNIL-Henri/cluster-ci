@@ -100,5 +100,6 @@ cluster-ci/
 - [x] Configuration de build standard (`pyproject.toml`)
 - [x] Support OAuth GitHub pour le Dashboard
 - [x] Amélioration UX Dashboard (formatage dates, corrections chemins DVC sous systemd)
+- [x] Migration vers exécution Worker Docker (Support NVIDIA/ARM)
 - [ ] Log Streaming temps réel via le Headnode
 - [ ] Monitoring complet et Healthcheck
