@@ -168,6 +168,8 @@ function docker_exec() {
     docker run --rm \
         -v "$(pwd):/workspace" \
         -v "$HOME_CACHE_VOLUME:/home/user" \
+        -v /etc/passwd:/etc/passwd:ro \
+        -v /etc/group:/etc/group:ro \
         -w /workspace \
         --ipc=host \
         --user "$(id -u):$(id -g)" \
