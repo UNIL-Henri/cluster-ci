@@ -179,13 +179,24 @@ function docker_exec() {
         $ENV_FILE_FLAG \
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
+        -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
         "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
 
 log_info "Image used: $DOCKER_IMAGE"
 
 log_info "GPU Hardware Validation..."
-docker_exec "python3 -c 'import torch; print(f\"CUDA available: {torch.cuda.is_available()}\"); assert torch.cuda.is_available()'"
+# We check CUDA but only fail if CLUSTER_CI_GPU_REQUIRED is set to 1.
+# This prevents breaking CPU-only environments (local debug, etc.) while keeping
+# enforcement on production workers if desired.
+GPU_REQ_CMD="import torch, os;
+avail=torch.cuda.is_available();
+print(f'CUDA available: {avail}');
+required=os.environ.get('CLUSTER_CI_GPU_REQUIRED', '0') == '1';
+if required and not avail:
+    print('❌ Error: GPU required but not found!');
+    exit(1)"
+docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Installing base dependencies in persistent volume..."
 docker_exec "if ! command -v uv &> /dev/null; then python3 -m pip install uv --user >/dev/null 2>&1; fi"
@@ -213,7 +224,6 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
 docker run --rm \
-    --gpus all \
     -v "$(pwd):/workspace" -w /workspace \
     -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
