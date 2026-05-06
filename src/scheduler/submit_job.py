@@ -7,11 +7,11 @@ import signal
 
 def get_ram_requirement():
     """
-    Reads RAM requirement from .cluster-ci file.
-    Format expected in .cluster-ci: --ram 16
+    Reads RAM requirement from the .cluster-ci file.
+    Expected format in .cluster-ci: --ram 16
     """
     if not os.path.exists(".cluster-ci"):
-        return 2.0 # Default 2GB
+        return 2.0  # Default 2GB
 
     with open(".cluster-ci", 'r') as f:
         content = f.read()
@@ -22,6 +22,7 @@ def get_ram_requirement():
     return 2.0 # Default
 
 def submit_job(headnode_url, repo, branch):
+    """Submits a research job to the headnode scheduler."""
     ram_req = get_ram_requirement()
     print(f"🚀 Submitting job for {repo}@{branch} (Required RAM: {ram_req}GB)")
 
@@ -46,6 +47,7 @@ def submit_job(headnode_url, repo, branch):
         sys.exit(1)
 
 def wait_for_job(headnode_url, job_id):
+    """Polls the headnode for job status and streams logs from the worker."""
     print(f"⏳ Waiting for job {job_id} to complete...")
 
     def signal_handler(sig, frame):

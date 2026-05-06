@@ -1,18 +1,18 @@
-# Setup Orchestrateur Runner
+# Orchestrator Runner Setup
 
-## 1. Contexte & Discussion (Narratif)
-> *Handover* : Remplacement de l'architecture "push" de SlurmRay par un modèle "pull" GitOps. Les agents avaient du mal à maintenir un contexte actif pendant de longues exécutions sur des jobs de recherche. L'idée est d'abandonner l'attente active pour un Self-Hosted Runner GitHub Actions en tant que service systemd sur notre machine Ubuntu.
+## 1. Context & Discussion (Narrative)
+> *Handover*: Replacing the SlurmRay "push" architecture with a GitOps "pull" model. Agents had difficulty maintaining active context during long research job executions. The idea is to move away from active waiting to a GitHub Actions Self-Hosted Runner as a systemd service on our Ubuntu machine.
 
-L'objectif est d'implémenter le script d'orchestration `run_research_pipeline.sh` (ou équivalent) qui sera appelé par le runner à chaque événement CI. Ce script doit absolument gérer ses espaces de travail dans un dossier persistant absolu (`workspaces/$REPO_NAME`) sur la machine pour garantir la réutilisation du cache `.dvc/cache` local, optimiser les téléchargements, et réaliser le `uv sync && uv run dvc repro`.
+The goal is to implement the `run_research_pipeline.sh` orchestration script (or equivalent) that will be called by the runner at each CI event. This script must manage its workspaces in an absolute persistent directory (`workspaces/$REPO_NAME`) on the machine to ensure reuse of the local `.dvc/cache`, optimize downloads, and perform `uv sync && uv run dvc repro`.
 
-## 2. Fichiers Concernés
+## 2. Affected Files
 - `src/runner/run_research_pipeline.sh`
-- (potentiellement un service template systemd si besoin de supervision avancée, mais le Runner de base GitHub l'intègre déjà)
+- (potentially a systemd service template if advanced supervision is needed, though the standard GitHub Runner already integrates this)
 
-## 3. Objectifs (Definition of Done)
-- Un script bash de pipeline capable de recevoir le chemin du dépôt et/ou la branche cible de la PR depuis le runner.
-- Le script doit orchestrer : 
-  - La vérification/création du directory persistant `workspaces/$REPO_NAME`.
-  - Le git clone/pull sur la branche spécifique de manière propre et isolée.
-  - La configuration et le lancement de l'exécution avec `uv sync` puis `uv run dvc repro`.
-- La sortie standard et d'erreur doit être clairement repoussée vers l'output GitHub Actions pour que Joules puisse en analyser les traces.
+## 3. Objectives (Definition of Done)
+- A bash pipeline script capable of receiving the repository path and/or target PR branch from the runner.
+- The script must orchestrate:
+  - Verification/creation of the persistent `workspaces/$REPO_NAME` directory.
+  - Clean and isolated git clone/pull on the specific branch.
+  - Configuration and launch of execution with `uv sync` then `uv run dvc repro`.
+- Standard output and error must be clearly pushed back to the GitHub Actions output so that Joules can analyze the traces.

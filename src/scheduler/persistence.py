@@ -11,7 +11,7 @@ def init_db():
     conn = sqlite3.connect(get_db_path())
     cursor = conn.cursor()
 
-    # Table des Workers
+    # Workers Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS workers (
             worker_id TEXT PRIMARY KEY,
@@ -30,7 +30,7 @@ def init_db():
     except sqlite3.OperationalError:
         pass # Already exists
 
-    # Table des Jobs
+    # Jobs Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
@@ -51,25 +51,25 @@ def init_db():
         )
     ''')
 
-    # Migration for commit_hash
+    # commit_hash migration
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN commit_hash TEXT')
     except sqlite3.OperationalError:
         pass # Already exists
 
-    # Migration for viewer_port
+    # viewer_port migration
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN viewer_port INTEGER')
     except sqlite3.OperationalError:
         pass # Already exists
 
-    # Migration for required_hashes
+    # required_hashes migration
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN required_hashes TEXT')
     except sqlite3.OperationalError:
         pass # Already exists
 
-    # Migration for p2p_url
+    # p2p_url migration
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN p2p_url TEXT')
     except sqlite3.OperationalError:

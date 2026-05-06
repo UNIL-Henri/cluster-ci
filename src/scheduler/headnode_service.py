@@ -29,6 +29,7 @@ load_dotenv()
 
 # Helper to find executables
 def get_executable(name):
+    """Finds an executable in system PATH, local bin, or current venv."""
     cmd = shutil.which(name)
     if cmd: return cmd
     # Fallback to local user installation
@@ -248,6 +249,10 @@ REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
 
 @app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
 def artifacts(repo_owner, repo_name, rev, file_path):
+    """
+    Unified artifact access API. Extracts files from local cache or remote GitHub
+    using DVC at a specific revision (commit hash or branch).
+    """
     repo_slug = f"{repo_owner}/{repo_name}"
     repo_url = f"https://github.com/{repo_slug}"
 
@@ -282,9 +287,7 @@ def artifacts(repo_owner, repo_name, rev, file_path):
             return Response(generate(), mimetype='application/octet-stream',
                             headers={"Content-Disposition": f"attachment; filename={filename}"})
 
-        # If DVC get failed, we DO NOT fallback to worker for historical revisions (rev looks like a hash)
-        # However, if rev is a branch name, Case 2 might still be valid for the 'latest' of that branch.
-        # But per requirements: "Supprime ce repli en cascade pour les requêtes historiques"
+        # If DVC get failed, we DO NOT fallback to worker for historical revisions.
         # We consider any request with a 'rev' as a historical request needing integrity.
         return jsonify({"error": f"Failed to extract historical artifact: {result.stderr}"}), 404
 
@@ -356,7 +359,7 @@ def api_list_projects():
         projects = [p for p in projects_in_db if p in allowed_repos]
         return jsonify(projects)
     except Exception as e:
-        print(f"Error fetching repos in API: {e}")
+        app.logger.error(f"Error fetching repos in API: {e}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 @app.route('/api/projects/<path:repo>/runs', methods=['GET'])
@@ -537,7 +540,7 @@ def view_project(owner, repo, path=''):
     # --- Case 2: Historical (Local) ---
     repo_path = os.path.join(REPOS_DIR, owner, repo)
     if not os.path.exists(repo_path):
-        return f"Projet {repo_full_name} non trouvé localement et non actif.", 404
+        return f"Project {repo_full_name} not found locally and not active.", 404
 
     with local_viewers_lock:
         if repo_full_name in local_viewers:
