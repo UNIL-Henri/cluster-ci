@@ -184,6 +184,9 @@ function docker_exec() {
 
 log_info "Image used: $DOCKER_IMAGE"
 
+log_info "GPU Hardware Validation..."
+docker_exec "python3 -c 'import torch; print(f\"CUDA available: {torch.cuda.is_available()}\"); assert torch.cuda.is_available()'"
+
 log_info "Installing base dependencies in persistent volume..."
 docker_exec "if ! command -v uv &> /dev/null; then python3 -m pip install uv --user >/dev/null 2>&1; fi"
 docker_exec "if ! command -v dvc &> /dev/null; then uv tool install dvc >/dev/null 2>&1; fi"
