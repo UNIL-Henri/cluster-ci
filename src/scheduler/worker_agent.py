@@ -212,14 +212,32 @@ def drain_pending_syncs():
                     logger.info(f"Headnode space sufficient. Pushing {project_name}...")
                     project_dir = os.path.join(base_dir, "repositories", project_name)
                     if os.path.exists(project_dir):
-                        # Execute dvc push via uv
-                        res = subprocess.run(["uv", "run", "dvc", "push"], cwd=project_dir)
-                        if res.returncode == 0:
-                            # Mark as done
+                        # Check if a default DVC remote is configured
+                        has_remote = False
+                        dvc_config_path = os.path.join(project_dir, ".dvc", "config")
+                        dvc_config_local_path = os.path.join(project_dir, ".dvc", "config.local")
+                        
+                        for config_path in [dvc_config_path, dvc_config_local_path]:
+                            if os.path.exists(config_path):
+                                with open(config_path, "r") as f:
+                                    content = f.read()
+                                    import re
+                                    if re.search(r"^\s*remote\s*=", content, re.MULTILINE):
+                                        has_remote = True
+                                        break
+
+                        if not has_remote:
+                            logger.info(f"No default DVC remote configured for {project_name}. Skipping push.")
                             subprocess.run(["python3", os.path.join(base_dir, "src/runner/gc_orchestrator.py"), "mark-sync-done", project_name])
-                            logger.info(f"Successfully pushed and marked {project_name} as done.")
                         else:
-                            logger.error(f"dvc push failed for {project_name}")
+                            # Execute dvc push via uv
+                            res = subprocess.run(["uv", "run", "dvc", "push"], cwd=project_dir)
+                            if res.returncode == 0:
+                                # Mark as done
+                                subprocess.run(["python3", os.path.join(base_dir, "src/runner/gc_orchestrator.py"), "mark-sync-done", project_name])
+                                logger.info(f"Successfully pushed and marked {project_name} as done.")
+                            else:
+                                logger.error(f"dvc push failed for {project_name}")
                     else:
                         logger.warning(f"Project directory {project_dir} not found for {project_name}")
                 else:

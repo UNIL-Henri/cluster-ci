@@ -9,7 +9,7 @@ fi
 
 TARGET_REPO=$1
 TARGET_BRANCH=$2
-GH_TOKEN=$3
+GH_TOKEN="${3:-$GH_TOKEN}"
 
 # Se placer à la racine du projet cluster-ci
 SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
@@ -269,12 +269,26 @@ SUFFICIENT=$(echo "$SPACE_CHECK" | jq -r '.sufficient')
 
 if [ "$SUFFICIENT" == "true" ]; then
     log_info "Espace suffisant sur le headnode. Synchronisation des artefacts..."
-    if docker_exec "dvc push"; then
-        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
-        log_success "Synchronisation terminée."
+    # Check if a default DVC remote is configured by checking the config files
+    HAS_REMOTE=false
+    if [ -f ".dvc/config" ] && grep -E -q "^\s*remote\s*=" .dvc/config; then
+        HAS_REMOTE=true
+    elif [ -f ".dvc/config.local" ] && grep -E -q "^\s*remote\s*=" .dvc/config.local; then
+        HAS_REMOTE=true
+    fi
+
+    if [ "$HAS_REMOTE" = "true" ]; then
+        if docker_exec "dvc push"; then
+            python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
+            log_success "Synchronisation terminée."
+        else
+            log_error "Échec du dvc push. Le projet reste en attente de synchro."
+            python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
+        fi
     else
-        log_error "Échec du dvc push. Le projet reste en attente de synchro."
-        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
+        log_info "Aucun remote DVC par défaut configuré. Ignore le dvc push."
+        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
+        log_success "Synchronisation terminée (rien à pousser)."
     fi
 else
     FREE_GB=$(echo "$SPACE_CHECK" | jq -r '.free_gb // "inconnu"')
