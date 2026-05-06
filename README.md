@@ -1,105 +1,105 @@
 # Cluster CI
 
-Système d'intégration continue asynchrone pour pipeline de recherche, conçu comme un remplaçant "pull-based" à l'ancienne architecture "push-based" SlurmRay. Ce dépôt héberge les scripts nécessaires à la configuration du GitHub Actions Self-Hosted Runner sur la machine Ubuntu cible, orchestrant les exécutions de `uv run dvc repro` dans des environnements locaux et gérant l'authentification silencieuse à Google Drive. Il fournit également le script client permettant à tout dépôt de recherche de s'interfacer avec ce cluster.
+Asynchronous continuous integration system for research pipelines, designed as a pull-based replacement for the legacy SlurmRay push-based architecture. This repository hosts the scripts necessary to configure a GitHub Actions Self-Hosted Runner on the target Ubuntu machine, orchestrating `uv run dvc repro` executions in local environments and managing silent authentication with Google Drive. It also provides the client script allowing any research repository to interface with this cluster.
 
 ## Installation
 
-### Côté Client (Projet de recherche)
-Pour intégrer un projet de recherche au cluster, exécutez la commande suivante à la racine de votre dépôt :
+### Client-Side (Research Project)
+To integrate a research project with the cluster, execute the following command at the root of your repository:
 ```bash
 curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash
 ```
 
-### Déploiement du Cluster (Headnode & Workers)
+### Cluster Deployment (Headnode & Workers)
 
-L'installation se fait via un "One-Liner" curl qui configure automatiquement l'environnement et les services systemd.
+Installation is done via a "One-Liner" curl command that automatically configures the environment and systemd services.
 
-#### 1. Installer le Headnode (Ordonnanceur)
-Le Headnode gère la file d'attente des jobs et les runners éphémères. Le script vous demandera votre **GitHub PAT** et la cible à surveiller.
+#### 1. Install the Headnode (Scheduler)
+The Headnode manages the job queue and ephemeral runners. The script will ask for your **GitHub PAT** and the target to monitor.
 ```bash
 curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode
 ```
 
-#### 2. Installer un Worker (Exécuteur)
-Une fois le Headnode installé, il vous fournira une commande prête à l'emploi à exécuter sur vos Workers. Alternativement, vous pouvez lancer l'installation manuellement :
+#### 2. Install a Worker (Executor)
+Once the Headnode is installed, it will provide a ready-to-use command to run on your Workers. Alternatively, you can start the installation manually:
 ```bash
 curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- worker
 ```
-Le script vous demandera l'**URL du Headnode** et le **Token du Cluster** généré lors de l'installation du Headnode.
+The script will ask for the **Headnode URL** and the **Cluster Token** generated during Headnode installation.
 
-#### Configuration Post-Installation
-Une fois installé, vous pouvez ajouter des secrets (GCP, HuggingFace) dans le fichier `.env.secrets` situé dans le dossier d'installation (par défaut `~/cluster-ci`).
+#### Post-Installation Configuration
+Once installed, you can add secrets (GCP, HuggingFace) to the `.env.secrets` file located in the installation folder (default `~/cluster-ci`).
 
-Pour tout désinstaller proprement (services systemd, nettoyage local) :
+To cleanly uninstall everything (systemd services, local cleanup):
 ```bash
 cd ~/cluster-ci
 ./src/cluster/uninstall_runner.sh owner/repo
 ```
 
-## Description détaillée
+## Detailed Description
 
-Cluster CI est fondé sur le principe de GitOps. Au lieu que l'agent cherche à maintenir une session interactive continue sur la machine distancée (problème structurel avec l'Agent Joules sur des jobs de recherche longs), on délègue l'exécution à un self-hosted runner GitHub Actions installé en tant que service `systemd` sur la machine.
+Cluster CI is based on GitOps principles. Instead of the agent trying to maintain a continuous interactive session on the remote machine (a structural issue with the Joules Agent on long research jobs), execution is delegated to a self-hosted GitHub Actions runner installed as a `systemd` service on the machine.
 
-**Flux d'exécution** :
-1. **Pull Request** : Joules (l'agent codeur) pousse ses changements sur une PR GitHub.
-2. **Déclenchement CI** : GitHub Actions accroche le self-hosted runner.
-3. **Orchestration** : Le script de setup bascule dans un répertoire de cache local non-tracké (`repositories/$ORG/$REPO_NAME`), fait un `git fetch` et un `git checkout` forcé de la branche (pour conserver l'état DVC intact inter-branches).
-4. **Exécution** : L'orchestrateur détecte le fichier `.cluster-ci`, prépare l'environnement via `uv sync` et lance `uv run dvc repro` avec les arguments fournis.
-5. **Authentification** : Le runner injecte les credentials silencieusement (Google Drive) en sourçant les fichiers `.env` et `.env.secrets` globaux du cluster.
-6. **Feedbacks CI** : Joules reçoit les échecs et succès natifs via l'intégration GitHub PR.
+**Execution Flow**:
+1. **Pull Request**: Joules (the coding agent) pushes changes to a GitHub PR.
+2. **CI Trigger**: GitHub Actions hooks into the self-hosted runner.
+3. **Orchestration**: The setup script switches to an untracked local cache directory (`repositories/$ORG/$REPO_NAME`), performs a `git fetch` and a forced `git checkout` of the branch (to keep DVC state intact across branches).
+4. **Execution**: The orchestrator detects the `.cluster-ci` file, prepares the environment via `uv sync`, and runs `uv run dvc repro` with the provided arguments.
+5. **Authentication**: The runner silently injects credentials (Google Drive) by sourcing the global cluster `.env` and `.env.secrets` files.
+6. **CI Feedback**: Joules receives native failure and success notifications via GitHub PR integration.
 
-## Principaux résultats
+## Main Results
 
-- **Statut** : En construction. Le système remplace l'ancienne approche réseau synchrone par une boucle asynchrone robuste CI/CD.
+- **Status**: Under construction. The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
 
 ## Documentation Index
 
-| Titre (Lien) | Description |
+| Title (Link) | Description |
 |--------------|-------------|
-| [Index Architecture](docs/index_architecture.md) | Spécifications et notes de conception de l'architecture |
+| [Architecture Index](docs/index_architecture.md) | Architecture specifications and design notes |
 
-## Plan du repo
+## Repository Layout
 
 ```text
 cluster-ci/
-├── docs/           # Documentation, Index et Spécifications des tâches
-├── install.sh      # Script d'installation côté client 
-└── src/            # Scripts du Runner et de l'Orchestrateur
-    ├── cluster/    # Setup et gestion du runner local (systemd)
-    ├── runner/     # Orchestrateur GitOps (run_research_pipeline.sh)
-    └── scheduler/  # Headnode API, Worker Agent et Persistence (SQLite)
+├── docs/           # Documentation, Index, and Task Specifications
+├── install.sh      # Client-side installation script
+└── src/            # Runner and Orchestrator scripts
+    ├── cluster/    # Local runner setup and management (systemd)
+    ├── runner/     # GitOps Orchestrator (run_research_pipeline.sh)
+    └── scheduler/  # Headnode API, Worker Agent, and Persistence (SQLite)
 ```
 
-## Scripts d'entrée principaux
+## Main Entry Scripts
 
-| Commande | Description |
+| Command | Description |
 |----------|-------------|
-| `install.sh` | Injecte le workflow GitHub Actions et le fichier `.cluster-ci` dans un dépôt client |
-| `src/cluster/setup_runner.sh` | Installe et configure le runner GitHub Actions en tant que service `systemd` |
-| `src/cluster/uninstall_runner.sh` | Désinstalle le runner complétement (Systemd, GitHub, local) |
+| `install.sh` | Injects the GitHub Actions workflow and `.cluster-ci` file into a client repository |
+| `src/cluster/setup_runner.sh` | Installs and configures the GitHub Actions runner as a `systemd` service |
+| `src/cluster/uninstall_runner.sh` | Completely uninstalls the runner (Systemd, GitHub, local) |
 
-## Scripts exécutables secondaires & Utilitaires
+## Secondary Executable Scripts & Utilities
 
-| Commande | Description |
+| Command | Description |
 |----------|-------------|
-| `src/scheduler/submit_job.py` | Script client (CLI) pour soumettre manuellement un job au Headnode |
-| `src/scheduler/runner_manager.py` | Gère le cycle de vie des runners GitHub Actions éphémères (slot1, slot2) |
-| `update_cluster.sh` | Met à jour le Headnode et les Workers via SSH, utilise un fichier `.env` pour stocker les identifiants |
+| `src/scheduler/submit_job.py` | Client-side script (CLI) to manually submit a job to the Headnode |
+| `src/scheduler/runner_manager.py` | Manages the lifecycle of ephemeral GitHub Actions runners (slot1, slot2) |
+| `update_cluster.sh` | Updates the Headnode and Workers via SSH, uses an `.env` file to store credentials |
 
 ## Roadmap
 
-**Phase 1 (Fondation — Complétée)**
-- [x] [Setup Orchestrateur Runner](docs/tasks/setup_orchestrator.md)
-- [x] [Déploiement Local & Test Runner](docs/tasks/deploy_local_cluster.md)
-- [x] [Authentification Silencieuse DVC](docs/tasks/dvc_auth.md)
-- [x] [Script d'Installation Client](docs/tasks/client_script.md)
-- [x] [Gestion de la Concurrence par Dépôt](docs/tasks/concurrency_management.md)
+**Phase 1 (Foundation — Completed)**
+- [x] [Orchestrator Runner Setup](docs/tasks/setup_orchestrator.md)
+- [x] [Local Deployment & Runner Test](docs/tasks/deploy_local_cluster.md)
+- [x] [Silent DVC Authentication](docs/tasks/dvc_auth.md)
+- [x] [Client Installation Script](docs/tasks/client_script.md)
+- [x] [Per-Repository Concurrency Management](docs/tasks/concurrency_management.md)
 
-**Phase 2 (Fiabilité & UX — En cours)**
-- [x] Déploiement Automatisé (`update_cluster.sh`) avec tests E2E
-- [x] Configuration de build standard (`pyproject.toml`)
-- [x] Support OAuth GitHub pour le Dashboard (avec support reverse proxy et IPv4 fallback)
-- [x] Amélioration UX Dashboard (formatage dates, corrections chemins DVC sous systemd)
-- [x] Migration vers exécution Worker Docker (Support NVIDIA/ARM)
-- [x] Log Streaming temps réel via le Headnode
-- [ ] Monitoring complet et Healthcheck
+**Phase 2 (Reliability & UX — In Progress)**
+- [x] Automated Deployment (`update_cluster.sh`) with E2E tests
+- [x] Standard build configuration (`pyproject.toml`)
+- [x] GitHub OAuth support for the Dashboard (with reverse proxy and IPv4 fallback support)
+- [x] Dashboard UX improvement (date formatting, DVC path corrections under systemd)
+- [x] Migration to Docker Worker execution (NVIDIA/ARM support)
+- [x] Real-time Log Streaming via Headnode
+- [ ] Full Monitoring and Healthcheck

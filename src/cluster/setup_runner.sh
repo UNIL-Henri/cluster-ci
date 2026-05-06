@@ -9,7 +9,7 @@ if [ "$ROLE" == "headnode" ] && [ -z "$TARGET" ]; then
     exit 1
 fi
 
-# Se placer à la racine du projet
+# Go to project root
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
 
@@ -28,84 +28,84 @@ if [ -n "$SUDO_PASSWORD" ]; then
     trap 'rm -f "$ASKPASS_SCRIPT"' EXIT
 fi
 
-echo "🎯 Préparation du Cluster pour la cible : $TARGET"
+echo "🎯 Preparing the Cluster for target: $TARGET"
 
-# 2. Chargement de l'environnement (Needed for DOCKER_BASE_IMAGE)
+# 2. Environment loading (Needed for DOCKER_BASE_IMAGE)
 if [ -f ".env" ]; then
     source .env
 fi
 
-# 0. Vérification / Installation de Docker
+# 0. Docker Check / Installation
 if ! command -v docker &> /dev/null; then
-    echo "📦 Installation de Docker..."
+    echo "📦 Installing Docker..."
     curl -fsSL https://get.docker.com | sh
-    echo "⚠️ Docker a été installé. Vous devrez peut-être vous reconnecter pour que les changements de groupe prennent effet."
+    echo "⚠️ Docker has been installed. You may need to reconnect for group changes to take effect."
 else
-    echo "✅ Docker est déjà installé."
+    echo "✅ Docker is already installed."
 fi
 
 # Always ensure user is in docker group
 sudo usermod -aG docker $USER
 
-# Pré-pull de l'image de base pour éviter les timeouts
+# Pre-pull the base image to avoid timeouts
 if [ -n "$DOCKER_BASE_IMAGE" ]; then
-    echo "🐳 Pré-chargement de l'image Docker : $DOCKER_BASE_IMAGE..."
-    # On utilise sudo ici pour le cas où l'utilisateur vient d'être ajouté au groupe mais n'a pas encore redémarré sa session
-    sudo docker pull "$DOCKER_BASE_IMAGE" || echo "⚠️ Échec du pull de l'image $DOCKER_BASE_IMAGE, elle sera téléchargée au premier job."
+    echo "🐳 Pre-loading Docker image: $DOCKER_BASE_IMAGE..."
+    # Use sudo here in case the user was just added to the group but hasn't restarted their session
+    sudo docker pull "$DOCKER_BASE_IMAGE" || echo "⚠️ Failed to pull image $DOCKER_BASE_IMAGE, it will be downloaded during the first job."
 fi
 
-# 1. Vérification / Installation de uv
+# 1. uv Check / Installation
 if ! command -v uv &> /dev/null; then
-    echo "📦 Installation de uv..."
+    echo "📦 Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     source $HOME/.local/bin/env || true
 else
-    echo "✅ uv est déjà installé."
+    echo "✅ uv is already installed."
 fi
 
-# 1.5 Vérification / Installation de DVC
+# 1.5 DVC Check / Installation
 if ! command -v dvc &> /dev/null; then
-    echo "📦 Installation de DVC (globale via uv)..."
+    echo "📦 Installing DVC (globally via uv)..."
     uv tool install dvc
 else
-    echo "✅ dvc est déjà installé."
+    echo "✅ dvc is already installed."
 fi
 
-# 2.5 Vérification des pré-requis par rôle
+# 2.5 Prerequisites check by role
 if [ "$ROLE" == "headnode" ]; then
     if [ -z "$GITHUB_PAT" ]; then
-        echo "❌ Erreur: GITHUB_PAT non défini. Requis pour le rôle headnode."
+        echo "❌ Error: GITHUB_PAT not defined. Required for headnode role."
         exit 1
     fi
 fi
 
-# 3. Préparation du dossier contenant le runner
-# On télécharge une fois le runner dans un dossier template
+# 3. Prepare the runner folder
+# Download the runner once into a template folder
 TEMPLATE_DIR="runners/template"
 mkdir -p "$TEMPLATE_DIR"
 
 if [ ! -f "$TEMPLATE_DIR/config.sh" ]; then
-    echo "⬇️ Téléchargement du binaire Runner GitHub Actions..."
+    echo "⬇️ Downloading GitHub Actions Runner binary..."
     RUNNER_VERSION="2.321.0"
     curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
     tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -C "$TEMPLATE_DIR"
     rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
 fi
 
-# On prépare 2 slots pour les runners éphémères
+# Prepare 2 slots for ephemeral runners
 for i in 1 2; do
     SLOT_DIR="runners/slot$i"
     if [ ! -d "$SLOT_DIR" ]; then
-        echo "📂 Initialisation du slot $i..."
+        echo "📂 Initializing slot $i..."
         cp -r "$TEMPLATE_DIR" "$SLOT_DIR"
     fi
 done
 
-# 5. Installation Systemd
+# 5. Systemd Installation
 if [ "$ROLE" == "headnode" ]; then
-    echo "⚙️ Installation du service systemd pour le Runner Manager éphémère..."
+    echo "⚙️ Installing systemd service for Ephemeral Runner Manager..."
 
-    # Création du service systemd pour le runner manager
+    # Create systemd service for runner manager
     cat <<EOF | sudo tee /etc/systemd/system/cluster-runner-manager.service
 [Unit]
 Description=Cluster-CI Ephemeral Runner Manager
@@ -123,11 +123,11 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-    echo "⚙️ Configuration du Scheduler Headnode..."
-    # Installation des dépendances pour le scheduler depuis le pyproject.toml
+    echo "⚙️ Configuring Headnode Scheduler..."
+    # Install dependencies for the scheduler from pyproject.toml
     uv pip install -e $BASE_DIR
 
-    # Création du service systemd pour le scheduler API
+    # Create systemd service for scheduler API
     cat <<EOF | sudo tee /etc/systemd/system/cluster-scheduler.service
 [Unit]
 Description=Cluster-CI Scheduler API
@@ -145,7 +145,7 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-    # Création du service systemd pour le scheduler loop
+    # Create systemd service for scheduler loop
     cat <<EOF | sudo tee /etc/systemd/system/cluster-scheduler-loop.service
 [Unit]
 Description=Cluster-CI Scheduler Loop
@@ -166,10 +166,10 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl enable cluster-scheduler cluster-scheduler-loop cluster-runner-manager
     sudo systemctl restart cluster-scheduler cluster-scheduler-loop cluster-runner-manager
-    echo "🚀 Services Scheduler et Runner Manager démarrés."
+    echo "🚀 Scheduler and Runner Manager services started."
 
 else
-    echo "⚙️ Configuration du Worker Agent..."
+    echo "⚙️ Configuring Worker Agent..."
     uv pip install -e $BASE_DIR
 
     cat <<EOF | sudo tee /etc/systemd/system/cluster-worker.service
@@ -192,13 +192,13 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl enable cluster-worker
     sudo systemctl restart cluster-worker
-    echo "🚀 Service Worker Agent installé et démarré."
+    echo "🚀 Worker Agent service installed and started."
 fi
-echo "   Commandes utiles :"
-echo "   - sudo ./svc.sh status  : Voir l'état"
-echo "   - sudo ./svc.sh stop    : Arrêter"
-echo "   - sudo ./svc.sh start   : Démarrer"
+echo "   Useful commands:"
+echo "   - sudo ./svc.sh status  : View status"
+echo "   - sudo ./svc.sh stop    : Stop"
+echo "   - sudo ./svc.sh start   : Start"
 
-# 6. Lien global pour l'orchestrateur
-echo "🔗 Création du lien symbolique global /usr/local/bin/cluster-ci-run..."
+# 6. Global link for orchestrator
+echo "🔗 Creating global symbolic link /usr/local/bin/cluster-ci-run..."
 sudo ln -sf "$BASE_DIR/src/runner/run_research_pipeline.sh" /usr/local/bin/cluster-ci-run

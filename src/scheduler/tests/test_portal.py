@@ -65,8 +65,8 @@ class TestPortalAndProxy(unittest.TestCase):
         # Check for presence of key words as strings from the decoded response
         body = response.data.decode('utf-8')
         self.assertIn('non', body)
-        self.assertIn('trouv', body)
-        self.assertIn('localement', body)
+        self.assertIn('not found', body)
+        self.assertIn('locally', body)
 
     def test_historical_proxy_spawns_process(self):
         # Mock login

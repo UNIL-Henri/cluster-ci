@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuration de logging
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] slot=%(slot)s: %(message)s',
@@ -27,7 +27,7 @@ class RunnerManager:
         self.runner_name_prefix = f"cluster-local-{target_repo.replace('/', '-')}"
 
     def get_registration_token(self):
-        """Récupère un nouveau token d'enregistrement via l'API GitHub."""
+        """Retrieves a new registration token via the GitHub API."""
         if "/" in self.target_repo:
             api_url = f"https://api.github.com/repos/{self.target_repo}/actions/runners/registration-token"
         else:
@@ -45,18 +45,18 @@ class RunnerManager:
         return response.json()["token"]
 
     def run_slot(self, slot_id):
-        """Gère le cycle de vie d'un runner éphémère pour un slot donné."""
+        """Manages the lifecycle of an ephemeral runner for a given slot."""
         slot_dir = self.runners_dir / f"slot{slot_id}"
         logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': slot_id})
 
         while True:
             try:
-                logger.info("Préparation d'un nouveau runner éphémère...")
+                logger.info("Preparing a new ephemeral runner...")
 
-                # 1. Obtenir un token
+                # 1. Obtain a token
                 token = self.get_registration_token()
 
-                # 2. Configurer le runner
+                # 2. Configure the runner
                 runner_name = f"{self.runner_name_prefix}-slot{slot_id}"
                 config_cmd = [
                     "./config.sh",
@@ -69,20 +69,20 @@ class RunnerManager:
                     "--ephemeral"
                 ]
 
-                logger.info(f"Configuration du runner {runner_name}...")
+                logger.info(f"Configuring runner {runner_name}...")
                 subprocess.run(config_cmd, cwd=slot_dir, check=True, capture_output=True)
 
-                # 3. Lancer le runner
-                logger.info("Lancement du runner...")
-                # run.sh bloque jusqu'à ce que le job soit fini ou que le runner soit arrêté
+                # 3. Launch the runner
+                logger.info("Launching runner...")
+                # run.sh blocks until the job is finished or the runner is stopped
                 process = subprocess.Popen(["./run.sh"], cwd=slot_dir)
                 process.wait()
 
-                logger.info(f"Le runner s'est arrêté avec le code {process.returncode}. Redémarrage imminent...")
+                logger.info(f"Runner stopped with code {process.returncode}. Imminent restart...")
 
             except Exception as e:
-                logger.error(f"Erreur dans le cycle du runner : {e}")
-                time.sleep(10) # Attendre un peu avant de réessayer en cas d'erreur fatale
+                logger.error(f"Error in runner cycle: {e}")
+                time.sleep(10) # Wait a bit before retrying in case of fatal error
 
     def start(self):
         threads = []
@@ -93,21 +93,21 @@ class RunnerManager:
             threads.append(t)
 
         logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': 'MANAGER'})
-        logger.info(f"Gestionnaire de runners démarré avec {self.num_slots} slots pour {self.target_repo}")
+        logger.info(f"Runner manager started with {self.num_slots} slots for {self.target_repo}")
 
-        # Maintenir le thread principal vivant
+        # Keep main thread alive
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            logger.info("Arrêt du gestionnaire...")
+            logger.info("Stopping manager...")
 
 if __name__ == "__main__":
     target = os.environ.get("TARGET_REPO")
     pat = os.environ.get("GITHUB_PAT")
 
     if not target or not pat:
-        print("Erreur : TARGET_REPO et GITHUB_PAT doivent être définis en variables d'environnement.")
+        print("Error: TARGET_REPO and GITHUB_PAT must be defined as environment variables.")
         sys.exit(1)
 
     # On assume que le script est dans src/scheduler/

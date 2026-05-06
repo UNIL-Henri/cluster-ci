@@ -158,7 +158,7 @@ def execute_job(job):
 
         if exit_code == 137:
             # Docker returns 137 when OOM-killed
-            error_msg = f"❌ [OOM ARTIFICIEL CLUSTER] Exécution interrompue ! Vous aviez réservé {ram_limit_gb} Go de RAM dans '.cluster-ci', or votre pipeline vient d'être tué par Docker. Veuillez augmenter votre réservation.\n"
+            error_msg = f"❌ [CLUSTER ARTIFICIAL OOM] Execution interrupted! You reserved {ram_limit_gb} GB of RAM in '.cluster-ci', but your pipeline was just killed by Docker. Please increase your reservation.\n"
             sys.stderr.write(error_msg)
             sys.stderr.flush()
             update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)

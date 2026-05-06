@@ -138,29 +138,29 @@
                     let prevHtml = '';
                     if (currentIndex < window.allRuns.length - 1) {
                         const prevRun = window.allRuns[currentIndex + 1];
-                        const prevDate = new Date(prevRun.created_at).toLocaleString('fr-FR', {
+                        const prevDate = new Date(prevRun.created_at).toLocaleString('en-US', {
                             year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
                         }).replace(',', '');
                         const prevTitle = prevRun.commit_title ? escapeHtml(prevRun.commit_title) : prevRun.job_id.substring(0,8);
                         prevHtml = `<button class="btn btn-outline-secondary btn-sm" onclick="navigateToVersion('${prevRun.job_id}', '${escapeHtml(path).replace(/'/g, "\\'")}')" title="${prevTitle}">
-                            <i class="bi bi-chevron-left"></i> Version du ${prevDate}
+                            <i class="bi bi-chevron-left"></i> Version from ${prevDate}
                         </button>`;
                     } else {
-                        prevHtml = `<button class="btn btn-outline-secondary btn-sm disabled"><i class="bi bi-chevron-left"></i> Plus ancien</button>`;
+                        prevHtml = `<button class="btn btn-outline-secondary btn-sm disabled"><i class="bi bi-chevron-left"></i> Older</button>`;
                     }
 
                     let nextHtml = '';
                     if (currentIndex > 0) {
                         const nextRun = window.allRuns[currentIndex - 1];
-                        const nextDate = new Date(nextRun.created_at).toLocaleString('fr-FR', {
+                        const nextDate = new Date(nextRun.created_at).toLocaleString('en-US', {
                             year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
                         }).replace(',', '');
                         const nextTitle = nextRun.commit_title ? escapeHtml(nextRun.commit_title) : nextRun.job_id.substring(0,8);
                         nextHtml = `<button class="btn btn-outline-secondary btn-sm" onclick="navigateToVersion('${nextRun.job_id}', '${escapeHtml(path).replace(/'/g, "\\'")}')" title="${nextTitle}">
-                            Version du ${nextDate} <i class="bi bi-chevron-right"></i>
+                            Version from ${nextDate} <i class="bi bi-chevron-right"></i>
                         </button>`;
                     } else {
-                        nextHtml = `<button class="btn btn-outline-secondary btn-sm disabled">Plus récent <i class="bi bi-chevron-right"></i></button>`;
+                        nextHtml = `<button class="btn btn-outline-secondary btn-sm disabled">Newer <i class="bi bi-chevron-right"></i></button>`;
                     }
 
                     const currentTitle = currentRun.commit_title ? escapeHtml(currentRun.commit_title) : currentRun.job_id.substring(0,8);
@@ -169,7 +169,7 @@
                         <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border w-100">
                             \${prevHtml}
                             <div class="text-center mx-2 text-truncate" style="max-width: 45%;" title="\${currentTitle}">
-                                <small class="text-muted d-block" style="font-size: 0.75rem;">Commit Associé</small>
+                                <small class="text-muted d-block" style="font-size: 0.75rem;">Associated Commit</small>
                                 <strong>\${currentTitle}</strong>
                             </div>
                             \${nextHtml}
@@ -340,7 +340,7 @@
                 runLi.className = 'breadcrumb-item active';
                 if (currentState.createdAt) {
                     const runDate = new Date(currentState.createdAt);
-                    runLi.textContent = runDate.toLocaleString('fr-FR', {
+                    runLi.textContent = runDate.toLocaleString('en-US', {
                         year: 'numeric', month: '2-digit', day: '2-digit',
                         hour: '2-digit', minute: '2-digit', second: '2-digit'
                     }).replace(',', '');
@@ -426,7 +426,7 @@
                 if (runningRuns.length > 0) {
                     const runningHeader = document.createElement('div');
                     runningHeader.className = 'col-12 mb-3';
-                    runningHeader.innerHTML = '<h4 class="text-primary"><i class="bi bi-activity"></i> En cours d\'exécution</h4>';
+                    runningHeader.innerHTML = '<h4 class="text-primary"><i class="bi bi-activity"></i> Currently Running</h4>';
                     container.appendChild(runningHeader);
 
                     runningRuns.forEach(run => {
@@ -435,7 +435,7 @@
                         const [owner, name] = repo.split('/');
                         const viewerUrl = '/view/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
                         
-                        const runDate = new Date(run.created_at).toLocaleString('fr-FR', {
+                        const runDate = new Date(run.created_at).toLocaleString('en-US', {
                             year: 'numeric', month: '2-digit', day: '2-digit',
                             hour: '2-digit', minute: '2-digit', second: '2-digit'
                         }).replace(',', '');
@@ -446,15 +446,15 @@
                                     <div>
                                         <h5 class="card-title text-primary mb-1">
                                             <span class="spinner-grow spinner-grow-sm me-2" role="status" aria-hidden="true"></span>
-                                            Run du ${runDate}
+                                            Run from ${runDate}
                                         </h5>
                                         <p class="card-text text-muted mb-0">
-                                            Branche : <strong>${escapeHtml(run.branch)}</strong> | Job ID : ${run.job_id.substring(0,8)}...
+                                            Branch: <strong>${escapeHtml(run.branch)}</strong> | Job ID: ${run.job_id.substring(0,8)}...
                                         </p>
                                     </div>
                                     <div>
                                         <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
-                                            <i class="bi bi-broadcast"></i> Ouvrir Live DVC-Viewer
+                                            <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
                                         </a>
                                     </div>
                                 </div>
@@ -466,7 +466,7 @@
                     if (otherRuns.length > 0) {
                         const divider = document.createElement('div');
                         divider.className = 'col-12 mt-4 mb-3';
-                        divider.innerHTML = '<h4 class="text-secondary"><i class="bi bi-clock-history"></i> Historique des runs</h4><hr>';
+                        divider.innerHTML = '<h4 class="text-secondary"><i class="bi bi-clock-history"></i> Run History</h4><hr>';
                         container.appendChild(divider);
                     }
                 }
@@ -485,7 +485,7 @@
                     const title = document.createElement('h6');
                     title.className = 'card-title mb-1';
                     const runDate = new Date(run.created_at);
-                    title.textContent = runDate.toLocaleString('fr-FR', {
+                    title.textContent = runDate.toLocaleString('en-US', {
                         year: 'numeric', month: '2-digit', day: '2-digit',
                         hour: '2-digit', minute: '2-digit', second: '2-digit'
                     }).replace(',', '');
