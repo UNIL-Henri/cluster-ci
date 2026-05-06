@@ -166,6 +166,7 @@ docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" chown -R "$(i
 
 function docker_exec() {
     docker run --rm \
+        --gpus all \
         -v "$(pwd):/workspace" \
         -v "$HOME_CACHE_VOLUME:/home/user" \
         -v /etc/passwd:/etc/passwd:ro \
@@ -209,8 +210,9 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
 docker run --rm \
+    --gpus all \
     -v "$(pwd):/workspace" -w /workspace \
-    -v "$PIP_CACHE_VOLUME:/home/user/.local" \
+    -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
     $ENV_FILE_FLAG \
