@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 HEADNODE_URL = os.environ.get("HEADNODE_URL", "http://localhost:5000")
 CLUSTER_TOKEN = os.environ.get("CLUSTER_TOKEN")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOGS_DIR = os.path.join(BASE_DIR, "job_logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 def get_headers():
     headers = {}
@@ -115,8 +118,11 @@ def execute_job(job):
         logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
         env["DVC_REMOTE_P2P_URL"] = p2p_url
 
+    log_path = os.path.join(LOGS_DIR, f"{job_id}.log")
+    log_file = open(log_path, 'w')
+
     try:
-        process = subprocess.Popen(cmd, env=env)
+        process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT)
         with job_lock:
             current_process = process
         port_reported = False
@@ -169,6 +175,8 @@ def execute_job(job):
         logger.error(f"Execution failed: {e}")
         update_job_status(job_id, 'failed', -1)
     finally:
+        if 'log_file' in locals() and not log_file.closed:
+            log_file.close()
         with job_lock:
             current_job_id = None
             current_process = None
@@ -250,6 +258,24 @@ def cancel_job(job_id):
         else:
             logger.warning(f"No active job matches {job_id} (current: {current_job_id})")
             return jsonify({"status": "not_found", "message": "Job not running on this worker"}), 404
+
+@app.route('/job_logs/<job_id>', methods=['GET'])
+def get_job_logs(job_id):
+    offset = int(request.args.get('offset', 0))
+    log_path = os.path.join(LOGS_DIR, f"{job_id}.log")
+    
+    if not os.path.exists(log_path):
+        return jsonify({"logs": "", "offset": offset})
+        
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            f.seek(offset)
+            new_logs = f.read()
+            new_offset = f.tell()
+        return jsonify({"logs": new_logs, "offset": new_offset})
+    except Exception as e:
+        logger.error(f"Error reading logs for {job_id}: {e}")
+        return jsonify({"logs": "", "offset": offset}), 500
 
 @app.route('/fetch_artifact/<path:file_path>', methods=['GET'])
 def fetch_artifact(file_path):
