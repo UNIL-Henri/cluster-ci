@@ -1,3 +1,13 @@
+import socket
+# Force IPv4 to prevent infinite hangs on broken IPv6 networks (common on headless servers)
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+# Set a global timeout for all socket operations to prevent infinite hangs
+socket.setdefaulttimeout(20.0)
+
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, session, url_for, redirect, render_template
 from persistence import init_db, get_db_conn
 from authlib.integrations.flask_client import OAuth
@@ -10,20 +20,12 @@ import subprocess
 import sys
 import time
 import threading
-import socket
 import re
 import json
 import tempfile
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
-
-# Force IPv4 to prevent infinite hangs on broken IPv6 networks (common on headless servers)
-old_getaddrinfo = socket.getaddrinfo
-def new_getaddrinfo(*args, **kwargs):
-    responses = old_getaddrinfo(*args, **kwargs)
-    return [response for response in responses if response[0] == socket.AF_INET]
-socket.getaddrinfo = new_getaddrinfo
 
 load_dotenv()
 
@@ -449,16 +451,28 @@ def dashboard():
 @app.route('/login')
 def login():
     redirect_uri = url_for('authorize', _external=True)
+    print(f"DEBUG: Redirecting to GitHub. redirect_uri={redirect_uri}", flush=True)
     return oauth.github.authorize_redirect(redirect_uri)
 
 @app.route('/authorize')
 def authorize():
-    token = oauth.github.authorize_access_token()
-    resp = oauth.github.get('user', token=token)
-    user = resp.json()
-    session['user'] = user
-    session['token'] = token
-    return redirect(url_for('dashboard'))
+    print(f"DEBUG: /authorize reached. Args: {request.args}", flush=True)
+    try:
+        print("DEBUG: Fetching access token...", flush=True)
+        token = oauth.github.authorize_access_token()
+        print(f"DEBUG: Token received. Fetching user info...", flush=True)
+        resp = oauth.github.get('user', token=token)
+        user = resp.json()
+        print(f"DEBUG: User info received: {user.get('login')}. Setting session...", flush=True)
+        session['user'] = user
+        session['token'] = token
+        print("DEBUG: Redirecting to dashboard.", flush=True)
+        return redirect(url_for('dashboard'))
+    except Exception as e:
+        print(f"DEBUG ERROR in /authorize: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return f"Authentication Error: {str(e)}", 500
 
 @app.route('/logout')
 def logout():

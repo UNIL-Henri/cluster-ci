@@ -1,0 +1,8 @@
+flask
+psutil
+requests
+authlib
+python-dotenv
+
+[dev]
+pytest
