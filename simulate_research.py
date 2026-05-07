@@ -49,3 +49,4 @@ with open("artifacts/plot.png", "wb") as f:
     f.write(base64.b64decode(png_b64))
 
 print("✅ Research pipeline completed successfully! Artifacts written to artifacts/")
+print("Forcing DVC rerun to show CUDA status explicitly")
