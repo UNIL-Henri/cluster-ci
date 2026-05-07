@@ -5,6 +5,7 @@
 | [Headnode/Worker Topology](#headnode-worker-topology-and-dynamic-scheduling) | Description of the new distributed computing architecture | 2026-05-05 | Architecture |
 | [JIT GC](tasks/jit_gc.md) | LRU-based Garbage Collector for managing disk space. | 2026-05-05 | Infrastructure |
 | [Concurrency Management](tasks/concurrency_management.md) | Management of obsolete job cancellations. | 2026-05-05 | Infrastructure |
+| [Docker ARM Strategy](architecture/docker_arm_strategy.md) | Stratégie d'isolation hybride Golden Image + Dépendances Dynamiques sur workers ARM. | 2026-05-07 | Up to date |
 
 ## Headnode/Worker Topology and Dynamic Scheduling
 
