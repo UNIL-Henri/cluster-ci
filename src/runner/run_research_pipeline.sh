@@ -271,7 +271,7 @@ fi
 log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # Execution of repro and uv dependencies if present
 if [ -f "pyproject.toml" ]; then
-    EXEC_CMD="(command -v uv || pip install uv --user >/dev/null 2>&1) && if [ \"\$(uname -m)\" = \"aarch64\" ]; then echo \"⚠️ ARM64 architecture detected. Using system packages to preserve L4T PyTorch...\"; (python3 -m pip install --user . || python3 -m pip install --user -r requirements.txt) && dvc repro $DVC_ARGS; else uv sync && uv run dvc repro $DVC_ARGS; fi"
+    EXEC_CMD="(command -v uv || pip install uv --user >/dev/null 2>&1) && uv sync && uv run dvc repro $DVC_ARGS"
 else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
