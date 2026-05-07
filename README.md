@@ -7,11 +7,18 @@ Asynchronous continuous integration system for research pipelines, designed as a
 
 ## Installation
 
-### Client-Side (Research Project)
-To integrate a research project with the cluster, execute the following command at the root of your repository:
+### 1. Client Installation (Projet de recherche)
+
+Exécutez cette commande à la racine de votre dépôt Git pour l'intégration automatique :
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash
 ```
+
+Ce script injecte :
+1. Le workflow Github Actions (`.github/workflows/cluster-ci.yml`)
+2. Le fichier de contrôle DVC (`.cluster-ci`)
+3. **Le fichier de directives pour agents (`AGENTS.md`)** contenant les contraintes strictes d'architecture (Python 3.8, héritage L4T PyTorch) afin d'éviter les erreurs de dépendances de l'IA sur ce dépôt.
 
 ### Cluster Deployment (Headnode & Workers)
 
