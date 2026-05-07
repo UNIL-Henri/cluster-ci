@@ -221,11 +221,42 @@ EOF
     else
         echo "⚠️ .cluster-ci file already present, not overwritten."
     fi
+    # 4. Instructions in AGENTS.md
+    echo "📝 Updating AGENTS.md..."
+    if [ ! -f "AGENTS.md" ]; then
+        touch "AGENTS.md"
+        echo "# Règles de l'Agent pour ce Répertoire" > "AGENTS.md"
+        echo "" >> "AGENTS.md"
+    fi
+
+    # Portable in-place sed removal of old section
+    sed -i.bak '/<!-- CLUSTER-CI:START -->/,/<!-- CLUSTER-CI:END -->/d' "AGENTS.md" && rm -f "AGENTS.md.bak"
+
+    cat << 'EOF' >> "AGENTS.md"
+<!-- CLUSTER-CI:START -->
+## ⚠️ Instructions Spécifiques pour la CI (Cluster-CI)
+
+Ce dépôt est orchestré par le système hybride **Cluster-CI** (x86_64 et ARM64 Jetson).
+En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes suivantes pour ne pas casser l'infrastructure distante :
+
+1. **Version Python** : La version de Python sur les noeuds Jetson (L4T) est figée à **3.8.10**. Si tu utilises `pyproject.toml`, la directive `requires-python` doit ABSOLUMENT inclure `3.8` (ex: `>=3.8` ou `<3.11,>=3.8`). Ne force JAMAIS une version `>=3.10` ou supérieure, cela fera échouer l'orchestrateur.
+2. **Dépendances GPU (PyTorch)** : 
+   - L'infrastructure dispose d'une "Golden Image" contenant un PyTorch précompilé et optimisé par NVIDIA pour l'architecture Jetson/TensorRT.
+   - Ne spécifie **aucune contrainte de version stricte** (`==`) pour `torch`, `torchvision`, etc., dans tes dépendances (`pyproject.toml` ou `requirements.txt`).
+   - Le système utilise l'héritage natif `pip` : il téléchargera uniquement les dépendances manquantes et réutilisera le `torch` pré-installé du système.
+3. **Exécution des Jobs (Le fichier `.cluster-ci`)** :
+   - NE MODIFIE PAS le fichier `.github/workflows/cluster-ci.yml`.
+   - Les commandes shell natives (`pytest`, `uv run`, etc.) ne doivent pas être utilisées dans les Github Actions.
+   - **Toute exécution (tests, entraînement) DOIT passer par un stage DVC** défini dans `dvc.yaml`.
+   - Pour cibler l'exécution, écris le nom du/des stage(s) DVC dans le fichier `.cluster-ci` à la racine.
+<!-- CLUSTER-CI:END -->
+EOF
+    echo "✅ AGENTS.md updated."
 
     echo ""
     echo "🎉 Installation complete!"
     echo "👉 Remember to commit and push the generated files:"
-    echo "   git add .github/workflows/cluster-ci.yml .cluster-ci"
+    echo "   git add .github/workflows/cluster-ci.yml .cluster-ci AGENTS.md"
     echo "   git commit -m \"docs: cluster-ci integration\""
     echo "   git push"
     echo ""
