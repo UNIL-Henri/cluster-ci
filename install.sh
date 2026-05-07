@@ -112,8 +112,12 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     update_env_var "GITHUB_CLIENT_ID" "$GITHUB_CLIENT_ID"
     update_env_var "GITHUB_CLIENT_SECRET" "$GITHUB_CLIENT_SECRET"
 
-    # Default Docker image for NVIDIA ARM (Jetson/Grace)
-    [ -z "$DOCKER_BASE_IMAGE" ] && DOCKER_BASE_IMAGE="nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3"
+    # Default Docker image: auto-detect based on architecture.
+    # Modern NVIDIA ARM servers (Grace/Blackwell GB10) use the standard NGC PyTorch image.
+    # Legacy Jetson (L4T/JetPack 5) uses the old l4t image only if /etc/nv_tegra_release exists.
+    if [ -z "$DOCKER_BASE_IMAGE" ]; then
+        DOCKER_BASE_IMAGE="nvcr.io/nvidia/pytorch:26.04-py3"
+    fi
     update_env_var "DOCKER_BASE_IMAGE" "$DOCKER_BASE_IMAGE"
 
     # 3. Local setup execution
@@ -230,14 +234,14 @@ EOF
 <!-- CLUSTER-CI:START -->
 ## ⚠️ Instructions Spécifiques pour la CI (Cluster-CI)
 
-Ce dépôt est orchestré par le système hybride **Cluster-CI** (x86_64 et ARM64 Jetson).
+Ce dépôt est orchestré par le système hybride **Cluster-CI** sur un cluster ARM64 NVIDIA (GPU Blackwell GB10, 128GB RAM, Ubuntu 24.04).
 En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes suivantes pour ne pas casser l'infrastructure distante :
 
-1. **Version Python** : La version de Python sur les noeuds Jetson (L4T) est figée à **3.8.10**. Si tu utilises `pyproject.toml`, la directive `requires-python` doit ABSOLUMENT inclure `3.8` (ex: `>=3.8` ou `<3.11,>=3.8`). Ne force JAMAIS une version `>=3.10` ou supérieure, cela fera échouer l'orchestrateur.
-2. **Dépendances GPU (PyTorch)** : 
-   - L'infrastructure dispose d'une "Golden Image" contenant un PyTorch précompilé et optimisé par NVIDIA pour l'architecture Jetson/TensorRT.
-   - Ne spécifie **aucune contrainte de version stricte** (`==`) pour `torch`, `torchvision`, etc., dans tes dépendances (`pyproject.toml` ou `requirements.txt`).
-   - Le système utilise l'héritage natif `pip` : il téléchargera uniquement les dépendances manquantes et réutilisera le `torch` pré-installé du système.
+1. **Version Python** : Le conteneur d'exécution utilise **Python 3.12**. Si tu utilises `pyproject.toml`, la directive `requires-python` doit inclure `3.12` (ex: `>=3.10`). Tu peux utiliser les dernières versions de toutes les bibliothèques.
+2. **Dépendances GPU (PyTorch)** :
+   - Le conteneur NGC (`nvcr.io/nvidia/pytorch:26.04-py3`) embarque déjà **PyTorch 2.12** avec **CUDA 13.2**.
+   - Sur ARM64, le système utilise l'héritage natif `pip` : il ne télécharge que les dépendances manquantes et réutilise le `torch` pré-installé.
+   - Ne spécifie **aucune contrainte de version stricte** (`==`) pour `torch`, `torchvision`, etc. Utilise `torch` sans version ou avec `>=2.0`.
 3. **Exécution des Jobs (Le fichier `.cluster-ci`)** :
    - NE MODIFIE PAS le fichier `.github/workflows/cluster-ci.yml`.
    - Les commandes shell natives (`pytest`, `uv run`, etc.) ne doivent pas être utilisées dans les Github Actions.

@@ -154,7 +154,7 @@ RAM_LIMIT=$(grep -oE -e '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n
 log_info "RAM limit detected: ${RAM_LIMIT}GB"
 
 # Configuration Docker
-DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3"}
+DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/pytorch:26.04-py3"}
 ENV_FILE_FLAG=""
 if [ -f "$BASE_DIR/.env.secrets" ]; then
     ENV_FILE_FLAG="--env-file $BASE_DIR/.env.secrets"

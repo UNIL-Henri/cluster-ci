@@ -1,9 +1,22 @@
 # Cluster CI
 
 L'orchestrateur GitOps minimaliste et décentralisé pour le traitement de données et l'entraînement de modèles.
-**État actuel** : Système opérationnel. Le réseau de workers hybrides (x86_64 et ARM64) est fonctionnel. L'orchestration ARM garantit des performances GPU/TensorRT optimales sur L4T via une stratégie d'héritage natif `python3 -m pip install --user`.
+**État actuel** : Système opérationnel. Le réseau de workers ARM64 NVIDIA Blackwell est fonctionnel avec le conteneur NGC `nvcr.io/nvidia/pytorch:26.04-py3` (Python 3.12, PyTorch 2.12, CUDA 13.2).
 
 Asynchronous continuous integration system for research pipelines, designed as a pull-based replacement for the legacy SlurmRay push-based architecture. This repository hosts the scripts necessary to configure a GitHub Actions Self-Hosted Runner on the target Ubuntu machine, orchestrating `uv run dvc repro` executions in local environments and managing silent authentication with Google Drive. It also provides the client script allowing any research repository to interface with this cluster.
+
+## Cluster Hardware Specifications
+
+| Property | Value |
+|----------|-------|
+| **GPU** | NVIDIA GB10 (Blackwell architecture) |
+| **CPU** | ARM64 — Cortex-X925 + Cortex-A725 (ARMv9) |
+| **RAM** | 128 GB unified memory |
+| **OS** | Ubuntu 24.04.4 LTS (Noble Numbat) |
+| **Docker Image** | `nvcr.io/nvidia/pytorch:26.04-py3` |
+| **Python** | 3.12 |
+| **PyTorch** | 2.12 (CUDA 13.2) |
+| **Storage** | ~3.2 TB |
 
 ## Installation
 
@@ -18,7 +31,7 @@ curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh
 Ce script injecte :
 1. Le workflow Github Actions (`.github/workflows/cluster-ci.yml`)
 2. Le fichier de contrôle DVC (`.cluster-ci`)
-3. **Le fichier de directives pour agents (`AGENTS.md`)** contenant les contraintes strictes d'architecture (Python 3.8, héritage L4T PyTorch) afin d'éviter les erreurs de dépendances de l'IA sur ce dépôt.
+3. **Le fichier de directives pour agents (`AGENTS.md`)** contenant les contraintes d'architecture du cluster (Python 3.12, PyTorch 2.12, CUDA 13.2) afin d'éviter les erreurs de dépendances de l'IA sur ce dépôt.
 
 ### Cluster Deployment (Headnode & Workers)
 
@@ -113,4 +126,5 @@ cluster-ci/
 - [x] Migration to Docker Worker execution (NVIDIA/ARM support)
 - [x] Real-time Log Streaming via Headnode
 - [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation
+- [x] Migration vers conteneur NGC moderne (Python 3.12, PyTorch 2.12, CUDA 13.2)
 - [ ] Full Monitoring and Healthcheck
