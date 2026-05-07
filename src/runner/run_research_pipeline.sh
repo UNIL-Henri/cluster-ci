@@ -168,6 +168,16 @@ fi
 # Ensure the volume is owned by the current user
 docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" chown -R "$(id -u):$(id -g)" /home/user
 
+# Detect Docker image change: if the cached image marker differs from the
+# current image, purge stale tool binaries to force a clean reinstall.
+MARKER_CMD="cat /home/user/.cluster-ci-image-marker 2>/dev/null || echo 'none'"
+CACHED_IMAGE=$(docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
+if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
+    log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
+    docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
+        bash -c "rm -rf /home/user/.local /home/user/.cache/uv 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
+fi
+
 function docker_exec() {
     docker run --rm \
         --gpus all \
@@ -203,9 +213,10 @@ if required and not avail:
 docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Installing base dependencies in persistent volume..."
-docker_exec "if ! command -v uv &> /dev/null; then python3 -m pip install uv --user >/dev/null 2>&1; fi"
-docker_exec "if ! command -v dvc &> /dev/null; then uv tool install dvc >/dev/null 2>&1; fi"
-docker_exec "if ! command -v dvc-viewer &> /dev/null; then uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1; fi"
+# Use execution test (not command -v) to detect stale binaries from old containers
+docker_exec "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
+docker_exec "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
+docker_exec "dvc-viewer --help >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
 
 log_info "Reading DVC parameters from .cluster-ci..."
 # Clean comments, remove internal flags like --ram, and put arguments on a single line
