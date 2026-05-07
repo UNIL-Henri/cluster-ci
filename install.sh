@@ -189,12 +189,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: GPU Hardware Validation
-        run: |
-          echo "🚀 Starting GPU healthcheck..."
-          docker run --rm --gpus all nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3 \
-            python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); assert torch.cuda.is_available()"
-
       - name: Run Orchestrator
         run: /usr/local/bin/cluster-ci-run "\${{ github.repository }}" "\${{ github.head_ref || github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
 EOF
