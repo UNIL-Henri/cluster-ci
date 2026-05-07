@@ -3,13 +3,17 @@ import json
 import csv
 import os
 import base64
+import torch
 
 print("🚀 Starting simulated research pipeline...")
+print(f"CUDA status in DVC step: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"Device name: {torch.cuda.get_device_name(0)}")
 
 print("⏳ Step 1: Processing data (simulating workload for 15 seconds)...")
 for i in range(3):
     print(f"   ... processing batch {i+1}/3")
-    time.sleep(5)
+    time.sleep(2)
 
 os.makedirs("artifacts", exist_ok=True)
 

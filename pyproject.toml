@@ -5,13 +5,14 @@ description = "GitOps continuous integration for DVC research pipelines"
 authors = [
     { name = "UNIL-DESI" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 dependencies = [
     "flask",
     "psutil",
     "requests",
     "authlib",
-    "python-dotenv"
+    "python-dotenv",
+    "torch"
 ]
 
 [project.optional-dependencies]
