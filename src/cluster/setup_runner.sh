@@ -46,6 +46,10 @@ fi
 
 # Always ensure user is in docker group
 sudo usermod -aG docker $USER
+# Force docker socket permissions in case group membership requires a relogin
+if [ -e /var/run/docker.sock ]; then
+    sudo chmod 666 /var/run/docker.sock || true
+fi
 
 # Pre-pull the base image to avoid timeouts
 if [ -n "$DOCKER_BASE_IMAGE" ]; then
