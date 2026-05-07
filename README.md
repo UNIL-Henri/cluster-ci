@@ -1,5 +1,8 @@
 # Cluster CI
 
+L'orchestrateur GitOps minimaliste et décentralisé pour le traitement de données et l'entraînement de modèles.
+**État actuel** : Système opérationnel. Le réseau de workers hybrides (x86_64 et ARM64) est fonctionnel. L'orchestration ARM garantit des performances GPU/TensorRT optimales sur L4T via une stratégie d'héritage natif `python3 -m pip install --user`.
+
 Asynchronous continuous integration system for research pipelines, designed as a pull-based replacement for the legacy SlurmRay push-based architecture. This repository hosts the scripts necessary to configure a GitHub Actions Self-Hosted Runner on the target Ubuntu machine, orchestrating `uv run dvc repro` executions in local environments and managing silent authentication with Google Drive. It also provides the client script allowing any research repository to interface with this cluster.
 
 ## Installation
