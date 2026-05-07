@@ -18,3 +18,4 @@ __pycache__/
 *.db
 worker_id.txt
 artifacts/
+build/
