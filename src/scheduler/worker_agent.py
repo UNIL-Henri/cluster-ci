@@ -99,6 +99,7 @@ def execute_job(job):
     branch = job['branch']
     ram_limit_gb = job['ram_required_gb']
     p2p_url = job.get('p2p_url')
+    gh_token = job.get('gh_token')
     ram_limit_bytes = ram_limit_gb * (1024**3)
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
@@ -117,6 +118,9 @@ def execute_job(job):
     if p2p_url:
         logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
         env["DVC_REMOTE_P2P_URL"] = p2p_url
+    if gh_token:
+        logger.info(f"Injecting GH_TOKEN for job {job_id}")
+        env["GH_TOKEN"] = gh_token
 
     log_path = os.path.join(LOGS_DIR, f"{job_id}.log")
     log_file = open(log_path, 'w')

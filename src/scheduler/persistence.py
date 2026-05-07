@@ -47,6 +47,7 @@ def init_db():
             viewer_port INTEGER,
             required_hashes TEXT,
             p2p_url TEXT,
+            gh_token TEXT,
             FOREIGN KEY (worker_id) REFERENCES workers (worker_id)
         )
     ''')
@@ -72,6 +73,12 @@ def init_db():
     # p2p_url migration
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN p2p_url TEXT')
+    except sqlite3.OperationalError:
+        pass # Already exists
+
+    # gh_token migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN gh_token TEXT')
     except sqlite3.OperationalError:
         pass # Already exists
 

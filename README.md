@@ -102,4 +102,5 @@ cluster-ci/
 - [x] Dashboard UX improvement (date formatting, DVC path corrections under systemd)
 - [x] Migration to Docker Worker execution (NVIDIA/ARM support)
 - [x] Real-time Log Streaming via Headnode
+- [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation
 - [ ] Full Monitoring and Healthcheck

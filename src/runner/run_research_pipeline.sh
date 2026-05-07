@@ -34,7 +34,11 @@ fi
 # delegate the task to the scheduler via submit_job.py
 if [ "$CLUSTER_CI_MODE" != "executor" ]; then
     echo "🌐 Delegation Mode enabled. Submitting job to scheduler..."
-    python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
+if [ -n "$GH_TOKEN" ]; then
+        python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH" --gh-token "$GH_TOKEN"
+    else
+        python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
+    fi
     exit $?
 fi
 
