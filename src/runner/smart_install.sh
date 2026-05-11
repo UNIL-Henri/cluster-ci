@@ -40,6 +40,19 @@ rm -rf /home/user/.local/lib/python3.*/site-packages/torch \
        /home/user/.local/lib/python3.*/site-packages/triton* \
        /home/user/.local/lib/python3.*/site-packages/xformers* 2>/dev/null || true
 
+# Patch bitsandbytes for newer CUDA versions (e.g. 13.2) if missing
+BNB_DIR=$(ls -d /home/user/.local/lib/python3.*/site-packages/bitsandbytes 2>/dev/null | head -n 1)
+if [ -n "$BNB_DIR" ] && command -v nvcc >/dev/null; then
+    SYS_CUDA=$(nvcc --version | grep 'release' | awk '{print $5}' | cut -d',' -f1 | tr -d '.')
+    if [ -n "$SYS_CUDA" ]; then
+        HIGHEST_SO=$(ls "$BNB_DIR"/libbitsandbytes_cuda*.so 2>/dev/null | grep -Eo 'cuda[0-9]+' | sed 's/cuda//' | sort -nr | head -n 1)
+        if [ -n "$HIGHEST_SO" ] && [ "$SYS_CUDA" -gt "$HIGHEST_SO" ] && [ ! -f "$BNB_DIR/libbitsandbytes_cuda${SYS_CUDA}.so" ]; then
+            echo "🔧 [Cluster-CI] Patching bitsandbytes for CUDA $SYS_CUDA (fallback to $HIGHEST_SO)"
+            ln -s "libbitsandbytes_cuda${HIGHEST_SO}.so" "$BNB_DIR/libbitsandbytes_cuda${SYS_CUDA}.so"
+        fi
+    fi
+fi
+
 # Save hash only after successful install
 echo "$DEPS_HASH" > "$HASH_FILE"
 echo "✅ [Cluster-CI] Dependencies installed and cached."
