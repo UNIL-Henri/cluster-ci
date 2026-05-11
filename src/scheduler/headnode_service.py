@@ -111,7 +111,7 @@ def register_worker():
         # We must mark any 'running' or 'assigned' jobs for this worker as 'failed'.
         cursor.execute('''
             UPDATE jobs
-            SET status = 'failed'
+            SET status = 'failed', exit_code = COALESCE(exit_code, -98)
             WHERE worker_id = ? AND status IN ('running', 'assigned')
         ''', (worker_id,))
         
@@ -454,7 +454,7 @@ def api_run_files(job_id):
     commit_hash = job['commit_hash']
 
     if not commit_hash:
-        return jsonify({"error": "Commit hash not found for this job. Historical exploration is unavailable."}), 400
+        commit_hash = job['branch']
 
     pat = os.environ.get("GITHUB_PAT")
     repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git" if pat else f"https://github.com/{repo}.git"

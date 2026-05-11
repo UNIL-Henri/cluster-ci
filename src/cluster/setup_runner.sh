@@ -68,11 +68,15 @@ else
 fi
 
 # 1.5 DVC Check / Installation
-if ! command -v dvc &> /dev/null; then
+if ! command -v dvc &> /dev/null || ! dvc remote list --help &> /dev/null; then
     echo "📦 Installing DVC (globally via uv)..."
-    uv tool install dvc
+    uv tool install 'dvc[gdrive]' --force
 else
-    echo "✅ dvc is already installed."
+    # Ensure gdrive is installed by forcing it once if needed, but to avoid slowing down,
+    # we just run it. uv tool install is fast if already installed.
+    echo "📦 Ensuring DVC has gdrive support..."
+    uv tool install 'dvc[gdrive]'
+    echo "✅ dvc is installed."
 fi
 
 # 2.5 Prerequisites check by role

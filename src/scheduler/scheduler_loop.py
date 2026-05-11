@@ -19,7 +19,7 @@ def schedule_jobs():
                     # 1. Cleanup orphaned running/assigned jobs (workers that died/timed out)
                     cursor.execute('''
                         UPDATE jobs
-                        SET status = 'failed'
+                        SET status = 'failed', exit_code = COALESCE(exit_code, -99)
                         WHERE status IN ('running', 'assigned') 
                         AND worker_id IN (
                             SELECT worker_id FROM workers 

@@ -121,8 +121,20 @@ def wait_for_job(headnode_url, job_id):
                 print(f"\n✅ Job {job_id} completed successfully!")
                 return 0
             elif status == 'failed':
-                print(f"\n❌ Job {job_id} failed with exit code {job.get('exit_code')}")
-                return job.get('exit_code', 1)
+                exit_code = job.get('exit_code')
+                if exit_code is None or exit_code == 0:
+                    exit_code = 1  # Ensure non-zero exit on failure
+
+                # Infrastructure-level failure messages
+                if exit_code == -99:
+                    print(f"\n❌ Job {job_id} failed: Worker became unreachable (timeout/offline). The job was orphaned.")
+                elif exit_code == -98:
+                    print(f"\n❌ Job {job_id} failed: Worker restarted while the job was running/assigned.")
+                elif exit_code == 137:
+                    print(f"\n❌ Job {job_id} failed: Out of Memory (OOM killed by Docker).")
+                else:
+                    print(f"\n❌ Job {job_id} failed with exit code {exit_code}")
+                return exit_code
 
             if not status_printed:
                 sys.stdout.write(f"\rStatus: {status}... ")
