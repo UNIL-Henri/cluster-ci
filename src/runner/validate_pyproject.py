@@ -11,6 +11,9 @@ except ImportError:
     print("❌ Error: 'tomlkit' is required. Please install it with 'pip install tomlkit'.")
     sys.exit(1)
 
+import urllib.request
+import tempfile
+
 def log_info(msg):
     print(f"ℹ️  [Cluster-CI] {msg}")
 
@@ -19,6 +22,23 @@ def log_error(msg):
 
 def log_success(msg):
     print(f"✅ [Cluster-CI] {msg}")
+
+def fetch_latest_constraints():
+    url = "https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/cluster_constraints.txt"
+    log_info(f"Fetching latest cluster constraints from GitHub...")
+    try:
+        req = urllib.request.Request(url, headers={'Cache-Control': 'no-cache'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            content = response.read().decode('utf-8')
+            
+        # Write to a temporary file
+        fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="cluster_constraints_")
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        return temp_path
+    except Exception as e:
+        log_error(f"Failed to fetch constraints: {e}")
+        return None
 
 def check_python_version(pyproject_path, target_version="3.12"):
     with open(pyproject_path, "r") as f:
@@ -154,11 +174,25 @@ def main():
         else:
             log_info("Warning: Strict pinning detected. This might fail during installation.")
 
-    # 3. Simulate full resolution
-    if not simulate_resolution(pyproject_path, args.constraints):
+    # 3. Fetch latest constraints & Simulate full resolution
+    constraints_to_use = args.constraints
+    if not os.path.exists(constraints_to_use) or args.interactive:
+        # In interactive (pre-commit) mode, or if local file missing, always fetch fresh from central repo
+        fresh_constraints = fetch_latest_constraints()
+        if fresh_constraints:
+            constraints_to_use = fresh_constraints
+            
+    if not simulate_resolution(pyproject_path, constraints_to_use):
         if args.interactive:
             log_error("Automatic fix failed to resolve all conflicts. Manual intervention required.")
+        # Cleanup temp file if created
+        if constraints_to_use != args.constraints and os.path.exists(constraints_to_use):
+            os.remove(constraints_to_use)
         sys.exit(1)
+
+    # Cleanup temp file if created
+    if constraints_to_use != args.constraints and os.path.exists(constraints_to_use):
+        os.remove(constraints_to_use)
 
     log_success("Validation complete.")
 
