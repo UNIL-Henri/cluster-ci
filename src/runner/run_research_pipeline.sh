@@ -279,10 +279,15 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
     log_success "P2P transfer successful."
 fi
 
+log_info "Pre-flight Validation..."
+# Run the validation script using uv to ensure dependencies (tomlkit) are present
+docker_exec "uv run --with tomlkit python3 src/runner/validate_pyproject.py --ci"
+
 log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # Execution of repro and uv dependencies if present
 if [ -f "pyproject.toml" ]; then
-    EXEC_CMD="(command -v uv || pip install uv --user >/dev/null 2>&1) && uv sync && uv run dvc repro $DVC_ARGS"
+    # Use uv pip install --system to leverage native pre-installed packages (like PyTorch)
+    EXEC_CMD="(command -v uv || pip install uv --user >/dev/null 2>&1) && uv pip install --system . && dvc repro $DVC_ARGS"
 else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi

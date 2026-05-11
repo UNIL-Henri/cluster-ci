@@ -32,6 +32,7 @@ Ce script injecte :
 1. Le workflow Github Actions (`.github/workflows/cluster-ci.yml`)
 2. Le fichier de contrôle DVC (`.cluster-ci`)
 3. **Le fichier de directives pour agents (`AGENTS.md`)** contenant les contraintes d'architecture du cluster (Python 3.12, PyTorch 2.12, CUDA 13.2) afin d'éviter les erreurs de dépendances de l'IA sur ce dépôt.
+4. **Le Scanner Pre-flight (Git Hook)** : Un hook de pre-commit interactif qui valide la compatibilité locale avec le cluster ARM64 et propose des corrections automatiques.
 
 ### Cluster Deployment (Headnode & Workers)
 
@@ -80,6 +81,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 | Title (Link) | Description |
 |--------------|-------------|
 | [Architecture Index](docs/index_architecture.md) | Architecture specifications and design notes |
+| [Pre-flight Index](docs/index_preflight.md) | Validation scanner and pre-commit logic |
 
 ## Repository Layout
 
@@ -127,4 +129,5 @@ cluster-ci/
 - [x] Real-time Log Streaming via Headnode
 - [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation
 - [x] Migration vers conteneur NGC moderne (Python 3.12, PyTorch 2.12, CUDA 13.2)
+- [x] [Cluster-CI Pre-flight Scanner & Pre-commit Validator](https://github.com/UNIL-DESI/cluster-ci/issues/55)
 - [ ] Full Monitoring and Healthcheck

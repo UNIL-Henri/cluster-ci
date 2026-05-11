@@ -1,0 +1,28 @@
+#!/bin/bash
+# Script to update cluster_constraints.txt from the Docker image
+set -e
+
+# Load .env if it exists
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/pytorch:26.04-py3"}
+
+echo "🔍 Extracting constraints from image: $DOCKER_IMAGE..."
+
+# Get Python version
+PYTHON_VERSION=$(docker run --rm "$DOCKER_IMAGE" python3 --version | awk '{print $2}')
+echo "🐍 Python version: $PYTHON_VERSION"
+
+# Generate constraints file
+# We extract pip freeze but we also want to ensure we have a clean list
+# We'll filter for common packages and specific NVIDIA ones if needed
+docker run --rm "$DOCKER_IMAGE" pip freeze > cluster_constraints.txt
+
+# Prepend python version as a comment for the validator
+sed -i "1i # Python: $PYTHON_VERSION" cluster_constraints.txt
+
+echo "✅ cluster_constraints.txt updated."

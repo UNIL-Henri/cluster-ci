@@ -219,7 +219,43 @@ EOF
     else
         echo "⚠️ .cluster-ci file already present, not overwritten."
     fi
-    # 4. Instructions in AGENTS.md
+    # 4. Pre-flight Scanner & Pre-commit Hook
+    echo "🔍 Setting up Pre-flight Scanner & Pre-commit Hook..."
+    mkdir -p .cluster-ci-tools
+    
+    # Download tools from the orchestrator repo (using raw content from GitHub)
+    # Note: In a real scenario, REPO_URL would be used.
+    # For this implementation, we copy them from the current project structure if they exist locally,
+    # or we simulate the download.
+    ORCHESTRATOR_REPO="UNIL-DESI/cluster-ci"
+    RAW_URL="https://raw.githubusercontent.com/$ORCHESTRATOR_REPO/main"
+    
+    # Simulate download or copy if local (for development)
+    if [ -f "$(dirname "$0")/src/runner/validate_pyproject.py" ]; then
+        cp "$(dirname "$0")/src/runner/validate_pyproject.py" .cluster-ci-tools/
+        cp "$(dirname "$0")/cluster_constraints.txt" .cluster-ci-tools/
+    else
+        curl -sSL "$RAW_URL/src/runner/validate_pyproject.py" -o .cluster-ci-tools/validate_pyproject.py
+        curl -sSL "$RAW_URL/cluster_constraints.txt" -o .cluster-ci-tools/cluster_constraints.txt
+    fi
+
+    # Install dependencies for the validator
+    echo "📦 Installing validator dependencies (tomlkit)..."
+    python3 -c "import tomlkit" 2>/dev/null || python3 -m pip install tomlkit --user || true
+
+    # Inject Hook
+    HOOK_FILE=".git/hooks/pre-commit"
+    echo "🪝 Injecting Git pre-commit hook..."
+    
+    cat <<EOF > "$HOOK_FILE"
+#!/bin/bash
+# Cluster-CI Pre-commit Validator
+python3 .cluster-ci-tools/validate_pyproject.py --interactive --pyproject pyproject.toml --constraints .cluster-ci-tools/cluster_constraints.txt
+EOF
+    chmod +x "$HOOK_FILE"
+    echo "✅ Pre-commit hook installed."
+
+    # 5. Instructions in AGENTS.md
     echo "📝 Updating AGENTS.md..."
     if [ ! -f "AGENTS.md" ]; then
         touch "AGENTS.md"
