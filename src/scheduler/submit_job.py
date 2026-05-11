@@ -28,7 +28,7 @@ def get_ram_requirement():
             return float(match.group(1))
     return 2.0 # Default
 
-def submit_job(headnode_url, repo, branch, gh_token=None):
+def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
     """Submits a research job to the headnode scheduler."""
     ram_req = get_ram_requirement()
     print(f"🚀 Submitting job for {repo}@{branch} (Required RAM: {ram_req}GB)")
@@ -43,7 +43,8 @@ def submit_job(headnode_url, repo, branch, gh_token=None):
             "repo": repo,
             "branch": branch,
             "ram_required_gb": ram_req,
-            "gh_token": gh_token
+            "gh_token": gh_token,
+            "env_vars": env_vars
         }, headers=headers)
         resp.raise_for_status()
         job_data = resp.json()
@@ -138,9 +139,16 @@ if __name__ == '__main__':
     parser.add_argument("branch", help="Target branch")
     parser.add_argument("--headnode", default=os.environ.get("HEADNODE_URL", "http://localhost:5000"), help="Headnode URL")
     parser.add_argument("--gh-token", default=None, help="GitHub token for cloning private repos")
+    parser.add_argument("-e", "--env", action="append", help="Environment variables to pass (KEY=VALUE)", default=[])
 
     args = parser.parse_args()
 
-    job_id = submit_job(args.headnode, args.repo, args.branch, args.gh_token)
+    env_vars = {}
+    for e in args.env:
+        if "=" in e:
+            k, v = e.split("=", 1)
+            env_vars[k] = v
+
+    job_id = submit_job(args.headnode, args.repo, args.branch, args.gh_token, env_vars)
     exit_code = wait_for_job(args.headnode, job_id)
     sys.exit(exit_code)

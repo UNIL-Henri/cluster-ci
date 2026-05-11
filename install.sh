@@ -195,6 +195,8 @@ jobs:
 
       - name: Run Orchestrator
         run: /usr/local/bin/cluster-ci-run "\${{ github.repository }}" "\${{ github.head_ref || github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
+        # To pass secrets to the cluster, add them here using -e KEY="\${{ secrets.KEY }}":
+        # run: /usr/local/bin/cluster-ci-run ... -e HUGGINGFACE_TOKEN="\${{ secrets.HUGGINGFACE_TOKEN }}"
 EOF
 
     # 3. .cluster-ci configuration file injection
@@ -284,6 +286,7 @@ En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes sui
    - Les commandes shell natives (`pytest`, `uv run`, etc.) ne doivent pas être utilisées dans les Github Actions.
    - **Toute exécution (tests, entraînement) DOIT passer par un stage DVC** défini dans `dvc.yaml`.
    - Pour cibler l'exécution, écris le nom du/des stage(s) DVC dans le fichier `.cluster-ci` à la racine.
+   - **Secrets** : Pour passer des secrets GitHub au cluster, utilise le flag `-e` dans ton workflow : `cluster-ci-run ... -e NOM_SECRET="${{ secrets.NOM_SECRET }}"`.
 <!-- CLUSTER-CI:END -->
 EOF
     echo "✅ AGENTS.md updated."

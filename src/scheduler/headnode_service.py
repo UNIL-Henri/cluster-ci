@@ -116,6 +116,7 @@ def submit_job():
     branch = data.get('branch')
     ram_required_gb = data.get('ram_required_gb', 0)
     gh_token = data.get('gh_token')
+    env_vars = data.get('env_vars') # Dictionary of secrets
     job_id = str(uuid.uuid4())
 
     # Metadata extraction (Pre-flight check)
@@ -148,9 +149,9 @@ def submit_job():
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, gh_token, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending')
-        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes), gh_token))
+            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, gh_token, env_vars, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None))
         conn.commit()
 
     return jsonify({"job_id": job_id, "status": "pending", "required_hashes_count": len(required_hashes)})

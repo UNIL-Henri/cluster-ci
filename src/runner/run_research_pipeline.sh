@@ -170,6 +170,11 @@ if [ -f "$BASE_DIR/.env.secrets" ]; then
     ENV_FILE_FLAG="--env-file $BASE_DIR/.env.secrets"
 fi
 
+if [ -n "$CLUSTER_CI_SECRETS_FILE" ] && [ -f "$CLUSTER_CI_SECRETS_FILE" ]; then
+    log_info "Injecting secure job secrets from $CLUSTER_CI_SECRETS_FILE"
+    ENV_FILE_FLAG="$ENV_FILE_FLAG --env-file $CLUSTER_CI_SECRETS_FILE"
+fi
+
 # Create a volume for the user's home to avoid redownloading dvc every time and to keep uv/pip caches
 HOME_CACHE_VOLUME="cluster-ci-home-cache"
 if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then

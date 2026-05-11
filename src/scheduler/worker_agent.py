@@ -9,6 +9,7 @@ import logging
 import uuid
 import threading
 import json
+import tempfile
 from flask import Flask, jsonify, send_from_directory, request
 
 logging.basicConfig(level=logging.INFO)
@@ -100,6 +101,7 @@ def execute_job(job):
     ram_limit_gb = job['ram_required_gb']
     p2p_url = job.get('p2p_url')
     gh_token = job.get('gh_token')
+    env_vars = job.get('env_vars')
     ram_limit_bytes = ram_limit_gb * (1024**3)
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
@@ -121,6 +123,21 @@ def execute_job(job):
     if gh_token:
         logger.info(f"Injecting GH_TOKEN for job {job_id}")
         env["GH_TOKEN"] = gh_token
+
+    secrets_file = None
+    if env_vars:
+        try:
+            parsed_vars = json.loads(env_vars) if isinstance(env_vars, str) else env_vars
+            if parsed_vars:
+                # Create a secure temp file for job secrets
+                fd, secrets_file = tempfile.mkstemp(prefix=f"job_secrets_{job_id}_", suffix=".env")
+                with os.fdopen(fd, 'w') as f:
+                    for k, v in parsed_vars.items():
+                        f.write(f"{k}={v}\n")
+                logger.info(f"Injecting {len(parsed_vars)} custom environment variables via {secrets_file}")
+                env["CLUSTER_CI_SECRETS_FILE"] = secrets_file
+        except Exception as e:
+            logger.error(f"Failed to write job secrets: {e}")
 
     log_path = os.path.join(LOGS_DIR, f"{job_id}.log")
     log_file = open(log_path, 'w')
@@ -184,6 +201,12 @@ def execute_job(job):
         with job_lock:
             current_job_id = None
             current_process = None
+        if secrets_file and os.path.exists(secrets_file):
+            try:
+                os.remove(secrets_file)
+                logger.info(f"Cleaned up secrets file: {secrets_file}")
+            except Exception as e:
+                logger.error(f"Failed to cleanup secrets file: {e}")
 
 def drain_pending_syncs():
     logger.info("Starting drain of pending synchronizations...")

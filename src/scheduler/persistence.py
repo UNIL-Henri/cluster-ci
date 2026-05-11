@@ -82,6 +82,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass # Already exists
 
+    # env_vars migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN env_vars TEXT')
+    except sqlite3.OperationalError:
+        pass # Already exists
+
     conn.commit()
     conn.close()
 
