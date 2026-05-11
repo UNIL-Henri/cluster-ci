@@ -144,10 +144,24 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     env_vars = {}
+    
+    # Process explicit -e flags
     for e in args.env:
         if "=" in e:
             k, v = e.split("=", 1)
             env_vars[k] = v
+
+    # Process automatic GitHub Secrets injection
+    all_secrets_json = os.environ.get("ALL_GITHUB_SECRETS")
+    if all_secrets_json:
+        try:
+            import json
+            secrets_dict = json.loads(all_secrets_json)
+            for k, v in secrets_dict.items():
+                if k.lower() != 'github_token':
+                    env_vars[k] = v
+        except Exception as e:
+            print(f"⚠️ Failed to parse ALL_GITHUB_SECRETS: {e}")
 
     job_id = submit_job(args.headnode, args.repo, args.branch, args.gh_token, env_vars)
     exit_code = wait_for_job(args.headnode, job_id)
