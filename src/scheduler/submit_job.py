@@ -7,11 +7,11 @@ import signal
 
 def get_ram_requirement():
     """
-    Reads RAM requirement from .cluster-ci file.
-    Format expected in .cluster-ci: --ram 16
+    Reads RAM requirement from the .cluster-ci file.
+    Expected format in .cluster-ci: --ram 16
     """
     if not os.path.exists(".cluster-ci"):
-        return 2.0 # Default 2GB
+        return 2.0  # Default 2GB
 
     with open(".cluster-ci", 'r') as f:
         content = f.read()
@@ -21,7 +21,8 @@ def get_ram_requirement():
             return float(match.group(1))
     return 2.0 # Default
 
-def submit_job(headnode_url, repo, branch):
+def submit_job(headnode_url, repo, branch, gh_token=None):
+    """Submits a research job to the headnode scheduler."""
     ram_req = get_ram_requirement()
     print(f"🚀 Submitting job for {repo}@{branch} (Required RAM: {ram_req}GB)")
 
@@ -34,7 +35,8 @@ def submit_job(headnode_url, repo, branch):
         resp = requests.post(f"{headnode_url}/submit_job", json={
             "repo": repo,
             "branch": branch,
-            "ram_required_gb": ram_req
+            "ram_required_gb": ram_req,
+            "gh_token": gh_token
         }, headers=headers)
         resp.raise_for_status()
         job_data = resp.json()
@@ -46,6 +48,7 @@ def submit_job(headnode_url, repo, branch):
         sys.exit(1)
 
 def wait_for_job(headnode_url, job_id):
+    """Polls the headnode for job status and streams logs from the worker."""
     print(f"⏳ Waiting for job {job_id} to complete...")
 
     def signal_handler(sig, frame):
@@ -127,9 +130,10 @@ if __name__ == '__main__':
     parser.add_argument("repo", help="Target repository (owner/repo)")
     parser.add_argument("branch", help="Target branch")
     parser.add_argument("--headnode", default=os.environ.get("HEADNODE_URL", "http://localhost:5000"), help="Headnode URL")
+    parser.add_argument("--gh-token", default=None, help="GitHub token for cloning private repos")
 
     args = parser.parse_args()
 
-    job_id = submit_job(args.headnode, args.repo, args.branch)
+    job_id = submit_job(args.headnode, args.repo, args.branch, args.gh_token)
     exit_code = wait_for_job(args.headnode, job_id)
     sys.exit(exit_code)

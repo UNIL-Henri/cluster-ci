@@ -5,10 +5,10 @@ ROLE=$1
 
 if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     # --- Infrastructure Deployment (Dispatcher) ---
-    echo "🏗️  Cluster-CI : Déploiement de l'Infrastructure ($ROLE)"
+    echo "🏗️  Cluster-CI: Infrastructure Deployment ($ROLE)"
 
     if ! command -v git &> /dev/null; then
-        echo "❌ Erreur : git n'est pas installé sur cette machine."
+        echo "❌ Error: git is not installed on this machine."
         exit 1
     fi
 
@@ -28,59 +28,59 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
 
     if [ "$ROLE" == "headnode" ]; then
         if [ -z "$GITHUB_PAT" ]; then
-            echo "🔑 GITHUB_PAT non détecté."
-            read -rs -p "Veuillez entrer votre GitHub PAT (avec accès repo & workflow) : " GITHUB_PAT
+            echo "🔑 GITHUB_PAT not detected."
+            read -rs -p "Please enter your GitHub PAT (with repo & workflow access): " GITHUB_PAT
             echo ""
         fi
         TARGET_REPO=$2
         if [ -z "$TARGET_REPO" ]; then
-            echo "🎯 Cible non détectée (owner/repo ou organisation)."
-            read -p "Veuillez entrer la cible GitHub à surveiller : " TARGET_REPO
+            echo "🎯 Target not detected (owner/repo or organization)."
+            read -p "Please enter the GitHub target to monitor: " TARGET_REPO
         fi
 
         if [ -z "$GITHUB_CLIENT_ID" ]; then
-            echo "🔑 GITHUB_CLIENT_ID non détecté (Optionnel mais recommandé pour le Dashboard)."
-            read -p "Veuillez entrer l'ID Client OAuth GitHub (laissez vide pour ignorer) : " GITHUB_CLIENT_ID
+            echo "🔑 GITHUB_CLIENT_ID not detected (Optional but recommended for the Dashboard)."
+            read -p "Please enter the GitHub OAuth Client ID (leave empty to skip): " GITHUB_CLIENT_ID
             echo ""
         fi
         if [ -n "$GITHUB_CLIENT_ID" ] && [ -z "$GITHUB_CLIENT_SECRET" ]; then
-            echo "🔑 GITHUB_CLIENT_SECRET non détecté."
-            read -rs -p "Veuillez entrer le Secret Client OAuth GitHub : " GITHUB_CLIENT_SECRET
+            echo "🔑 GITHUB_CLIENT_SECRET not detected."
+            read -rs -p "Please enter the GitHub OAuth Client Secret: " GITHUB_CLIENT_SECRET
             echo ""
         fi
 
         if [ -z "$GITHUB_PAT" ] || [ -z "$TARGET_REPO" ]; then
-            echo "❌ Erreur : GITHUB_PAT et TARGET_REPO sont obligatoires pour un headnode."
+            echo "❌ Error: GITHUB_PAT and TARGET_REPO are required for a headnode."
             exit 1
         fi
     else
         if [ -z "$HEADNODE_URL" ]; then
-            echo "🔗 HEADNODE_URL non détecté."
-            read -p "Veuillez entrer l'URL du Headnode (ex: http://192.168.1.10:5000) : " HEADNODE_URL
+            echo "🔗 HEADNODE_URL not detected."
+            read -p "Please enter the Headnode URL (e.g., http://192.168.1.10:5000): " HEADNODE_URL
         fi
         if [ -z "$CLUSTER_TOKEN" ]; then
-            echo "🔑 CLUSTER_TOKEN non détecté (requis pour s'authentifier auprès du Headnode)."
-            read -rs -p "Veuillez entrer le Token du Cluster : " CLUSTER_TOKEN
+            echo "🔑 CLUSTER_TOKEN not detected (required to authenticate with the Headnode)."
+            read -rs -p "Please enter the Cluster Token: " CLUSTER_TOKEN
             echo ""
         fi
 
         if [ -z "$HEADNODE_URL" ] || [ -z "$CLUSTER_TOKEN" ]; then
-            echo "❌ Erreur : HEADNODE_URL et CLUSTER_TOKEN sont obligatoires pour un worker."
+            echo "❌ Error: HEADNODE_URL and CLUSTER_TOKEN are required for a worker."
             exit 1
         fi
     fi
 
-    # 1. Clonage ou mise à jour du dépôt
+    # 1. Clone or update the repository
     if [ ! -d "$INSTALL_DIR" ]; then
-        echo "📂 Clonage du dépôt dans $INSTALL_DIR..."
+        echo "📂 Cloning repository into $INSTALL_DIR..."
         git clone "$REPO_URL" "$INSTALL_DIR"
     else
-        echo "📂 Mise à jour du dépôt dans $INSTALL_DIR..."
+        echo "📂 Updating repository in $INSTALL_DIR..."
         cd "$INSTALL_DIR" && git pull && cd - > /dev/null
     fi
 
-    # 2. Configuration du .env (mise à jour sélective)
-    echo "📝 Configuration des variables d'environnement..."
+    # 2. .env configuration (selective update)
+    echo "📝 Configuring environment variables..."
     mkdir -p "$INSTALL_DIR"
     TOUCH_ENV="$INSTALL_DIR/.env"
     [ ! -f "$TOUCH_ENV" ] && touch "$TOUCH_ENV"
@@ -112,22 +112,26 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     update_env_var "GITHUB_CLIENT_ID" "$GITHUB_CLIENT_ID"
     update_env_var "GITHUB_CLIENT_SECRET" "$GITHUB_CLIENT_SECRET"
 
-    # Default Docker image for NVIDIA ARM (Jetson/Grace)
-    [ -z "$DOCKER_BASE_IMAGE" ] && DOCKER_BASE_IMAGE="nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3"
+    # Default Docker image: auto-detect based on architecture.
+    # Modern NVIDIA ARM servers (Grace/Blackwell GB10) use the standard NGC PyTorch image.
+    # Legacy Jetson (L4T/JetPack 5) uses the old l4t image only if /etc/nv_tegra_release exists.
+    if [ -z "$DOCKER_BASE_IMAGE" ]; then
+        DOCKER_BASE_IMAGE="nvcr.io/nvidia/pytorch:26.04-py3"
+    fi
     update_env_var "DOCKER_BASE_IMAGE" "$DOCKER_BASE_IMAGE"
 
-    # 3. Exécution du setup local
-    echo "🚀 Lancement de l'installation système..."
+    # 3. Local setup execution
+    echo "🚀 Starting system installation..."
     cd "$INSTALL_DIR"
     bash src/cluster/setup_runner.sh "$TARGET_REPO" "$ROLE"
 
-    echo "✅ Déploiement du $ROLE terminé avec succès dans $INSTALL_DIR."
+    echo "✅ $ROLE deployment completed successfully in $INSTALL_DIR."
 
     if [ "$ROLE" == "headnode" ]; then
         IP_ADDR=$(hostname -I | awk '{print $1}')
         echo ""
-        echo "🎉 Votre Headnode est prêt !"
-        echo "👉 Pour ajouter des Workers, utilisez la commande suivante sur vos autres machines :"
+        echo "🎉 Your Headnode is ready!"
+        echo "👉 To add Workers, use the following command on your other machines:"
         echo "CLUSTER_TOKEN=\"$CLUSTER_TOKEN\" HEADNODE_URL=\"http://$IP_ADDR:5000\" curl -sSL $REPO_URL/raw/main/install.sh | bash -s -- worker"
         echo ""
     fi
@@ -135,16 +139,16 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
 
 else
     # --- Client-side Installation (Research Project) ---
-    echo "🚀 Cluster-CI : Installation Client"
+    echo "🚀 Cluster-CI: Client Installation"
 
-    # 1. Vérification environnement Git
+    # 1. Git environment check
     if [ ! -d ".git" ]; then
-        echo "❌ Erreur : Ce script doit être exécuté à la racine d'un dépôt Git."
+        echo "❌ Error: This script must be run at the root of a Git repository."
         exit 1
     fi
 
-    # 2. Injection du workflow GitHub Actions
-    echo "📦 Injection du workflow GitHub Actions..."
+    # 2. GitHub Actions workflow injection
+    echo "📦 Injecting GitHub Actions workflow..."
     mkdir -p .github/workflows
 
     cat <<EOF > .github/workflows/cluster-ci.yml
@@ -193,35 +197,66 @@ jobs:
         run: /usr/local/bin/cluster-ci-run "\${{ github.repository }}" "\${{ github.head_ref || github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
 EOF
 
-    # 3. Injection du fichier de configuration .cluster-ci
+    # 3. .cluster-ci configuration file injection
     if [ ! -f ".cluster-ci" ]; then
-        echo "📄 Création du fichier .cluster-ci..."
+        echo "📄 Creating .cluster-ci file..."
         cat <<EOF > .cluster-ci
 # =========================================================================================
 # ⚠️ AI AGENT INSTRUCTIONS (JOULES / CURSOR) ⚠️
-# Ce fichier contrôle quelles étapes DVC sont exécutées sur le cluster distant.
+# This file controls which DVC stages are executed on the remote cluster.
 #
-# IMPORTANT : L'environnement distant a déjà toutes les variables secrètes injectées
-# automatiquement (GCP_CREDENTIALS, DVC_GDRIVE_TOKEN, etc.). Tu n'as pas besoin de
-# t'occuper de l'authentification ni des variables d'environnement.
+# IMPORTANT: The remote environment already has all secret variables injected
+# automatically (GCP_CREDENTIALS, DVC_GDRIVE_TOKEN, etc.). You don't need to
+# worry about authentication or environment variables.
 #
-# Laisse ce fichier vide pour exécuter tout le pipeline 'dvc repro' par défaut.
-# Pour exécuter des étapes spécifiques, liste-les ci-dessous (une par ligne ou séparées par des espaces).
-# Exemple :
-# test_unitaires test_integration step_train
+# Leave this file empty to run the full 'dvc repro' pipeline by default.
+# To run specific stages, list them below (one per line or separated by spaces).
+# Example:
+# unit_tests integration_tests train_step
 # =========================================================================================
 EOF
-        echo "✅ Fichier .cluster-ci créé."
+        echo "✅ .cluster-ci file created."
     else
-        echo "⚠️ Fichier .cluster-ci déjà présent, non écrasé."
+        echo "⚠️ .cluster-ci file already present, not overwritten."
+    fi
+    # 4. Instructions in AGENTS.md
+    echo "📝 Updating AGENTS.md..."
+    if [ ! -f "AGENTS.md" ]; then
+        touch "AGENTS.md"
+        echo "# Règles de l'Agent pour ce Répertoire" > "AGENTS.md"
+        echo "" >> "AGENTS.md"
     fi
 
+    # Portable in-place sed removal of old section
+    sed -i.bak '/<!-- CLUSTER-CI:START -->/,/<!-- CLUSTER-CI:END -->/d' "AGENTS.md" && rm -f "AGENTS.md.bak"
+
+    cat << 'EOF' >> "AGENTS.md"
+<!-- CLUSTER-CI:START -->
+## ⚠️ Instructions Spécifiques pour la CI (Cluster-CI)
+
+Ce dépôt est orchestré par le système hybride **Cluster-CI** sur un cluster ARM64 NVIDIA (GPU Blackwell GB10, 128GB RAM, Ubuntu 24.04).
+En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes suivantes pour ne pas casser l'infrastructure distante :
+
+1. **Version Python** : Le conteneur d'exécution utilise **Python 3.12**. Si tu utilises `pyproject.toml`, la directive `requires-python` doit inclure `3.12` (ex: `>=3.10`). Tu peux utiliser les dernières versions de toutes les bibliothèques.
+2. **Dépendances GPU (PyTorch)** :
+   - Le conteneur NGC (`nvcr.io/nvidia/pytorch:26.04-py3`) embarque déjà **PyTorch 2.12** avec **CUDA 13.2**.
+   - Sur ARM64, le système utilise l'héritage natif `pip` : il ne télécharge que les dépendances manquantes et réutilise le `torch` pré-installé.
+   - Ne spécifie **aucune contrainte de version stricte** (`==`) pour `torch`, `torchvision`, etc. Utilise `torch` sans version ou avec `>=2.0`.
+3. **Exécution des Jobs (Le fichier `.cluster-ci`)** :
+   - NE MODIFIE PAS le fichier `.github/workflows/cluster-ci.yml`.
+   - Les commandes shell natives (`pytest`, `uv run`, etc.) ne doivent pas être utilisées dans les Github Actions.
+   - **Toute exécution (tests, entraînement) DOIT passer par un stage DVC** défini dans `dvc.yaml`.
+   - Pour cibler l'exécution, écris le nom du/des stage(s) DVC dans le fichier `.cluster-ci` à la racine.
+<!-- CLUSTER-CI:END -->
+EOF
+    echo "✅ AGENTS.md updated."
+
     echo ""
-    echo "🎉 Installation terminée !"
-    echo "👉 Pensez à commiter et pusher les fichiers générés :"
-    echo "   git add .github/workflows/cluster-ci.yml .cluster-ci"
-    echo "   git commit -m \"docs: integration cluster-ci\""
+    echo "🎉 Installation complete!"
+    echo "👉 Remember to commit and push the generated files:"
+    echo "   git add .github/workflows/cluster-ci.yml .cluster-ci AGENTS.md"
+    echo "   git commit -m \"docs: cluster-ci integration\""
     echo "   git push"
     echo ""
-    echo "💡 Note pour l'IA Joules : Toute modification de la pipeline de recherche doit être reflétée dans .cluster-ci si vous voulez limiter l'exécution à certaines étapes."
+    echo "💡 Note for Joules AI: Any modification to the research pipeline must be reflected in .cluster-ci if you want to limit execution to specific stages."
 fi

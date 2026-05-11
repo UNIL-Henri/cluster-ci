@@ -1,29 +1,30 @@
-# Documentation de l'Architecture
+# Architecture Documentation
 
-| Titre de la note | Courte Description | Dernière modif | Tag |
-|------------------|-------------------|----------------|-----|
-| [Topologie Headnode/Worker](#topologie-headnode-worker-et-ordonnancement-dynamique) | Description de la nouvelle architecture de calcul distribué | 2026-05-05 | Architecture |
-| [JIT GC](tasks/jit_gc.md) | Garbage Collector basé sur LRU pour gérer l'espace disque. | 2026-05-05 | Infrastructure |
-| [Concurrency Management](tasks/concurrency_management.md) | Gestion de l'annulation des jobs obsolètes. | 2026-05-05 | Infrastructure |
+| Note Title | Short Description | Last Mod | Tag |
+|------------|-------------------|----------|-----|
+| [Headnode/Worker Topology](#headnode-worker-topology-and-dynamic-scheduling) | Description of the new distributed computing architecture | 2026-05-05 | Architecture |
+| [JIT GC](tasks/jit_gc.md) | LRU-based Garbage Collector for managing disk space. | 2026-05-05 | Infrastructure |
+| [Concurrency Management](tasks/concurrency_management.md) | Management of obsolete job cancellations. | 2026-05-05 | Infrastructure |
+| [Docker ARM Strategy](architecture/docker_arm_strategy.md) | Stratégie d'isolation hybride Golden Image + Dépendances Dynamiques sur workers ARM. | 2026-05-07 | Up to date |
 
-## Topologie Headnode/Worker et Ordonnancement Dynamique
+## Headnode/Worker Topology and Dynamic Scheduling
 
-### Contexte
-Afin d'optimiser l'utilisation des ressources matérielles (notamment les machines Lenovo ThinkStation), le système évolue vers une topologie asymétrique.
+### Context
+To optimize hardware resource utilization (specifically Lenovo ThinkStation machines), the system is evolving towards an asymmetric topology.
 
-### Rôles
-- **Headnode (desi) :** Agit comme point d'entrée unique pour la CI. Il héberge l'ordonnanceur (Scheduler) et gère la file d'attente des jobs.
-- **Workers (Lenovo) :** Machines dédiées à l'exécution. Elles font remonter leur état (RAM disponible) au Headnode et exécutent les jobs assignés.
+### Roles
+- **Headnode (desi):** Acts as the single entry point for CI. It hosts the Scheduler and manages the job queue.
+- **Workers (Lenovo):** Machines dedicated to execution. They report their state (available RAM) to the Headnode and execute assigned jobs.
 
-### Ordonnancement (Bin-Packing)
-L'allocation des jobs repose sur un algorithme de **Bin-Packing** basé sur la mémoire unifiée (RAM).
-1. Le job déclare son besoin en RAM (via `.cluster-ci`).
-2. L'ordonnanceur maintient une vue en temps réel de la RAM disponible sur chaque Worker.
-3. Le job est assigné au premier Worker ayant assez de RAM disponible, ou mis en attente si aucune ressource n'est libre.
+### Scheduling (Bin-Packing)
+Job allocation relies on a **Bin-Packing** algorithm based on unified memory (RAM).
+1. The job declares its RAM requirement (via `.cluster-ci`).
+2. The scheduler maintains a real-time view of available RAM on each Worker.
+3. The job is assigned to the first Worker with enough available RAM, or queued if no resources are free.
 
-### Isolation et Protection (Watchdog Mémoire Logiciel)
-Pour garantir la stabilité des Workers, chaque job est surveillé par un **Watchdog Logiciel** basé sur la librairie `psutil`.
+### Isolation and Protection (Software Memory Watchdog)
+To ensure Worker stability, each job is monitored by a **Software Watchdog** based on the `psutil` library.
 
-- **Mesure Récursive :** À intervalles réguliers (toutes les 2 secondes), le Worker calcule la somme de la mémoire physique (RSS) du processus de calcul et de tous ses processus enfants (par ex. sous-processus DVC).
-- **Interruption UX :** Si la somme dépasse la limite de RAM déclarée dans `.cluster-ci`, le Worker tue immédiatement l'arbre de processus.
-- **Feedback GitHub :** Un message d'erreur explicite est affiché sur la sortie standard d'erreur (stderr), permettant au chercheur de savoir exactement pourquoi son job a échoué et combien de RAM a été consommée par rapport à sa réservation.
+- **Recursive Measurement:** At regular intervals (every 2 seconds), the Worker calculates the sum of physical memory (RSS) of the computing process and all its child processes (e.g., DVC sub-processes).
+- **UX Interruption:** If the sum exceeds the RAM limit declared in `.cluster-ci`, the Worker immediately kills the process tree.
+- **GitHub Feedback:** An explicit error message is displayed on standard error (stderr), allowing the researcher to know exactly why their job failed and how much RAM was consumed relative to their reservation.

@@ -1,16 +1,16 @@
-# Déploiement et Test du Cluster Local
+# Local Cluster Deployment and Testing
 
-## 1. Contexte & Discussion (Narratif)
-> *Handover* : Pour valider le bon fonctionnement de Cluster-CI, nous avons décidé de transformer la machine de développement actuelle en "Cluster" cible. Cela permet de tester toute la chaîne en conditions réelles (Push sur Github -> CI Trigger -> Runner Local -> Orchestrateur -> `dvc repro`).
+## 1. Context & Discussion (Narrative)
+> *Handover*: To validate the proper operation of Cluster-CI, we decided to transform the current development machine into a target "Cluster". This allows testing the entire chain in real conditions (Push to Github -> CI Trigger -> Local Runner -> Orchestrator -> `dvc repro`).
 
-L'objectif est d'installer effectivement un Self-Hosted Runner GitHub Actions sur cette machine, rattaché soit au dépôt `cluster-ci` ou à l'organisation complète, et de valider que la boucle locale s'exécute correctement sans conflits.
+The objective is to actually install a GitHub Actions Self-Hosted Runner on this machine, attached either to the `cluster-ci` repository or the entire organization, and to validate that the local loop executes correctly without conflicts.
 
-## 2. Fichiers Concernés
-- `src/cluster/install_runner.sh` (Nouveau script spécifique à l'hôte)
-- `.github/workflows/test_runner.yml` (CI de validation interne pour `cluster-ci`)
+## 2. Affected Files
+- `src/cluster/install_runner.sh` (New host-specific installation script)
+- `.github/workflows/test_runner.yml` (Internal validation CI for `cluster-ci`)
 
-## 3. Objectifs (Definition of Done)
-- Un script capable de télécharger et de builder le Github Actions Runner en local.
-- L'installation inclut la vérification/installation de `uv`.
-- Configurer le runner en mode service système pour écouter les jobs avec le tag self-hosted.
-- Lancer un `git push` déclenchant une CI de test basique via un workflow `.github/workflows/test_runner.yml`, s'assurant que le runner local répond et exécute correctement le script d'orchestration dans le dossier `workspaces/`.
+## 3. Objectives (Definition of Done)
+- A script capable of downloading and building the GitHub Actions Runner locally.
+- The installation includes `uv` verification/installation.
+- Configure the runner in system service mode to listen for jobs with the "self-hosted" tag.
+- Trigger a `git push` that initiates a basic test CI via the `.github/workflows/test_runner.yml` workflow, ensuring the local runner responds and correctly executes the orchestration script in the `workspaces/` folder.

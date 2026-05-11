@@ -1,0 +1,112 @@
+2026-05-07T08:12:39.4387007Z Current runner version: '2.334.0'
+2026-05-07T08:12:39.4391220Z Runner name: 'cluster-local-UNIL-Henri'
+2026-05-07T08:12:39.4391806Z Runner group name: 'default'
+2026-05-07T08:12:39.4392407Z Machine name: 'isipol09'
+2026-05-07T08:12:39.4394607Z ##[group]GITHUB_TOKEN Permissions
+2026-05-07T08:12:39.4396106Z Contents: read
+2026-05-07T08:12:39.4396530Z Metadata: read
+2026-05-07T08:12:39.4396919Z Packages: read
+2026-05-07T08:12:39.4397329Z ##[endgroup]
+2026-05-07T08:12:39.4398790Z Secret source: Actions
+2026-05-07T08:12:39.4399293Z Prepare workflow directory
+2026-05-07T08:12:39.4697172Z Prepare all required actions
+2026-05-07T08:12:39.4722800Z Getting action download info
+2026-05-07T08:12:40.0335668Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-05-07T08:12:40.4024297Z Complete job name: Execute Research Pipeline
+2026-05-07T08:12:40.4649092Z ##[group]Run actions/checkout@v4
+2026-05-07T08:12:40.4649712Z with:
+2026-05-07T08:12:40.4650040Z   fetch-depth: 0
+2026-05-07T08:12:40.4650440Z   repository: UNIL-DESI/cluster-ci
+2026-05-07T08:12:40.4650989Z   token: ***
+2026-05-07T08:12:40.4651322Z   ssh-strict: true
+2026-05-07T08:12:40.4651677Z   ssh-user: git
+2026-05-07T08:12:40.4652044Z   persist-credentials: true
+2026-05-07T08:12:40.4652441Z   clean: true
+2026-05-07T08:12:40.4652807Z   sparse-checkout-cone-mode: true
+2026-05-07T08:12:40.4653346Z   fetch-tags: false
+2026-05-07T08:12:40.4653722Z   show-progress: true
+2026-05-07T08:12:40.4654083Z   lfs: false
+2026-05-07T08:12:40.4654422Z   submodules: false
+2026-05-07T08:12:40.4654784Z   set-safe-directory: true
+2026-05-07T08:12:40.4655390Z ##[endgroup]
+2026-05-07T08:12:40.5560466Z Syncing repository: UNIL-DESI/cluster-ci
+2026-05-07T08:12:40.5562471Z ##[group]Getting Git version info
+2026-05-07T08:12:40.5563695Z Working directory is '/home/henri/cluster-ci/runners/UNIL-Henri/_work/cluster-ci/cluster-ci'
+2026-05-07T08:12:40.5565280Z [command]/usr/bin/git version
+2026-05-07T08:12:40.5565939Z git version 2.25.1
+2026-05-07T08:12:40.5567939Z ##[endgroup]
+2026-05-07T08:12:40.5572575Z Copying '/home/henri/.gitconfig' to '/home/henri/cluster-ci/runners/UNIL-Henri/_work/_temp/08cbf646-48ad-411c-85f7-8197eb1712a2/.gitconfig'
+2026-05-07T08:12:40.5586224Z Temporarily overriding HOME='/home/henri/cluster-ci/runners/UNIL-Henri/_work/_temp/08cbf646-48ad-411c-85f7-8197eb1712a2' before making global git config changes
+2026-05-07T08:12:40.5588383Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-07T08:12:40.5593465Z [command]/usr/bin/git config --global --add safe.directory /home/henri/cluster-ci/runners/UNIL-Henri/_work/cluster-ci/cluster-ci
+2026-05-07T08:12:40.5631512Z [command]/usr/bin/git config --local --get remote.origin.url
+2026-05-07T08:12:40.5649702Z https://github.com/UNIL-DESI/cluster-ci
+2026-05-07T08:12:40.5669256Z ##[group]Removing previously created refs, to avoid conflicts
+2026-05-07T08:12:40.5673810Z [command]/usr/bin/git rev-parse --symbolic-full-name --verify --quiet HEAD
+2026-05-07T08:12:40.5690030Z HEAD
+2026-05-07T08:12:40.5757145Z ##[endgroup]
+2026-05-07T08:12:40.5762113Z [command]/usr/bin/git submodule status
+2026-05-07T08:12:40.5958578Z ##[group]Cleaning the repository
+2026-05-07T08:12:40.5961429Z [command]/usr/bin/git clean -ffdx
+2026-05-07T08:12:40.5987527Z [command]/usr/bin/git reset --hard HEAD
+2026-05-07T08:12:40.6013922Z HEAD is now at 0f97a58 Merge 432fee8ea9d8f77844252f1dbe22787b9b38bc88 into 9fcb9377d2a2f6665562d45722e9264052f5a8b0
+2026-05-07T08:12:40.6018368Z ##[endgroup]
+2026-05-07T08:12:40.6020429Z ##[group]Disabling automatic garbage collection
+2026-05-07T08:12:40.6027143Z [command]/usr/bin/git config --local gc.auto 0
+2026-05-07T08:12:40.6051355Z ##[endgroup]
+2026-05-07T08:12:40.6052489Z ##[group]Setting up auth
+2026-05-07T08:12:40.6058833Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-07T08:12:40.6083375Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-07T08:12:40.6283800Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-05-07T08:12:40.6309331Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-05-07T08:12:40.6500989Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-05-07T08:12:40.6525658Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-05-07T08:12:40.6720724Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-05-07T08:12:40.6754941Z ##[endgroup]
+2026-05-07T08:12:40.6756376Z ##[group]Fetching the repository
+2026-05-07T08:12:40.6764939Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-05-07T08:12:41.2930142Z From https://github.com/UNIL-DESI/cluster-ci
+2026-05-07T08:12:41.2931895Z    9fcb937..2e0b016  main       -> origin/main
+2026-05-07T08:12:41.2984071Z [command]/usr/bin/git branch --list --remote origin/main
+2026-05-07T08:12:41.2985521Z   origin/main
+2026-05-07T08:12:41.2993874Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-05-07T08:12:41.3012925Z 2e0b016ce1fdd7b62ef096cc6bc06e228c89925e
+2026-05-07T08:12:41.3018941Z ##[endgroup]
+2026-05-07T08:12:41.3020699Z ##[group]Determining the checkout info
+2026-05-07T08:12:41.3022721Z ##[endgroup]
+2026-05-07T08:12:41.3024746Z ##[group]Checking out the ref
+2026-05-07T08:12:41.3026745Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-05-07T08:12:41.3057628Z Previous HEAD position was 0f97a58 Merge 432fee8ea9d8f77844252f1dbe22787b9b38bc88 into 9fcb9377d2a2f6665562d45722e9264052f5a8b0
+2026-05-07T08:12:41.3059754Z Switched to a new branch 'main'
+2026-05-07T08:12:41.3061249Z Branch 'main' set up to track remote branch 'main' from 'origin'.
+2026-05-07T08:12:41.3064852Z ##[endgroup]
+2026-05-07T08:12:41.3100344Z [command]/usr/bin/git log -1 --format=%H
+2026-05-07T08:12:41.3121011Z 2e0b016ce1fdd7b62ef096cc6bc06e228c89925e
+2026-05-07T08:12:41.3327904Z ##[group]Run echo "🚀 Starting GPU healthcheck..."
+2026-05-07T08:12:41.3329108Z [36;1mecho "🚀 Starting GPU healthcheck..."[0m
+2026-05-07T08:12:41.3330483Z [36;1mdocker run --rm --gpus all nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3 \[0m
+2026-05-07T08:12:41.3332537Z [36;1m  python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); assert torch.cuda.is_available()"[0m
+2026-05-07T08:12:41.3357968Z shell: /usr/bin/bash -e {0}
+2026-05-07T08:12:41.3358796Z ##[endgroup]
+2026-05-07T08:12:41.3412077Z 🚀 Starting GPU healthcheck...
+2026-05-07T08:12:41.3541560Z docker: permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Head "http://%2Fvar%2Frun%2Fdocker.sock/_ping": dial unix /var/run/docker.sock: connect: permission denied
+2026-05-07T08:12:41.3544445Z 
+2026-05-07T08:12:41.3544963Z Run 'docker run --help' for more information
+2026-05-07T08:12:41.3564554Z ##[error]Process completed with exit code 126.
+2026-05-07T08:12:41.3733014Z Post job cleanup.
+2026-05-07T08:12:41.4516276Z [command]/usr/bin/git version
+2026-05-07T08:12:41.4551844Z git version 2.25.1
+2026-05-07T08:12:41.4602723Z Copying '/home/henri/.gitconfig' to '/home/henri/cluster-ci/runners/UNIL-Henri/_work/_temp/ef2065dd-a83e-44e6-be83-02042ad2bbac/.gitconfig'
+2026-05-07T08:12:41.4616226Z Temporarily overriding HOME='/home/henri/cluster-ci/runners/UNIL-Henri/_work/_temp/ef2065dd-a83e-44e6-be83-02042ad2bbac' before making global git config changes
+2026-05-07T08:12:41.4620128Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-07T08:12:41.4623437Z [command]/usr/bin/git config --global --add safe.directory /home/henri/cluster-ci/runners/UNIL-Henri/_work/cluster-ci/cluster-ci
+2026-05-07T08:12:41.4662576Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-07T08:12:41.4698520Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-07T08:12:41.4912576Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-05-07T08:12:41.4929654Z http.https://github.com/.extraheader
+2026-05-07T08:12:41.4945534Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-05-07T08:12:41.4974250Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-05-07T08:12:41.5178230Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-05-07T08:12:41.5207688Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-05-07T08:12:41.5534485Z Cleaning up orphan processes
+2026-05-07T08:12:41.5837429Z ##[warning]Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: actions/checkout@v4. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Node.js 20 will be removed from the runner on September 16th, 2026. Please check if updated versions of these actions are available that support Node.js 24. To opt into Node.js 24 now, set the FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true environment variable on the runner or in your workflow file. Once Node.js 24 becomes the default, you can temporarily opt out by setting ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

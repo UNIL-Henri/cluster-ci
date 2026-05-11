@@ -1,3 +1,13 @@
+import socket
+# Force IPv4 to prevent infinite hangs on broken IPv6 networks (common on headless servers)
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+# Set a global timeout for all socket operations to prevent infinite hangs
+socket.setdefaulttimeout(20.0)
+
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, session, url_for, redirect, render_template
 from persistence import init_db, get_db_conn
 from authlib.integrations.flask_client import OAuth
@@ -10,7 +20,6 @@ import subprocess
 import sys
 import time
 import threading
-import socket
 import re
 import json
 import tempfile
@@ -18,17 +27,11 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Force IPv4 to prevent infinite hangs on broken IPv6 networks (common on headless servers)
-old_getaddrinfo = socket.getaddrinfo
-def new_getaddrinfo(*args, **kwargs):
-    responses = old_getaddrinfo(*args, **kwargs)
-    return [response for response in responses if response[0] == socket.AF_INET]
-socket.getaddrinfo = new_getaddrinfo
-
 load_dotenv()
 
 # Helper to find executables
 def get_executable(name):
+    """Finds an executable in system PATH, local bin, or current venv."""
     cmd = shutil.which(name)
     if cmd: return cmd
     # Fallback to local user installation
@@ -112,6 +115,7 @@ def submit_job():
     repo = data.get('repo')
     branch = data.get('branch')
     ram_required_gb = data.get('ram_required_gb', 0)
+    gh_token = data.get('gh_token')
     job_id = str(uuid.uuid4())
 
     # Metadata extraction (Pre-flight check)
@@ -144,9 +148,9 @@ def submit_job():
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, status)
-            VALUES (?, ?, ?, ?, ?, 'pending')
-        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes)))
+            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, gh_token, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')
+        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes), gh_token))
         conn.commit()
 
     return jsonify({"job_id": job_id, "status": "pending", "required_hashes_count": len(required_hashes)})
@@ -248,6 +252,10 @@ REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
 
 @app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
 def artifacts(repo_owner, repo_name, rev, file_path):
+    """
+    Unified artifact access API. Extracts files from local cache or remote GitHub
+    using DVC at a specific revision (commit hash or branch).
+    """
     repo_slug = f"{repo_owner}/{repo_name}"
     repo_url = f"https://github.com/{repo_slug}"
 
@@ -282,9 +290,7 @@ def artifacts(repo_owner, repo_name, rev, file_path):
             return Response(generate(), mimetype='application/octet-stream',
                             headers={"Content-Disposition": f"attachment; filename={filename}"})
 
-        # If DVC get failed, we DO NOT fallback to worker for historical revisions (rev looks like a hash)
-        # However, if rev is a branch name, Case 2 might still be valid for the 'latest' of that branch.
-        # But per requirements: "Supprime ce repli en cascade pour les requêtes historiques"
+        # If DVC get failed, we DO NOT fallback to worker for historical revisions.
         # We consider any request with a 'rev' as a historical request needing integrity.
         return jsonify({"error": f"Failed to extract historical artifact: {result.stderr}"}), 404
 
@@ -356,7 +362,7 @@ def api_list_projects():
         projects = [p for p in projects_in_db if p in allowed_repos]
         return jsonify(projects)
     except Exception as e:
-        print(f"Error fetching repos in API: {e}")
+        app.logger.error(f"Error fetching repos in API: {e}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 @app.route('/api/projects/<path:repo>/runs', methods=['GET'])
@@ -446,16 +452,28 @@ def dashboard():
 @app.route('/login')
 def login():
     redirect_uri = url_for('authorize', _external=True)
+    print(f"DEBUG: Redirecting to GitHub. redirect_uri={redirect_uri}", flush=True)
     return oauth.github.authorize_redirect(redirect_uri)
 
 @app.route('/authorize')
 def authorize():
-    token = oauth.github.authorize_access_token()
-    resp = oauth.github.get('user', token=token)
-    user = resp.json()
-    session['user'] = user
-    session['token'] = token
-    return redirect(url_for('dashboard'))
+    print(f"DEBUG: /authorize reached. Args: {request.args}", flush=True)
+    try:
+        print("DEBUG: Fetching access token...", flush=True)
+        token = oauth.github.authorize_access_token()
+        print(f"DEBUG: Token received. Fetching user info...", flush=True)
+        resp = oauth.github.get('user', token=token)
+        user = resp.json()
+        print(f"DEBUG: User info received: {user.get('login')}. Setting session...", flush=True)
+        session['user'] = user
+        session['token'] = token
+        print("DEBUG: Redirecting to dashboard.", flush=True)
+        return redirect(url_for('dashboard'))
+    except Exception as e:
+        print(f"DEBUG ERROR in /authorize: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return f"Authentication Error: {str(e)}", 500
 
 @app.route('/logout')
 def logout():
@@ -537,7 +555,7 @@ def view_project(owner, repo, path=''):
     # --- Case 2: Historical (Local) ---
     repo_path = os.path.join(REPOS_DIR, owner, repo)
     if not os.path.exists(repo_path):
-        return f"Projet {repo_full_name} non trouvé localement et non actif.", 404
+        return f"Project {repo_full_name} not found locally and not active.", 404
 
     with local_viewers_lock:
         if repo_full_name in local_viewers:

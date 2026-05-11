@@ -9,9 +9,9 @@ fi
 
 TARGET_REPO=$1
 TARGET_BRANCH=$2
-GH_TOKEN=$3
+GH_TOKEN="${3:-$GH_TOKEN}"
 
-# Se placer à la racine du projet cluster-ci
+# Go to cluster-ci project root
 SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
 BASE_DIR="$( cd "$( dirname "$SCRIPT_PATH" )/../.." >/dev/null 2>&1 && pwd )"
 cd "$BASE_DIR"
@@ -30,17 +30,21 @@ if [ -f "$BASE_DIR/.env.secrets" ]; then
     set +a
 fi
 
-# Mode délégation : Si on n'est pas explicitement en mode exécuteur,
-# on délègue la tâche à l'ordonnanceur via submit_job.py
+# Delegation mode: If not explicitly in executor mode,
+# delegate the task to the scheduler via submit_job.py
 if [ "$CLUSTER_CI_MODE" != "executor" ]; then
-    echo "🌐 Mode Délégation activé. Soumission du job à l'ordonnanceur..."
-    python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
+    echo "🌐 Delegation Mode enabled. Submitting job to scheduler..."
+if [ -n "$GH_TOKEN" ]; then
+        python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH" --gh-token "$GH_TOKEN"
+    else
+        python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
+    fi
     exit $?
 fi
 
 REPO_WORK_DIR="repositories/$TARGET_REPO"
 
-# Pipe toute la sortie (stdout et stderr) vers la console ET vers un fichier log local
+# Pipe all output (stdout and stderr) to console AND to a local log file
 LOG_FILE="$BASE_DIR/cluster-ci-runs.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -57,106 +61,106 @@ function log_error() {
 }
 
 echo "=========================================================================="
-log_info "CLUSTER-CI: Début de l'orchestration GitOps Runner"
-log_info "   Dépôt cible   : $TARGET_REPO"
-log_info "   Branche cible : $TARGET_BRANCH"
-log_info "   Dossier Run   : $BASE_DIR/$REPO_WORK_DIR"
+log_info "CLUSTER-CI: GitOps Runner Orchestration Start"
+log_info "   Target Repo   : $TARGET_REPO"
+log_info "   Target Branch : $TARGET_BRANCH"
+log_info "   Run Folder    : $BASE_DIR/$REPO_WORK_DIR"
 echo "=========================================================================="
 
-# 1. Création / bascule dans repositories/
-log_info "[Etape 1/3] Initialisation du cache local..."
+# 1. Creation / switch to repositories/
+log_info "[Step 1/3] Initializing local cache..."
 mkdir -p "$BASE_DIR/repositories/$(dirname "$TARGET_REPO")"
 cd "$BASE_DIR/repositories/$(dirname "$TARGET_REPO")"
 
-# Extraire juste le nom final du repo pour le dossier (ex: llm-as-recommender)
+# Extract just the final repo name for the folder (e.g., llm-as-recommender)
 REPO_BASENAME=$(basename "$TARGET_REPO")
 
 if [ -n "$GH_TOKEN" ]; then
-    # Authentification https silencieuse pour GitHub Actions
+    # Silent https authentication for GitHub Actions
     REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git"
 else
     REPO_URL="https://github.com/${TARGET_REPO}.git"
 fi
 
 # 1.5 JIT Garbage Collection & Metadata update
-log_info "[Etape 1.5/3] Gestion du ramasse-miettes (GC) JIT..."
+log_info "[Step 1.5/3] JIT Garbage Collection (GC) Management..."
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 
 function update_status_idle() {
-    log_info "Mise à jour des métadonnées (statut idle)..."
+    log_info "Updating metadata (idle status)..."
     [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
 }
 trap update_status_idle EXIT
 
-# 2. Purge préventive & Gestion de l'état Git
-log_info "[Etape 2/3] Purge préventive des processus dvc-viewer résiduels..."
-# On cherche les processus dvc-viewer dont le CWD correspond au répertoire de travail du projet
+# 2. Preventive Purge & Git State Management
+log_info "[Step 2/3] Preventive purge of residual dvc-viewer processes..."
+# Look for dvc-viewer processes whose CWD matches the project working directory
 for pid in $(pgrep -f "dvc-viewer" || true); do
     if pwdx "$pid" 2>/dev/null | grep -q ": $BASE_DIR/$REPO_WORK_DIR$"; then
-        log_info "Nettoyage du processus dvc-viewer fantôme (PID: $pid)..."
+        log_info "Cleaning up ghost dvc-viewer process (PID: $pid)..."
         kill -9 "$pid" 2>/dev/null || true
     fi
 done
 
 if [ ! -d "$REPO_BASENAME/.git" ]; then
-    log_info "[Etape 2.1/3] Premier fetch du dépôt. Clonage en cours..."
+    log_info "[Step 2.1/3] First repository fetch. Cloning in progress..."
     git clone "$REPO_URL" "$REPO_BASENAME"
 else
-    log_info "[Etape 2.1/3] Dépôt existant trouvé. Mise à jour..."
+    log_info "[Step 2.1/3] Existing repository found. Updating..."
 fi
 
 cd "$REPO_BASENAME"
 
-# Force la remote URL au cas où elle aurait changé (token éphémère)
+# Force remote URL in case it changed (ephemeral token)
 git remote set-url origin "$REPO_URL"
 
-# Force la récupération des dernières références (on spécifie explicitement le mapping
-# de la branche vers origin/branche car le fetch conditionnel GitHub Actions l'omet parfois)
-log_info "Synchronisation de la référence distante origin/$TARGET_BRANCH..."
+# Force fetching latest references (explicitly specify branch mapping to origin/branch
+# as GitHub Actions conditional fetch sometimes omits it)
+log_info "Synchronizing remote reference origin/$TARGET_BRANCH..."
 git fetch origin "+refs/heads/$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
 
-# Validation de sécurité : est-ce que la branche existe sur le remote ?
+# Security validation: does the branch exist on remote?
 if ! git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
-    log_error "La branche origin/$TARGET_BRANCH n'existe pas ou est introuvable."
+    log_error "Branch origin/$TARGET_BRANCH does not exist or was not found."
     exit 1
 fi
 
-# Basculer et reset hard pour s'assurer que l'arbre Git est propre
-log_info "Checkout forcé de la branche et re-synchronisation..."
+# Switch and hard reset to ensure clean Git tree
+log_info "Forced branch checkout and re-synchronization..."
 git checkout -f -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
 git reset --hard "origin/$TARGET_BRANCH"
 
-# Enregistrement du hash du commit courant pour la traçabilité
+# Register current commit hash for traceability
 git rev-parse HEAD > .cluster-ci-commit
 
-log_success "Arbre Git synchronisé. Les artefacts (.dvc/cache etc.) sont préservés pour la réutilisation."
+log_success "Git tree synchronized. Artifacts (.dvc/cache etc.) preserved for reuse."
 
-# Enregistrement du hash du commit courant pour la traçabilité
+# Register current commit hash for traceability
 git rev-parse HEAD > .cluster-ci-commit
 
-# 3. Lancement de l'exécution Dockerisée
-log_info "[Etape 3/3] Préparation de l'exécution Dockerisée..."
+# 3. Launch Dockerized Execution
+log_info "[Step 3/3] Preparing Dockerized execution..."
 
 if [ ! -f ".cluster-ci" ]; then
-    log_error "Fichier .cluster-ci introuvable à la racine du dépôt. Exécution avortée."
+    log_error ".cluster-ci file not found at repository root. Execution aborted."
     exit 1
 fi
 
-# Extraction de la limite de RAM depuis .cluster-ci (--ram 16)
+# Extract RAM limit from .cluster-ci (--ram 16)
 RAM_LIMIT=$(grep -oE -e '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n 1)
 [ -z "$RAM_LIMIT" ] && RAM_LIMIT="2"
-log_info "Limite de RAM détectée : ${RAM_LIMIT}GB"
+log_info "RAM limit detected: ${RAM_LIMIT}GB"
 
 # Configuration Docker
-DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3"}
+DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/pytorch:26.04-py3"}
 ENV_FILE_FLAG=""
 if [ -f "$BASE_DIR/.env.secrets" ]; then
     ENV_FILE_FLAG="--env-file $BASE_DIR/.env.secrets"
 fi
 
-# On crée un volume pour le home de l'utilisateur afin de ne pas retélécharger dvc à chaque fois et conserver les caches uv/pip
+# Create a volume for the user's home to avoid redownloading dvc every time and to keep uv/pip caches
 HOME_CACHE_VOLUME="cluster-ci-home-cache"
 if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$HOME_CACHE_VOLUME" >/dev/null
@@ -164,8 +168,19 @@ fi
 # Ensure the volume is owned by the current user
 docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" chown -R "$(id -u):$(id -g)" /home/user
 
+# Detect Docker image change: if the cached image marker differs from the
+# current image, purge stale tool binaries to force a clean reinstall.
+MARKER_CMD="cat /home/user/.cluster-ci-image-marker 2>/dev/null || echo 'none'"
+CACHED_IMAGE=$(docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
+if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
+    log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
+    docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
+        bash -c "rm -rf /home/user/.local /home/user/.cache/uv 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
+fi
+
 function docker_exec() {
     docker run --rm \
+        --gpus all \
         -v "$(pwd):/workspace" \
         -v "$HOME_CACHE_VOLUME:/home/user" \
         -v /etc/passwd:/etc/passwd:ro \
@@ -178,39 +193,54 @@ function docker_exec() {
         $ENV_FILE_FLAG \
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
+        -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
         "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
 
-log_info "Image utilisée : $DOCKER_IMAGE"
+log_info "Image used: $DOCKER_IMAGE"
 
-log_info "Installation des dépendances de base dans le volume persistant..."
-docker_exec "if ! command -v uv &> /dev/null; then python3 -m pip install uv --user >/dev/null 2>&1; fi"
-docker_exec "if ! command -v dvc &> /dev/null; then uv tool install dvc >/dev/null 2>&1; fi"
-docker_exec "if ! command -v dvc-viewer &> /dev/null; then uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1; fi"
+log_info "GPU Hardware Validation..."
+# We check CUDA but only fail if CLUSTER_CI_GPU_REQUIRED is set to 1.
+# This prevents breaking CPU-only environments (local debug, etc.) while keeping
+# enforcement on production workers if desired.
+GPU_REQ_CMD="import torch, os;
+avail=torch.cuda.is_available();
+print(f'CUDA available: {avail}');
+required=os.environ.get('CLUSTER_CI_GPU_REQUIRED', '0') == '1';
+if required and not avail:
+    print('❌ Error: GPU required but not found!');
+    exit(1)"
+docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
-log_info "Lecture des paramètres DVC depuis .cluster-ci..."
-# Nettoyage des commentaires, suppression des flags internes comme --ram, et mise en une seule ligne des arguments
+log_info "Installing base dependencies in persistent volume..."
+# Use execution test (not command -v) to detect stale binaries from old containers
+docker_exec "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
+docker_exec "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
+docker_exec "dvc-viewer --help >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
+
+log_info "Reading DVC parameters from .cluster-ci..."
+# Clean comments, remove internal flags like --ram, and put arguments on a single line
 DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g' | tr '\n' ' ' | xargs)
 
 if [ -z "$DVC_ARGS" ]; then
-    log_info "Aucun argument spécifié dans .cluster-ci. Exécution de tout le pipeline."
+    log_info "No arguments specified in .cluster-ci. Executing full pipeline."
 else
-    log_info "Arguments détectés : $DVC_ARGS"
+    log_info "Arguments detected: $DVC_ARGS"
 fi
 
-log_info "Analyse AST via dvc-viewer..."
+log_info "AST analysis via dvc-viewer..."
 docker_exec "dvc-viewer hash"
 
-log_info "Recherche d'un port libre pour dvc-viewer..."
+log_info "Searching for a free port for dvc-viewer..."
 VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-log_info "Port sélectionné : $VIEWER_PORT"
+log_info "Port selected: $VIEWER_PORT"
 echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 
-log_info "Lancement du serveur live dvc-viewer sur le port $VIEWER_PORT..."
+log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
 docker run --rm \
     -v "$(pwd):/workspace" -w /workspace \
-    -v "$PIP_CACHE_VOLUME:/home/user/.local" \
+    -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
     $ENV_FILE_FLAG \
@@ -219,12 +249,12 @@ docker run --rm \
 DVC_VIEWER_PID=$!
 
 if [ -n "$DVC_REMOTE_P2P_URL" ]; then
-    log_info "Data Plane: Configuration d'un remote P2P dynamique vers $DVC_REMOTE_P2P_URL..."
+    log_info "Data Plane: Configuring dynamic P2P remote to $DVC_REMOTE_P2P_URL..."
     PEER_REMOTE_URL="$DVC_REMOTE_P2P_URL/$TARGET_REPO/.dvc/cache/files/md5"
 
     docker_exec "dvc remote add peer_remote '$PEER_REMOTE_URL' --local"
 
-    log_info "Récupération des données depuis le pair (P2P pull strict avec retries)..."
+    log_info "Fetching data from peer (strict P2P pull with retries)..."
     MAX_RETRIES=3
     RETRY_DELAY=5
     RETRY_COUNT=0
@@ -237,20 +267,20 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
         fi
         RETRY_COUNT=$((RETRY_COUNT + 1))
         if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-            log_info "Échec du pull P2P (tentative $RETRY_COUNT/$MAX_RETRIES). Nouvel essai dans ${RETRY_DELAY}s..."
+            log_info "P2P pull failed (attempt $RETRY_COUNT/$MAX_RETRIES). Retrying in ${RETRY_DELAY}s..."
             sleep $RETRY_DELAY
         fi
     done
 
     if [ "$PULL_SUCCESS" = false ]; then
-        log_error "Échec critique du transfert P2P depuis $PEER_REMOTE_URL après $MAX_RETRIES tentatives. Abandon."
+        log_error "Critical P2P transfer failure from $PEER_REMOTE_URL after $MAX_RETRIES attempts. Aborting."
         exit 1
     fi
-    log_success "Transfert P2P réussi."
+    log_success "P2P transfer successful."
 fi
 
-log_info "Lancement de : dvc repro $DVC_ARGS via Docker"
-# Exécution du repro et des dépendances uv si présentes
+log_info "Launching: dvc repro $DVC_ARGS via Docker"
+# Execution of repro and uv dependencies if present
 if [ -f "pyproject.toml" ]; then
     EXEC_CMD="(command -v uv || pip install uv --user >/dev/null 2>&1) && uv sync && uv run dvc repro $DVC_ARGS"
 else
@@ -259,35 +289,49 @@ fi
 
 docker_exec "$EXEC_CMD"
 
-# 4. Data Router: Vérification avant Push
-log_info "[Etape 4/3] Data Router : Vérification de l'espace sur le headnode..."
+# 4. Data Router: Verification before Push
+log_info "[Step 4/3] Data Router: Checking headnode space..."
 HEADNODE_URL=${HEADNODE_URL:-"http://localhost:5000"}
 
-# Interroger l'API du headnode pour connaître l'espace disque
+# Query headnode API for disk space
 SPACE_CHECK=$(curl -s "$HEADNODE_URL/check_space" || echo '{"sufficient": false, "error": "unreachable"}')
 SUFFICIENT=$(echo "$SPACE_CHECK" | jq -r '.sufficient')
 
 if [ "$SUFFICIENT" == "true" ]; then
-    log_info "Espace suffisant sur le headnode. Synchronisation des artefacts..."
-    if docker_exec "dvc push"; then
-        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
-        log_success "Synchronisation terminée."
+    log_info "Sufficient space on headnode. Synchronizing artifacts..."
+    # Check if a default DVC remote is configured by checking the config files
+    HAS_REMOTE=false
+    if [ -f ".dvc/config" ] && grep -E -q "^\s*remote\s*=" .dvc/config; then
+        HAS_REMOTE=true
+    elif [ -f ".dvc/config.local" ] && grep -E -q "^\s*remote\s*=" .dvc/config.local; then
+        HAS_REMOTE=true
+    fi
+
+    if [ "$HAS_REMOTE" = "true" ]; then
+        if docker_exec "dvc push"; then
+            python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
+            log_success "Synchronization complete."
+        else
+            log_error "dvc push failed. Project remains pending sync."
+            python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
+        fi
     else
-        log_error "Échec du dvc push. Le projet reste en attente de synchro."
-        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
+        log_info "No default DVC remote configured. Skipping dvc push."
+        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
+        log_success "Synchronization complete (nothing to push)."
     fi
 else
-    FREE_GB=$(echo "$SPACE_CHECK" | jq -r '.free_gb // "inconnu"')
-    log_error "Espace insuffisant sur le headnode ($FREE_GB GB libres). Push annulé."
-    log_info "Le projet est marqué 'en attente de synchro' pour un transfert ultérieur."
+    FREE_GB=$(echo "$SPACE_CHECK" | jq -r '.free_gb // "unknown"')
+    log_error "Insufficient space on headnode ($FREE_GB GB free). Push cancelled."
+    log_info "Project marked 'pending sync' for later transfer."
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
 fi
 
 echo "=========================================================================="
-log_success "CLUSTER-CI: Exécution GitOps terminée avec succès."
+log_success "CLUSTER-CI: GitOps execution completed successfully."
 echo "=========================================================================="
 
-# Tronquer log à 2000 lignes max (efface le tout début pour ne garder que la fin)
+# Truncate log to max 2000 lines (erases beginning to keep the end)
 if [ -f "$LOG_FILE" ]; then
     tail -n 2000 "$LOG_FILE" > "${LOG_FILE}.tmp"
     mv "${LOG_FILE}.tmp" "$LOG_FILE"

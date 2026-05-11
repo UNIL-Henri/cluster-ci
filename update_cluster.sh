@@ -5,8 +5,8 @@ ENV_FILE=".env"
 
 # Ensure sshpass is installed
 if ! command -v sshpass &> /dev/null; then
-    echo "❌ Erreur : sshpass n'est pas installé sur votre machine locale."
-    echo "Installez-le avec : sudo apt-get install sshpass (ou brew install sshpass sur macOS)"
+    echo "❌ Error: sshpass is not installed on your local machine."
+    echo "Install it with: sudo apt-get install sshpass (or brew install sshpass on macOS)"
     exit 1
 fi
 
@@ -31,32 +31,32 @@ update_env() {
 update_needed=false
 
 if [ -z "$HEADNODE_IP" ] || [ -z "$HEADNODE_USER" ] || [ -z "$HEADNODE_PASS" ]; then
-    echo "--- Configuration du Headnode ---"
-    [ -z "$HEADNODE_IP" ] && read -p "IP du Headnode : " HEADNODE_IP
-    [ -z "$HEADNODE_USER" ] && read -p "Utilisateur SSH : " HEADNODE_USER
-    [ -z "$HEADNODE_PASS" ] && read -rs -p "Mot de passe SSH : " HEADNODE_PASS
+    echo "--- Headnode Configuration ---"
+    [ -z "$HEADNODE_IP" ] && read -p "Headnode IP: " HEADNODE_IP
+    [ -z "$HEADNODE_USER" ] && read -p "SSH User: " HEADNODE_USER
+    [ -z "$HEADNODE_PASS" ] && read -rs -p "SSH Password: " HEADNODE_PASS
     echo ""
     update_needed=true
 fi
 
 if [ -z "$TARGET_REPO" ]; then
-    read -p "Cible GitHub (ex: UNIL-DESI) : " TARGET_REPO
+    read -p "GitHub Target (e.g., UNIL-DESI): " TARGET_REPO
     [ -z "$TARGET_REPO" ] && TARGET_REPO="UNIL-DESI"
     update_needed=true
 fi
 
 if [ -z "$WORKER_COUNT" ]; then
     WORKER_COUNT=0
-    echo "--- Configuration des Workers ---"
+    echo "--- Workers Configuration ---"
 else
-    echo "--- $WORKER_COUNT Worker(s) existant(s) trouvé(s) dans la configuration ---"
+    echo "--- $WORKER_COUNT existing Worker(s) found in configuration ---"
 fi
 
 while true; do
     if [ "$WORKER_COUNT" -eq 0 ]; then
-        prompt_msg="Ajouter un worker ? (O/n) : "
+        prompt_msg="Add a worker? (Y/n): "
     else
-        prompt_msg="Ajouter un nouveau worker supplémentaire ? (o/N) : "
+        prompt_msg="Add another new worker? (y/N): "
     fi
     
     read -p "$prompt_msg" add_worker
@@ -72,9 +72,9 @@ while true; do
     fi
     
     WORKER_COUNT=$((WORKER_COUNT + 1))
-    read -p "IP du Worker $WORKER_COUNT : " w_ip
-    read -p "Utilisateur SSH : " w_user
-    read -rs -p "Mot de passe SSH : " w_pass
+    read -p "Worker $WORKER_COUNT IP: " w_ip
+    read -p "SSH User: " w_user
+    read -rs -p "SSH Password: " w_pass
     echo ""
     
     export "WORKER_${WORKER_COUNT}_IP"="$w_ip"
@@ -84,7 +84,7 @@ while true; do
 done
 
 if [ "$update_needed" = true ]; then
-    echo "📝 Sauvegarde des identifiants dans $ENV_FILE..."
+    echo "📝 Saving credentials to $ENV_FILE..."
     touch "$ENV_FILE"
     
     update_env "HEADNODE_IP" "$HEADNODE_IP"
@@ -104,18 +104,18 @@ if [ "$update_needed" = true ]; then
 fi
 
 echo "==========================================================="
-echo "🚀 Mise à jour du Headnode ($HEADNODE_IP)..."
+echo "🚀 Updating Headnode ($HEADNODE_IP)..."
 echo "==========================================================="
 export SSHPASS="$HEADNODE_PASS"
 sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$HEADNODE_USER@$HEADNODE_IP" "export SUDO_PASSWORD='$HEADNODE_PASS'; curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode $TARGET_REPO"
 
-# Récupération du CLUSTER_TOKEN depuis le headnode pour les tests locaux
-echo "🔑 Récupération du Token de sécurité depuis le headnode..."
+# Retrieve CLUSTER_TOKEN from headnode for local tests
+echo "🔑 Retrieving security Token from headnode..."
 REMOTE_TOKEN=$(sshpass -e ssh -o StrictHostKeyChecking=no "$HEADNODE_USER@$HEADNODE_IP" "grep '^CLUSTER_TOKEN=' /home/$HEADNODE_USER/cluster-ci/.env | cut -d= -f2-")
 if [ -n "$REMOTE_TOKEN" ]; then
     update_env "CLUSTER_TOKEN" "$REMOTE_TOKEN"
     export CLUSTER_TOKEN="$REMOTE_TOKEN"
-    echo "✅ Token récupéré et sauvegardé."
+    echo "✅ Token retrieved and saved."
 fi
 
 for ((i=1; i<=WORKER_COUNT; i++)); do
@@ -129,30 +129,40 @@ for ((i=1; i<=WORKER_COUNT; i++)); do
     
     if [ -n "$ip_val" ]; then
         echo "==========================================================="
-        echo "🚀 Mise à jour du Worker $i ($ip_val)..."
+        echo "🚀 Updating Worker $i ($ip_val)..."
         echo "==========================================================="
         export SSHPASS="$pass_val"
+
+        # Force-update Docker image on worker to modern NGC container
+        echo "🐳 Updating Docker base image on worker $i..."
+        sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$user_val@$ip_val" \
+            "WORKER_ENV=\"\$HOME/cluster-ci/.env\" && \
+             if [ -f \"\$WORKER_ENV\" ]; then \
+                 sed -i 's|^DOCKER_BASE_IMAGE=.*|DOCKER_BASE_IMAGE=nvcr.io/nvidia/pytorch:26.04-py3|' \"\$WORKER_ENV\"; \
+                 echo '✅ DOCKER_BASE_IMAGE updated in .env'; \
+             fi"
+
         sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$user_val@$ip_val" "export SUDO_PASSWORD='$pass_val'; curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- worker"
     fi
 done
 
-echo "✅ Mise à jour du cluster terminée !"
+echo "✅ Cluster update complete!"
 
 echo "==========================================================="
-echo "🧪 Test de l'infrastructure : Soumission de 2 jobs de test..."
+echo "🧪 Infrastructure Test: Submitting 2 test jobs..."
 echo "==========================================================="
-echo "Mise en pause de 10s pour laisser le temps aux services de démarrer..."
+echo "Pausing for 10s to allow services to start..."
 sleep 10
 
-echo "🚀 Soumission du Job 1..."
+echo "🚀 Submitting Job 1..."
 uv run src/scheduler/submit_job.py "$TARGET_REPO/cluster-ci" "main" --headnode "http://$HEADNODE_IP:5000" &
 JOB1=$!
 
-echo "🚀 Soumission du Job 2..."
+echo "🚀 Submitting Job 2..."
 uv run src/scheduler/submit_job.py "$TARGET_REPO/cluster-ci" "main" --headnode "http://$HEADNODE_IP:5000" &
 JOB2=$!
 
 wait $JOB1
 wait $JOB2
 
-echo "🎉 Test du cluster terminé ! Tous les noeuds sont opérationnels."
+echo "🎉 Cluster test complete! All nodes are operational."

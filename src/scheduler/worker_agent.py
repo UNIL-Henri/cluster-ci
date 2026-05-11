@@ -99,6 +99,7 @@ def execute_job(job):
     branch = job['branch']
     ram_limit_gb = job['ram_required_gb']
     p2p_url = job.get('p2p_url')
+    gh_token = job.get('gh_token')
     ram_limit_bytes = ram_limit_gb * (1024**3)
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
@@ -117,6 +118,9 @@ def execute_job(job):
     if p2p_url:
         logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
         env["DVC_REMOTE_P2P_URL"] = p2p_url
+    if gh_token:
+        logger.info(f"Injecting GH_TOKEN for job {job_id}")
+        env["GH_TOKEN"] = gh_token
 
     log_path = os.path.join(LOGS_DIR, f"{job_id}.log")
     log_file = open(log_path, 'w')
@@ -158,7 +162,7 @@ def execute_job(job):
 
         if exit_code == 137:
             # Docker returns 137 when OOM-killed
-            error_msg = f"❌ [OOM ARTIFICIEL CLUSTER] Exécution interrompue ! Vous aviez réservé {ram_limit_gb} Go de RAM dans '.cluster-ci', or votre pipeline vient d'être tué par Docker. Veuillez augmenter votre réservation.\n"
+            error_msg = f"❌ [CLUSTER ARTIFICIAL OOM] Execution interrupted! You reserved {ram_limit_gb} GB of RAM in '.cluster-ci', but your pipeline was just killed by Docker. Please increase your reservation.\n"
             sys.stderr.write(error_msg)
             sys.stderr.flush()
             update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)
@@ -212,14 +216,32 @@ def drain_pending_syncs():
                     logger.info(f"Headnode space sufficient. Pushing {project_name}...")
                     project_dir = os.path.join(base_dir, "repositories", project_name)
                     if os.path.exists(project_dir):
-                        # Execute dvc push via uv
-                        res = subprocess.run(["uv", "run", "dvc", "push"], cwd=project_dir)
-                        if res.returncode == 0:
-                            # Mark as done
+                        # Check if a default DVC remote is configured
+                        has_remote = False
+                        dvc_config_path = os.path.join(project_dir, ".dvc", "config")
+                        dvc_config_local_path = os.path.join(project_dir, ".dvc", "config.local")
+                        
+                        for config_path in [dvc_config_path, dvc_config_local_path]:
+                            if os.path.exists(config_path):
+                                with open(config_path, "r") as f:
+                                    content = f.read()
+                                    import re
+                                    if re.search(r"^\s*remote\s*=", content, re.MULTILINE):
+                                        has_remote = True
+                                        break
+
+                        if not has_remote:
+                            logger.info(f"No default DVC remote configured for {project_name}. Skipping push.")
                             subprocess.run(["python3", os.path.join(base_dir, "src/runner/gc_orchestrator.py"), "mark-sync-done", project_name])
-                            logger.info(f"Successfully pushed and marked {project_name} as done.")
                         else:
-                            logger.error(f"dvc push failed for {project_name}")
+                            # Execute dvc push via uv
+                            res = subprocess.run(["uv", "run", "dvc", "push"], cwd=project_dir)
+                            if res.returncode == 0:
+                                # Mark as done
+                                subprocess.run(["python3", os.path.join(base_dir, "src/runner/gc_orchestrator.py"), "mark-sync-done", project_name])
+                                logger.info(f"Successfully pushed and marked {project_name} as done.")
+                            else:
+                                logger.error(f"dvc push failed for {project_name}")
                     else:
                         logger.warning(f"Project directory {project_dir} not found for {project_name}")
                 else:
