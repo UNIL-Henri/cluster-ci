@@ -25,7 +25,7 @@ Asynchronous continuous integration system for research pipelines, designed as a
 Exécutez cette commande à la racine de votre dépôt Git pour l'intégration automatique :
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash
+curl -H 'Cache-Control: no-cache, no-store' -sSL "https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh?v=$(date +%s)" | bash
 ```
 
 Ce script injecte :
@@ -41,13 +41,13 @@ Installation is done via a "One-Liner" curl command that automatically configure
 #### 1. Install the Headnode (Scheduler)
 The Headnode manages the job queue and ephemeral runners. The script will ask for your **GitHub PAT** and the target to monitor.
 ```bash
-curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- headnode
+curl -H 'Cache-Control: no-cache, no-store' -sSL "https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh?v=$(date +%s)" | bash -s -- headnode
 ```
 
 #### 2. Install a Worker (Executor)
 Once the Headnode is installed, it will provide a ready-to-use command to run on your Workers. Alternatively, you can start the installation manually:
 ```bash
-curl -sSL https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh | bash -s -- worker
+curl -H 'Cache-Control: no-cache, no-store' -sSL "https://raw.githubusercontent.com/UNIL-DESI/cluster-ci/main/install.sh?v=$(date +%s)" | bash -s -- worker
 ```
 The script will ask for the **Headnode URL** and the **Cluster Token** generated during Headnode installation.
 
