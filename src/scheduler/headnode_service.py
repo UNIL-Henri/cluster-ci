@@ -89,22 +89,24 @@ def register_worker():
     hostname = data.get('hostname')
     service_url = data.get('service_url')
     total_ram_gb = data.get('total_ram_gb')
-    # We ignore the worker's reported available RAM for scheduling
-    # to avoid the race condition where physical RAM isn't yet claimed by jobs.
-    # available_ram_gb = data.get('available_ram_gb')
+    total_storage_gb = data.get('total_storage_gb')
+    available_storage_gb = data.get('available_storage_gb')
 
     with get_db_conn() as conn:
         cursor = conn.cursor()
         # On first registration, we initialize available_ram_gb to total_ram_gb
         cursor.execute('''
-            INSERT INTO workers (worker_id, hostname, service_url, total_ram_gb, available_ram_gb, last_seen, status)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'online')
+            INSERT INTO workers (worker_id, hostname, service_url, total_ram_gb, available_ram_gb, total_storage_gb, available_storage_gb, last_seen, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'online')
             ON CONFLICT(worker_id) DO UPDATE SET
                 hostname = ?,
                 service_url = ?,
+                total_ram_gb = ?,
+                total_storage_gb = ?,
+                available_storage_gb = ?,
                 last_seen = CURRENT_TIMESTAMP,
                 status = 'online'
-        ''', (worker_id, hostname, service_url, total_ram_gb, total_ram_gb, hostname, service_url))
+        ''', (worker_id, hostname, service_url, total_ram_gb, total_ram_gb, total_storage_gb, available_storage_gb, hostname, service_url, total_ram_gb, total_storage_gb, available_storage_gb))
         conn.commit()
 
     return jsonify({"status": "ok"})
@@ -334,7 +336,7 @@ def api_list_projects():
     target_config = os.environ.get("TARGET_REPO", "UNIL-DESI").lower()
 
     try:
-        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token)
+        repos_resp = oauth.github.get('user/repos?per_page=100&sort=updated', token=token, timeout=15.0)
         if not repos_resp.ok:
             return jsonify({"error": "Failed to fetch repositories from GitHub", "details": repos_resp.text}), 502
 
@@ -352,15 +354,15 @@ def api_list_projects():
 
             # Match against target organization OR specific repository
             if owner == target_config or full_name == target_config:
-                allowed_repos.add(r['full_name'])
+                allowed_repos.add(r['full_name'].lower())
 
         with get_db_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT DISTINCT repo FROM jobs')
             projects_in_db = [row['repo'] for row in cursor.fetchall()]
 
-        # Only return projects that are in the database AND the user has access to
-        projects = [p for p in projects_in_db if p in allowed_repos]
+        # Only return projects that are in the database AND the user has access to (case-insensitive)
+        projects = [p for p in projects_in_db if p.lower() in allowed_repos]
         return jsonify(projects)
     except Exception as e:
         app.logger.error(f"Error fetching repos in API: {e}")
@@ -404,6 +406,32 @@ def api_list_runs(repo):
         for run in runs: run['commit_title'] = ""
 
     return jsonify(runs)
+    
+@app.route('/api/jobs/<job_id>/logs', methods=['GET'])
+def api_get_run_logs(job_id):
+    offset = request.args.get('offset', 0)
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT w.service_url
+            FROM jobs j
+            JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.job_id = ?
+        ''', (job_id,))
+        job = cursor.fetchone()
+        
+    if not job or not job['service_url']:
+        return jsonify({"logs": "Log source not found (worker might be offline or job not assigned)", "offset": offset})
+        
+    worker_url = f"{job['service_url']}/job_logs/{job_id}?offset={offset}"
+    try:
+        resp = requests.get(worker_url, timeout=5)
+        if resp.status_code == 200:
+            return jsonify(resp.json())
+        else:
+            return jsonify({"logs": f"Error fetching logs from worker: {resp.text}", "offset": offset}), 500
+    except Exception as e:
+        return jsonify({"logs": f"Connection error to worker: {str(e)}", "offset": offset}), 500
 
 @app.route('/api/runs/<job_id>/files', methods=['GET'])
 def api_run_files(job_id):

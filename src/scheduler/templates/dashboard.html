@@ -64,6 +64,8 @@
             </ol>
         </nav>
 
+        <div id="cluster-stats-container"></div>
+
         <div id="explorer-container" class="row row-cols-1 row-cols-md-3 row-cols-lg-4 g-4">
             <!-- Content will be loaded here via JS -->
             <div class="col-12 text-center py-5">
@@ -95,6 +97,24 @@
                     <a id="preview-download-btn" href="#" class="btn btn-primary" target="_blank">Download</a>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
+
+    <!-- Log Modal -->
+    <div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="logModalLabel"><i class="bi bi-terminal"></i> Execution Logs</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0" style="background-color: #1e1e1e;">
+                    <pre id="log-content" class="m-0 p-3" style="white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; color: #d4d4d4; font-size: 0.9rem;"></pre>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
             </div>
         </div>
     </div>
@@ -355,6 +375,11 @@
             currentState = { view: 'root', repo: null, jobId: null };
             updateBreadcrumb();
             container.innerHTML = '<div class="col-12 text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+            
+            // Only show cluster stats on the root view
+            const statsContainer = document.getElementById('cluster-stats-container');
+            if (statsContainer) statsContainer.innerHTML = '';
+            loadClusterStats();
 
             try {
                 const resp = await fetch('/api/projects');
@@ -402,6 +427,7 @@
             currentState = { view: 'project', repo: repo, jobId: null };
             updateBreadcrumb();
             container.innerHTML = '<div class="col-12 text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+            document.getElementById('cluster-stats-container').innerHTML = '';
 
             try {
                 const resp = await fetch(`/api/projects/${repo}/runs`);
@@ -452,7 +478,10 @@
                                             Branch: <strong>${escapeHtml(run.branch)}</strong> | Job ID: ${run.job_id.substring(0,8)}...
                                         </p>
                                     </div>
-                                    <div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-outline-primary" onclick="showLogs('${run.job_id}')">
+                                            <i class="bi bi-terminal"></i> View Logs
+                                        </button>
                                         <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
                                             <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
                                         </a>
@@ -496,6 +525,14 @@
                     statusDiv.className = statusClass + ' mb-2';
                     statusDiv.innerHTML = `<i class="bi ${statusIcon}"></i> ${escapeHtml(run.status)}`;
 
+                    const logsBtn = document.createElement('button');
+                    logsBtn.className = 'btn btn-link btn-sm p-0 mb-2 d-block mx-auto text-decoration-none';
+                    logsBtn.innerHTML = '<i class="bi bi-terminal"></i> View History Logs';
+                    logsBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        showLogs(run.job_id);
+                    };
+
                     const date = document.createElement('small');
                     date.className = 'text-muted';
                     date.textContent = new Date(run.created_at).toLocaleString();
@@ -503,6 +540,7 @@
                     card.appendChild(icon);
                     card.appendChild(title);
                     card.appendChild(statusDiv);
+                    card.appendChild(logsBtn);
                     card.appendChild(date);
                     col.appendChild(card);
 
@@ -607,6 +645,107 @@
 
         function navigateToRun(jobId, status, repo, branch, commitHash, createdAt) {
             loadRunDetails(jobId, status, repo, branch, commitHash, createdAt);
+        }
+
+        async function loadClusterStats() {
+            try {
+                const resp = await fetch('/workers');
+                const workers = await resp.json();
+                
+                const statsContainer = document.getElementById('cluster-stats-container');
+                if (!statsContainer) return;
+
+                const onlineWorkers = workers.filter(w => w.status === 'online');
+                const totalRam = onlineWorkers.reduce((sum, w) => sum + (w.total_ram_gb || 0), 0);
+                const availableRam = onlineWorkers.reduce((sum, w) => sum + (w.available_ram_gb || 0), 0);
+                const totalStorage = onlineWorkers.reduce((sum, w) => sum + (w.total_storage_gb || 0), 0);
+                const availableStorage = onlineWorkers.reduce((sum, w) => sum + (w.available_storage_gb || 0), 0);
+
+                const ramUsedPercent = totalRam > 0 ? ((totalRam - availableRam) / totalRam * 100).toFixed(1) : 0;
+                const storageUsedPercent = totalStorage > 0 ? ((totalStorage - availableStorage) / totalStorage * 100).toFixed(1) : 0;
+
+                statsContainer.innerHTML = `
+                    <div class="card shadow-sm mb-4 border-0" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+                        <div class="card-body">
+                            <h5 class="card-title mb-3"><i class="bi bi-cpu"></i> Cluster Health</h5>
+                            <div class="row align-items-center">
+                                <div class="col-md-2 text-center border-end">
+                                    <h2 class="mb-0 text-primary">${onlineWorkers.length}</h2>
+                                    <small class="text-muted fw-bold">WORKERS</small>
+                                </div>
+                                <div class="col-md-5 px-4">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <small class="fw-bold">MEMORY (RAM)</small>
+                                        <small>${(totalRam - availableRam).toFixed(1)} / ${totalRam.toFixed(1)} GB (${ramUsedPercent}%)</small>
+                                    </div>
+                                    <div class="progress" style="height: 12px; border-radius: 6px;">
+                                        <div class="progress-bar ${ramUsedPercent > 80 ? 'bg-danger' : (ramUsedPercent > 60 ? 'bg-warning' : 'bg-success')}" 
+                                             role="progressbar" style="width: ${ramUsedPercent}%"></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5 px-4">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <small class="fw-bold">STORAGE</small>
+                                        <small>${(totalStorage - availableStorage).toFixed(1)} / ${totalStorage.toFixed(1)} GB (${storageUsedPercent}%)</small>
+                                    </div>
+                                    <div class="progress" style="height: 12px; border-radius: 6px;">
+                                        <div class="progress-bar ${storageUsedPercent > 80 ? 'bg-danger' : (storageUsedPercent > 60 ? 'bg-warning' : 'bg-success')}" 
+                                             role="progressbar" style="width: ${storageUsedPercent}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                console.error("Failed to load cluster stats", err);
+            }
+        }
+
+        let logPollingInterval = null;
+        let lastLogOffset = 0;
+
+        function showLogs(jobId) {
+            const logModal = new bootstrap.Modal(document.getElementById('logModal'));
+            const logContent = document.getElementById('log-content');
+            logContent.textContent = 'Connecting to worker for logs...';
+            lastLogOffset = 0;
+            
+            if (logPollingInterval) clearInterval(logPollingInterval);
+            
+            logModal.show();
+            
+            const logElement = document.getElementById('logModal');
+            logElement.addEventListener('hidden.bs.modal', () => {
+                if (logPollingInterval) {
+                    clearInterval(logPollingInterval);
+                    logPollingInterval = null;
+                }
+            }, { once: true });
+
+            pollLogs(jobId);
+            logPollingInterval = setInterval(() => pollLogs(jobId), 2000);
+        }
+
+        async function pollLogs(jobId) {
+            try {
+                const resp = await fetch(`/api/jobs/${jobId}/logs?offset=${lastLogOffset}`);
+                const data = await resp.json();
+                
+                const logContent = document.getElementById('log-content');
+                if (data.logs) {
+                    if (lastLogOffset === 0) logContent.textContent = '';
+                    logContent.textContent += data.logs;
+                    lastLogOffset = data.offset;
+                    
+                    const modalBody = document.querySelector('#logModal .modal-body');
+                    modalBody.scrollTop = modalBody.scrollHeight;
+                } else if (lastLogOffset === 0) {
+                    logContent.textContent = 'Waiting for logs...';
+                }
+            } catch (err) {
+                console.error("Log polling error", err);
+            }
         }
 
         // Initialize

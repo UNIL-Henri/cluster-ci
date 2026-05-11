@@ -10,6 +10,7 @@ import uuid
 import threading
 import json
 import tempfile
+import shutil
 from flask import Flask, jsonify, send_from_directory, request
 
 logging.basicConfig(level=logging.INFO)
@@ -52,15 +53,30 @@ def get_ram_info():
     available_gb = mem.available / (1024**3)
     return total_gb, available_gb
 
+def get_storage_info():
+    try:
+        # Use the repositories directory if it exists, otherwise the root of the project
+        target_path = REPOS_DIR if os.path.exists(REPOS_DIR) else BASE_DIR
+        usage = shutil.disk_usage(target_path)
+        total_gb = usage.total / (1024**3)
+        available_gb = usage.free / (1024**3)
+        return total_gb, available_gb
+    except Exception as e:
+        logger.error(f"Error getting storage info: {e}")
+        return 0.0, 0.0
+
 def register():
-    total_gb, available_gb = get_ram_info()
+    total_ram_gb, available_ram_gb = get_ram_info()
+    total_storage_gb, available_storage_gb = get_storage_info()
     try:
         resp = requests.post(f"{HEADNODE_URL}/register_worker", json={
             "worker_id": WORKER_ID,
             "hostname": HOSTNAME,
             "service_url": SERVICE_URL,
-            "total_ram_gb": total_gb,
-            "available_ram_gb": available_gb
+            "total_ram_gb": total_ram_gb,
+            "available_ram_gb": available_ram_gb,
+            "total_storage_gb": total_storage_gb,
+            "available_storage_gb": available_storage_gb
         }, headers=get_headers())
         resp.raise_for_status()
         return True

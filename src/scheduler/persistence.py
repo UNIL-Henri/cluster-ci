@@ -19,6 +19,8 @@ def init_db():
             service_url TEXT,
             total_ram_gb REAL,
             available_ram_gb REAL,
+            total_storage_gb REAL,
+            available_storage_gb REAL,
             last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'online'
         )
@@ -29,6 +31,16 @@ def init_db():
         cursor.execute('ALTER TABLE workers ADD COLUMN service_url TEXT')
     except sqlite3.OperationalError:
         pass # Already exists
+
+    # Add storage columns if they don't exist (migration)
+    try:
+        cursor.execute('ALTER TABLE workers ADD COLUMN total_storage_gb REAL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE workers ADD COLUMN available_storage_gb REAL')
+    except sqlite3.OperationalError:
+        pass
 
     # Jobs Table
     cursor.execute('''
