@@ -97,6 +97,9 @@
                     <a id="preview-download-btn" href="#" class="btn btn-primary" target="_blank">Download</a>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Log Modal -->
     <div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
@@ -112,9 +115,6 @@
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
-            </div>
-        </div>
-    </div>
             </div>
         </div>
     </div>
@@ -384,19 +384,74 @@
 
             try {
                 const resp = await fetch('/api/projects');
-                if (!resp.ok) {
-                    const contentType = resp.headers.get('content-type');
-                    let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
-                    throw new Error(error || 'Failed to load projects');
+                const activeResp = await fetch('/api/runs/active');
+                
+                if (!resp.ok || !activeResp.ok) {
+                    throw new Error('Failed to load dashboard data');
                 }
                 const projects = await resp.json();
+                const activeRuns = await activeResp.json();
+
+                container.innerHTML = '';
+                
+                if (activeRuns.length > 0) {
+                    const runningHeader = document.createElement('div');
+                    runningHeader.className = 'col-12 mb-3 mt-2';
+                    runningHeader.innerHTML = '<h4 class="text-primary"><i class="bi bi-activity"></i> Active Cluster Runs</h4>';
+                    container.appendChild(runningHeader);
+
+                    activeRuns.forEach(run => {
+                        const col = document.createElement('div');
+                        col.className = 'col-12 mb-4';
+                        const [owner, name] = run.repo.split('/');
+                        const viewerUrl = '/view/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
+                        
+                        const runDate = new Date(run.created_at).toLocaleString('en-US', {
+                            year: 'numeric', month: '2-digit', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit', second: '2-digit'
+                        }).replace(',', '');
+
+                        col.innerHTML = `
+                            <div class="card shadow-sm border-primary" style="background-color: #f8fbff;">
+                                <div class="card-body d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center cursor-pointer" onclick="navigateToProject('${run.repo}')" style="cursor: pointer;">
+                                        <div class="me-3">
+                                            <div class="spinner-grow spinner-grow-sm text-primary" role="status"></div>
+                                        </div>
+                                        <div>
+                                            <h5 class="card-title text-primary mb-1">
+                                                ${escapeHtml(run.repo)}
+                                            </h5>
+                                            <p class="card-text text-muted mb-0">
+                                                Branch: <strong>${escapeHtml(run.branch)}</strong> | Job ID: ${run.job_id.substring(0,8)}... | ${runDate}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-outline-primary" onclick="showLogs('${run.job_id}')">
+                                            <i class="bi bi-terminal"></i> View Logs
+                                        </button>
+                                        <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
+                                            <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        container.appendChild(col);
+                    });
+                    
+                    const divider = document.createElement('div');
+                    divider.className = 'col-12 mt-4 mb-3';
+                    divider.innerHTML = '<h4 class="text-secondary"><i class="bi bi-folder2-open"></i> Projects</h4><hr>';
+                    container.appendChild(divider);
+                }
 
                 if (projects.length === 0) {
-                    container.innerHTML = '<div class="col-12"><div class="alert alert-info">No projects found.</div></div>';
+                    container.innerHTML += '<div class="col-12"><div class="alert alert-info">No projects found.</div></div>';
                     return;
                 }
 
-                container.innerHTML = '';
                 projects.forEach(repo => {
                     const col = document.createElement('div');
                     col.className = 'col';
@@ -420,7 +475,7 @@
                     container.appendChild(col);
                 });
             } catch (err) {
-                container.innerHTML = `<div class="col-12"><div class="alert alert-danger">Error loading projects: ${err.message}</div></div>`;
+                container.innerHTML = `<div class="col-12"><div class="alert alert-danger">Error loading dashboard: ${err.message}</div></div>`;
             }
         }
 

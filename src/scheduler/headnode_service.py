@@ -107,6 +107,14 @@ def register_worker():
                 last_seen = CURRENT_TIMESTAMP,
                 status = 'online'
         ''', (worker_id, hostname, service_url, total_ram_gb, total_ram_gb, total_storage_gb, available_storage_gb, hostname, service_url, total_ram_gb, total_storage_gb, available_storage_gb))
+        # If a worker re-registers, it means it restarted and lost any running jobs.
+        # We must mark any 'running' or 'assigned' jobs for this worker as 'failed'.
+        cursor.execute('''
+            UPDATE jobs
+            SET status = 'failed'
+            WHERE worker_id = ? AND status IN ('running', 'assigned')
+        ''', (worker_id,))
+        
         conn.commit()
 
     return jsonify({"status": "ok"})
@@ -471,6 +479,25 @@ def api_run_files(job_id):
 
 # --- Portal & OAuth Routes ---
 
+@app.route('/api/runs/active', methods=['GET'])
+def api_active_runs():
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM jobs 
+                WHERE status IN ('running', 'assigned')
+                ORDER BY created_at DESC
+            ''')
+            runs = [dict(row) for row in cursor.fetchall()]
+        return jsonify(runs)
+    except Exception as e:
+        app.logger.error(f"Error fetching active runs: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
 @app.route('/')
 def dashboard():
     if 'user' not in session:
@@ -574,7 +601,7 @@ def view_project(owner, repo, path=''):
     if job and job['service_url']:
         worker_base_url = job['service_url']
         # Use dynamic port if available, otherwise fallback to default
-        viewer_port = job.get('viewer_port') or DVC_VIEWER_PORT
+        viewer_port = job['viewer_port'] if ('viewer_port' in job.keys() and job['viewer_port'] is not None) else DVC_VIEWER_PORT
         # Extract hostname/IP from service_url (e.g., http://worker1:6000 -> worker1)
         parsed = urlparse(worker_base_url)
         target_host = parsed.hostname

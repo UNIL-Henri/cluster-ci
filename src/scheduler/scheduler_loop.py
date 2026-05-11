@@ -16,7 +16,19 @@ def schedule_jobs():
                 with get_db_conn() as conn:
                     cursor = conn.cursor()
 
-                    # 1. Fetch pending jobs ordered by creation time
+                    # 1. Cleanup orphaned running/assigned jobs (workers that died/timed out)
+                    cursor.execute('''
+                        UPDATE jobs
+                        SET status = 'failed'
+                        WHERE status IN ('running', 'assigned') 
+                        AND worker_id IN (
+                            SELECT worker_id FROM workers 
+                            WHERE status = 'offline' OR last_seen < datetime('now', '-300 seconds')
+                        )
+                    ''')
+                    conn.commit()
+
+                    # 2. Fetch pending jobs ordered by creation time
                     cursor.execute('SELECT * FROM jobs WHERE status = "pending" ORDER BY created_at ASC')
                     pending_jobs = [dict(row) for row in cursor.fetchall()]
 
