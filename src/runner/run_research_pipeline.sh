@@ -176,7 +176,7 @@ if [ -n "$CLUSTER_CI_SECRETS_FILE" ] && [ -f "$CLUSTER_CI_SECRETS_FILE" ]; then
 fi
 
 # Create a volume for the user's home to avoid redownloading dvc every time and to keep uv/pip caches
-HOME_CACHE_VOLUME="cluster-ci-home-cache"
+HOME_CACHE_VOLUME="cluster-ci-home-$(echo "$TARGET_REPO" | tr '/' '-')"
 if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$HOME_CACHE_VOLUME" >/dev/null
 fi

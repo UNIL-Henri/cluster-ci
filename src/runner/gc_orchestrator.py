@@ -128,7 +128,7 @@ def mark_sync_status(project_name, status):
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
-def cleanup_level_1(project_path):
+def cleanup_level_1(project_path, project_name):
     """Level 1: Purge DVC history (keep only the last 2 commits)."""
     print(f"  [Level 1] Purging DVC history for {project_path}")
     try:
@@ -143,7 +143,7 @@ def cleanup_level_1(project_path):
     except Exception as e:
         print(f"  Error in level 1 cleanup: {e}")
 
-def cleanup_level_2(project_path):
+def cleanup_level_2(project_path, project_name):
     """Level 2: Delete large untracked files (> 500Mo) in working dirs, excluding .git and .dvc."""
     print(f"  [Level 2] Deleting large untracked files in {project_path}")
     try:
@@ -165,23 +165,36 @@ def cleanup_level_2(project_path):
     except Exception as e:
         print(f"  Error in level 2 cleanup: {e}")
 
-def cleanup_level_3(project_path):
-    """Level 3: Delete local DVC cache."""
-    print(f"  [Level 3] Deleting DVC cache for {project_path}")
+def cleanup_level_3(project_path, project_name):
+    """Level 3: Delete virtual environment (Docker volume)."""
+    volume_name = f"cluster-ci-home-{project_name.replace('/', '-')}"
+    print(f"  [Level 3] Deleting Docker volume {volume_name} for {project_name}")
+    try:
+        subprocess.run(
+            ["docker", "volume", "rm", "-f", volume_name],
+            capture_output=True,
+            text=True
+        )
+    except Exception as e:
+        print(f"  Error in level 3 cleanup: {e}")
+
+def cleanup_level_4(project_path, project_name):
+    """Level 4: Delete local DVC cache."""
+    print(f"  [Level 4] Deleting DVC cache for {project_path}")
     cache_path = project_path / ".dvc" / "cache"
     if cache_path.exists():
         try:
             shutil.rmtree(cache_path)
         except Exception as e:
-            print(f"  Error in level 3 cleanup: {e}")
+            print(f"  Error in level 4 cleanup: {e}")
 
-def cleanup_level_4(project_path):
-    """Level 4: Delete the entire project directory."""
-    print(f"  [Level 4] Deleting entire directory {project_path}")
+def cleanup_level_5(project_path, project_name):
+    """Level 5: Delete the entire project directory."""
+    print(f"  [Level 5] Deleting entire directory {project_path}")
     try:
         shutil.rmtree(project_path)
     except Exception as e:
-        print(f"  Error in level 4 cleanup: {e}")
+        print(f"  Error in level 5 cleanup: {e}")
 
 def get_free_space():
     repo_dir = get_repositories_dir()
@@ -244,11 +257,12 @@ def run_gc():
                         (cleanup_level_1, "Level 1"),
                         (cleanup_level_2, "Level 2"),
                         (cleanup_level_3, "Level 3"),
-                        (cleanup_level_4, "Level 4")
+                        (cleanup_level_4, "Level 4"),
+                        (cleanup_level_5, "Level 5")
                     ]
 
                     for cleanup_func, level_name in cleanup_levels:
-                        cleanup_func(project_path)
+                        cleanup_func(project_path, project_name)
                         any_cleanup_done = True
 
                         current_free_space = get_free_space()
@@ -257,7 +271,7 @@ def run_gc():
                         if current_free_space >= FREE_SPACE_THRESHOLD_BYTES:
                             break
 
-                        if level_name == "Level 4": # Project is gone
+                        if level_name == "Level 5": # Project is gone
                             data["status"] = "deleted"
                             data["size_bytes"] = 0
                             break
