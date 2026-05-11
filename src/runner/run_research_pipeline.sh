@@ -249,7 +249,7 @@ if [ "$1" = "run" ]; then
         esac
     done
     if [ -n "$WITH_PKGS" ]; then
-        pip install --quiet $WITH_PKGS 2>/dev/null || true
+        pip install --quiet --break-system-packages $WITH_PKGS 2>/dev/null || true
     fi
     echo "🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: $@"
     exec "$@"
@@ -393,9 +393,9 @@ log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # Execution of repro and uv dependencies if present
 if [ -f "pyproject.toml" ]; then
     # Install project locally for the non-root user, leveraging system packages.
-    # We forcefully remove any PyPI-installed PyTorch or NVIDIA libraries from the local prefix
-    # to guarantee the heavily optimized NGC system libraries (Transformer Engine, cuDNN) are not shadowed.
-    EXEC_CMD="(command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1) && uv pip install --system --prefix /home/user/.local . && rm -rf /home/user/.local/lib/python3.*/site-packages/torch /home/user/.local/lib/python3.*/site-packages/torch-* /home/user/.local/lib/python3.*/site-packages/nvidia* /home/user/.local/lib/python3.*/site-packages/triton* /home/user/.local/lib/python3.*/site-packages/xformers* && dvc repro $DVC_ARGS"
+    # We use --prerelease allow to force uv to accept the highly-optimized NGC PyTorch system version
+    # (which often has a +nv local version tag) and prevent it from downloading vanilla PyTorch.
+    EXEC_CMD="(command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1) && uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local . && dvc repro $DVC_ARGS"
 else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi

@@ -134,4 +134,4 @@ cluster-ci/
 - [x] [Smart Environment Shims & Dynamic Client Sync](https://github.com/UNIL-DESI/cluster-ci/issues/57)
 - [x] [Native GitHub Secrets Injection](https://github.com/UNIL-DESI/cluster-ci/issues/58)
 - [x] [Isolation stricte des environnements Python et intégration GC](https://github.com/UNIL-DESI/cluster-ci/issues/59)
-- [x] Full Monitoring Dashboard & Real-time Logs
+- [x] [Full Monitoring Dashboard & Real-time Logs](https://github.com/UNIL-DESI/cluster-ci/issues/60)
