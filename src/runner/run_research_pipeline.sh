@@ -274,10 +274,27 @@ EOF
 "
 
 log_info "Installing base dependencies in persistent volume..."
-# Use execution test (not command -v) to detect stale binaries from old containers
-docker_exec "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
-docker_exec "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
-docker_exec "dvc-viewer --help >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
+# Bootstrap commands MUST bypass shims — use a raw docker run without /home/user/shims in PATH.
+# Shims are only for user pipeline execution, not for installing the tools themselves.
+function docker_exec_bootstrap() {
+    docker run --rm \
+        --entrypoint "" \
+        --gpus all \
+        -v "$(pwd):/workspace" \
+        -v "$HOME_CACHE_VOLUME:/home/user" \
+        -v /etc/passwd:/etc/passwd:ro \
+        -v /etc/group:/etc/group:ro \
+        -w /workspace \
+        --ipc=host \
+        --user "$(id -u):$(id -g)" \
+        -e HOME=/home/user \
+        --memory="${RAM_LIMIT}g" \
+        $ENV_FILE_FLAG \
+        "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
+}
+docker_exec_bootstrap "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
+docker_exec_bootstrap "dvc version >/dev/null 2>&1 || /home/user/.local/bin/uv tool install dvc >/dev/null 2>&1"
+docker_exec_bootstrap "dvc-viewer --help >/dev/null 2>&1 || /home/user/.local/bin/uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
 
 log_info "Reading DVC parameters from .cluster-ci..."
 # Clean comments, remove internal flags like --ram, and put arguments on a single line
