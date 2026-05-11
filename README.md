@@ -124,7 +124,7 @@ cluster-ci/
 - [x] Automated Deployment (`update_cluster.sh`) with E2E tests
 - [x] Standard build configuration (`pyproject.toml`)
 - [x] GitHub OAuth support for the Dashboard (with reverse proxy and IPv4 fallback support)
-- [x] Dashboard UX improvement (date formatting, DVC path corrections under systemd)
+- [x] Dashboard UX improvement (date formatting, DVC path corrections under systemd, historical DVC run fixes)
 - [x] Migration to Docker Worker execution (NVIDIA/ARM support)
 - [x] Real-time Log Streaming via Headnode
 - [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation

@@ -388,8 +388,7 @@ def api_list_runs(repo):
         ''', (repo,))
         runs = [dict(row) for row in cursor.fetchall()]
 
-    repo_slug = repo.replace("/", "_")
-    local_repo_path = os.path.join(REPOS_DIR, repo_slug)
+    local_repo_path = os.path.join(REPOS_DIR, repo)
     
     if os.path.exists(local_repo_path):
         hashes = [run['commit_hash'] for run in runs if run.get('commit_hash')]
@@ -457,14 +456,16 @@ def api_run_files(job_id):
     if not commit_hash:
         return jsonify({"error": "Commit hash not found for this job. Historical exploration is unavailable."}), 400
 
-    repo_url = f"https://github.com/{repo}"
+    pat = os.environ.get("GITHUB_PAT")
+    repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git" if pat else f"https://github.com/{repo}.git"
+
+    local_repo_path = os.path.join(REPOS_DIR, repo)
+    source = local_repo_path if os.path.exists(local_repo_path) else repo_url
 
     try:
         env = os.environ.copy()
-        # If GITHUB_PAT is available, dvc list might be able to use it if configured,
-        # though dvc list usually uses git credentials.
 
-        cmd = [DVC_CMD, "list", repo_url, "--rev", commit_hash, "--dvc-only", "--json"]
+        cmd = [DVC_CMD, "list", source, "--rev", commit_hash, "--dvc-only", "--json"]
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:
