@@ -471,7 +471,7 @@ def api_get_run_logs(job_id):
 def api_run_files(job_id):
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT repo, commit_hash FROM jobs WHERE job_id = ?', (job_id,))
+        cursor.execute('SELECT repo, commit_hash, branch FROM jobs WHERE job_id = ?', (job_id,))
         job = cursor.fetchone()
 
     if not job:
@@ -479,24 +479,47 @@ def api_run_files(job_id):
 
     repo = job['repo']
     commit_hash = job['commit_hash']
+    branch = job['branch'] or 'main'
 
     if not commit_hash:
-        commit_hash = job['branch']
+        commit_hash = branch
 
     pat = os.environ.get("GITHUB_PAT")
     repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git" if pat else f"https://github.com/{repo}.git"
 
     local_repo_path = find_local_repo(repo)
-    source = local_repo_path if local_repo_path else repo_url
+
+    # Support subfolder navigation via optional 'path' query parameter
+    sub_path = request.args.get('path', '')
+
+    def build_dvc_cmd(source, sub, rev):
+        if sub:
+            return [DVC_CMD, "list", source, sub, "--rev", rev, "--dvc-only", "--json"]
+        return [DVC_CMD, "list", source, "--rev", rev, "--dvc-only", "--json"]
 
     try:
         env = os.environ.copy()
 
-        # Support subfolder navigation via optional 'path' query parameter
-        sub_path = request.args.get('path', '')
-        cmd = [DVC_CMD, "list", source, "--rev", commit_hash, "--dvc-only", "--json"]
-        if sub_path:
-            cmd = [DVC_CMD, "list", source, sub_path, "--rev", commit_hash, "--dvc-only", "--json"]
+        # Strategy: try local repo first, git fetch if stale, then fallback to GitHub URL
+        if local_repo_path:
+            cmd = build_dvc_cmd(local_repo_path, sub_path, commit_hash)
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+            if result.returncode != 0 and "unknown Git revision" in result.stderr:
+                # Local repo is stale — fetch latest commits
+                app.logger.info(f"Fetching latest commits for {repo} (revision {commit_hash[:8]} not found locally)")
+                subprocess.run(["git", "fetch", "--all", "--prune"], cwd=local_repo_path,
+                               capture_output=True, timeout=30)
+                result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+            if result.returncode == 0:
+                return Response(result.stdout, mimetype='application/json')
+
+            # Local failed even after fetch — fallback to GitHub URL
+            app.logger.warning(f"Local DVC list failed for {repo}, falling back to GitHub URL: {result.stderr[:200]}")
+
+        # Fallback: use GitHub URL directly
+        cmd = build_dvc_cmd(repo_url, sub_path, commit_hash)
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:

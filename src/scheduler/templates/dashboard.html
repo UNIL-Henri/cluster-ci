@@ -44,6 +44,11 @@
         .table-preview {
             font-size: 0.85rem;
         }
+        /* Override row-cols for full-width elements */
+        .full-width {
+            flex: 0 0 100% !important;
+            max-width: 100% !important;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -417,13 +422,13 @@
                 
                 if (activeRuns.length > 0) {
                     const runningHeader = document.createElement('div');
-                    runningHeader.className = 'col-12 mb-3 mt-2';
+                    runningHeader.className = 'col-12 full-width mb-3 mt-2';
                     runningHeader.innerHTML = '<h4 class="text-primary"><i class="bi bi-activity"></i> Active Cluster Runs</h4>';
                     container.appendChild(runningHeader);
 
                     activeRuns.forEach(run => {
                         const col = document.createElement('div');
-                        col.className = 'col-12 mb-4';
+                        col.className = 'col-12 full-width mb-4';
                         const [owner, name] = run.repo.split('/');
                         const viewerUrl = '/view/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
                         
@@ -463,7 +468,7 @@
                     });
                     
                     const divider = document.createElement('div');
-                    divider.className = 'col-12 mt-4 mb-3';
+                    divider.className = 'col-12 full-width mt-4 mb-3';
                     divider.innerHTML = '<h4 class="text-secondary"><i class="bi bi-folder2-open"></i> Projects</h4><hr>';
                     container.appendChild(divider);
                 }
@@ -528,13 +533,13 @@
 
                 if (runningRuns.length > 0) {
                     const runningHeader = document.createElement('div');
-                    runningHeader.className = 'col-12 mb-3';
+                    runningHeader.className = 'col-12 full-width mb-3';
                     runningHeader.innerHTML = '<h4 class="text-primary"><i class="bi bi-activity"></i> Currently Running</h4>';
                     container.appendChild(runningHeader);
 
                     runningRuns.forEach(run => {
                         const col = document.createElement('div');
-                        col.className = 'col-12 mb-4';
+                        col.className = 'col-12 full-width mb-4';
                         const [owner, name] = repo.split('/');
                         const viewerUrl = '/view/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
                         
@@ -571,7 +576,7 @@
 
                     if (otherRuns.length > 0) {
                         const divider = document.createElement('div');
-                        divider.className = 'col-12 mt-4 mb-3';
+                        divider.className = 'col-12 full-width mt-4 mb-3';
                         divider.innerHTML = '<h4 class="text-secondary"><i class="bi bi-clock-history"></i> Run History</h4><hr>';
                         container.appendChild(divider);
                     }
