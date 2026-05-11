@@ -185,16 +185,17 @@
 
                     const currentTitle = currentRun.commit_title ? escapeHtml(currentRun.commit_title) : currentRun.job_id.substring(0,8);
                     
-                    navContainer.innerHTML = \`
+                    navContainer.innerHTML = `
                         <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border w-100">
-                            \${prevHtml}
-                            <div class="text-center mx-2 text-truncate" style="max-width: 45%;" title="\${currentTitle}">
+                            ${prevHtml}
+                            <div class="text-center mx-2 text-truncate" style="max-width: 45%;" title="${currentTitle}">
                                 <small class="text-muted d-block" style="font-size: 0.75rem;">Associated Commit</small>
-                                <strong>\${currentTitle}</strong>
+                                <strong>${currentTitle}</strong>
                             </div>
-                            \${nextHtml}
+                            ${nextHtml}
                         </div>
-                    \`;
+                    `;
+
                     navContainer.classList.remove('d-none');
                 } else {
                     navContainer.classList.add('d-none');
