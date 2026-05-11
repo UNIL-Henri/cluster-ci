@@ -7,9 +7,9 @@ if [ "$#" -lt 2 ]; then
     exit 1
 fi
 
-TARGET_REPO=$1
-TARGET_BRANCH=$2
-GH_TOKEN="${3:-$GH_TOKEN}"
+CLI_TARGET_REPO=$1
+CLI_TARGET_BRANCH=$2
+CLI_GH_TOKEN="${3:-$GH_TOKEN}"
 
 # Go to cluster-ci project root
 SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
@@ -29,6 +29,10 @@ if [ -f "$BASE_DIR/.env.secrets" ]; then
     source "$BASE_DIR/.env.secrets" || true
     set +a
 fi
+
+TARGET_REPO=${CLI_TARGET_REPO:-$TARGET_REPO}
+TARGET_BRANCH=${CLI_TARGET_BRANCH:-$TARGET_BRANCH}
+GH_TOKEN=${CLI_GH_TOKEN:-$GH_TOKEN}
 
 # Delegation mode: If not explicitly in executor mode,
 # delegate the task to the scheduler via submit_job.py
@@ -184,6 +188,7 @@ function docker_exec() {
         --gpus all \
         -v "$(pwd):/workspace" \
         -v "$HOME_CACHE_VOLUME:/home/user" \
+        -v "$BASE_DIR:/cluster-ci:ro" \
         -v /etc/passwd:/etc/passwd:ro \
         -v /etc/group:/etc/group:ro \
         -w /workspace \
@@ -369,7 +374,7 @@ fi
 
 log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present
-docker_exec "uv run --with tomlkit python3 src/runner/validate_pyproject.py --ci"
+docker_exec "uv run --with tomlkit python3 /cluster-ci/src/runner/validate_pyproject.py --ci"
 
 log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # Execution of repro and uv dependencies if present
