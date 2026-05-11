@@ -1,7 +1,4 @@
 # Python: 3.12.3
-=============
-== PyTorch ==
-=============
 absl-py==2.4.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.5
@@ -125,13 +122,13 @@ nvidia-cutlass-dsl==4.4.1
 nvidia-cutlass-dsl-libs-base==4.4.1
 nvidia-cutlass-dsl-libs-cu13==4.4.1
 nvidia-dali-cuda130==2.0.0
-nvidia-libnvcomp-cu13==5.1.0
-nvidia-matmul-heuristics==0.1.0
+nvidia-libnvcomp-cu13==5.1.0.21
+nvidia-matmul-heuristics==0.1.0.27
 nvidia-ml-py==13.595.45
-nvidia-nvimgcodec-cu13==0.7.0
-nvidia-nvjpeg==13.1.0
-nvidia-nvjpeg2k-cu13==0.10.0
-nvidia-nvtiff-cu13==0.7.0
+nvidia-nvimgcodec-cu13==0.7.0.49
+nvidia-nvjpeg==13.1.0.48
+nvidia-nvjpeg2k-cu13==0.10.0.49
+nvidia-nvtiff-cu13==0.7.0.79
 nvtx==0.2.15
 onnx-ir==0.2.0
 onnxscript==0.6.2
@@ -163,7 +160,7 @@ pydantic_core==2.46.0
 Pygments==2.17.2
 pyparsing==3.3.2
 pyproject_hooks==1.2.0
-python-dateutil==2.9.0
+python-dateutil==2.9.0.post0
 python-json-logger==4.1.0
 python_hostlist==2.3.0
 pytokens==0.4.1
