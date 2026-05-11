@@ -194,7 +194,7 @@ function docker_exec() {
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
         -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
-        "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
+        "$DOCKER_IMAGE" bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && $1"
 }
 
 log_info "Image used: $DOCKER_IMAGE"
@@ -211,6 +211,53 @@ if required and not avail:
     print('❌ Error: GPU required but not found!');
     exit(1)"
 docker_exec "python3 -c \"$GPU_REQ_CMD\""
+
+log_info "Preparing smart environment shims (uv/poetry)..."
+SHIM_DIR="/home/user/shims"
+docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c "
+    mkdir -p $SHIM_DIR
+    
+    # UV Shim
+    cat <<EOF > $SHIM_DIR/uv
+#!/bin/bash
+if [ \"\$1\" = \"run\" ]; then
+    shift
+    echo \"🚀 [Cluster-CI Shim] Intercepting 'uv run', executing natively: \$@\"
+    exec \"\$@\"
+elif [ \"\$1\" = \"sync\" ]; then
+    echo \"ℹ️  [Cluster-CI Shim] Ignoring 'uv sync', dependencies are pre-installed in system.\"
+    exit 0
+else
+    # Fallback to real uv if it exists in .local/bin
+    if [ -x \"/home/user/.local/bin/uv\" ]; then
+        exec /home/user/.local/bin/uv \"\$@\"
+    else
+        exec uv \"\$@\"
+    fi
+fi
+EOF
+    chmod +x $SHIM_DIR/uv
+
+    # Poetry Shim
+    cat <<EOF > $SHIM_DIR/poetry
+#!/bin/bash
+if [ \"\$1\" = \"run\" ]; then
+    shift
+    echo \"🚀 [Cluster-CI Shim] Intercepting 'poetry run', executing natively: \$@\"
+    exec \"\$@\"
+elif [ \"\$1\" = \"install\" ] || [ \"\$1\" = \"sync\" ]; then
+    echo \"ℹ️  [Cluster-CI Shim] Ignoring 'poetry install', dependencies are pre-installed.\"
+    exit 0
+else
+    if [ -x \"/home/user/.local/bin/poetry\" ]; then
+        exec /home/user/.local/bin/poetry \"\$@\"
+    else
+        exec poetry \"\$@\"
+    fi
+fi
+EOF
+    chmod +x $SHIM_DIR/poetry
+"
 
 log_info "Installing base dependencies in persistent volume..."
 # Use execution test (not command -v) to detect stale binaries from old containers
@@ -245,7 +292,7 @@ docker run --rm \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
     $ENV_FILE_FLAG \
     $DOCKER_IMAGE \
-    bash -c "export PATH=\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
+    bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
 DVC_VIEWER_PID=$!
 
 if [ -n "$DVC_REMOTE_P2P_URL" ]; then
