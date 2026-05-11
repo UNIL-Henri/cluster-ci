@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   execute-on-cluster:
+    if: github.repository != 'UNIL-DESI/cluster-ci'
     name: Execute Research Pipeline
     runs-on: self-hosted
     steps:
