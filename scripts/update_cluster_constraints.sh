@@ -21,7 +21,7 @@ echo "🐍 Python version: $PYTHON_VERSION"
 # Generate constraints file
 # We extract pip freeze but we also want to ensure we have a clean list
 # We'll filter for common packages and specific NVIDIA ones if needed (ignore NVIDIA banner)
-docker run --rm "$DOCKER_IMAGE" pip freeze 2>&1 | grep '==' | sed -E 's/([a-zA-Z0-9_-]+)==([0-9]+\.[0-9]+\.[0-9]+).*/\1==\2/' > cluster_constraints.txt
+docker run --rm "$DOCKER_IMAGE" pip freeze 2>&1 | sed -n -E 's/^([a-zA-Z0-9_.-]+)==([0-9]+.*)/\1==\2/p' > cluster_constraints.txt
 
 # Prepend python version as a comment for the validator
 sed -i "1i # Python: $PYTHON_VERSION" cluster_constraints.txt
