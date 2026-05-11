@@ -152,10 +152,16 @@ if [ ! -f ".cluster-ci" ]; then
     exit 1
 fi
 
-# Extract RAM limit from .cluster-ci (--ram 16)
-RAM_LIMIT=$(grep -oE -e '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n 1)
+# Extract RAM limit from .cluster-ci (--ram 16 or REQUIRED_RAM=16GB)
+RAM_LIMIT=$(grep -oE -e 'REQUIRED_RAM=[0-9.]+' .cluster-ci | cut -d= -f2 | head -n 1)
+[ -z "$RAM_LIMIT" ] && RAM_LIMIT=$(grep -oE -e '--ram [0-9.]+' .cluster-ci | awk '{print $2}' | head -n 1)
 [ -z "$RAM_LIMIT" ] && RAM_LIMIT="2"
 log_info "RAM limit detected: ${RAM_LIMIT}GB"
+
+# Extract SHM limit from .cluster-ci (SHARED_MEMORY=64GB)
+SHM_LIMIT=$(grep -oE -e 'SHARED_MEMORY=[0-9a-zA-Z]+' .cluster-ci | cut -d= -f2 | head -n 1)
+[ -z "$SHM_LIMIT" ] && SHM_LIMIT="8g"
+log_info "SHM limit detected: ${SHM_LIMIT}"
 
 # Configuration Docker
 DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/pytorch:26.04-py3"}
@@ -196,6 +202,7 @@ function docker_exec() {
         --user "$(id -u):$(id -g)" \
         -e HOME=/home/user \
         --memory="${RAM_LIMIT}g" \
+        --shm-size="${SHM_LIMIT}" \
         $ENV_FILE_FLAG \
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
@@ -303,6 +310,7 @@ function docker_exec_bootstrap() {
         --user "$(id -u):$(id -g)" \
         -e HOME=/home/user \
         --memory="${RAM_LIMIT}g" \
+        --shm-size="${SHM_LIMIT}" \
         $ENV_FILE_FLAG \
         "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
@@ -311,8 +319,8 @@ docker_exec_bootstrap "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/
 docker_exec_bootstrap "dvc-viewer --help >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
 
 log_info "Reading DVC parameters from .cluster-ci..."
-# Clean comments, remove internal flags like --ram, and put arguments on a single line
-DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g' | tr '\n' ' ' | xargs)
+# Clean comments, remove internal flags like --ram, filter out KEY=VALUE env variables, and put arguments on a single line
+DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g' | grep -v '=' | tr '\n' ' ' | xargs)
 
 if [ -z "$DVC_ARGS" ]; then
     log_info "No arguments specified in .cluster-ci. Executing full pipeline."

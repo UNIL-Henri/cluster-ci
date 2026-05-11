@@ -8,7 +8,7 @@ import signal
 def get_ram_requirement():
     """
     Reads RAM requirement from the .cluster-ci file.
-    Expected format in .cluster-ci: --ram 16
+    Expected format in .cluster-ci: --ram 16 or REQUIRED_RAM=16GB
     """
     if not os.path.exists(".cluster-ci"):
         return 2.0  # Default 2GB
@@ -16,6 +16,13 @@ def get_ram_requirement():
     with open(".cluster-ci", 'r') as f:
         content = f.read()
         import re
+        
+        # Try REQUIRED_RAM=16GB or REQUIRED_RAM=16.5
+        match_env = re.search(r'REQUIRED_RAM\s*=\s*(\d+(?:\.\d+)?)(?:GB|G)?', content)
+        if match_env:
+            return float(match_env.group(1))
+            
+        # Try --ram 16
         match = re.search(r'--ram\s+(\d+(?:\.\d+)?)', content)
         if match:
             return float(match.group(1))
