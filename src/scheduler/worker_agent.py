@@ -65,24 +65,27 @@ def get_storage_info():
         logger.error(f"Error getting storage info: {e}")
         return 0.0, 0.0
 
-def register():
-    total_ram_gb, available_ram_gb = get_ram_info()
-    total_storage_gb, available_storage_gb = get_storage_info()
-    try:
-        resp = requests.post(f"{HEADNODE_URL}/register_worker", json={
-            "worker_id": WORKER_ID,
-            "hostname": HOSTNAME,
-            "service_url": SERVICE_URL,
-            "total_ram_gb": total_ram_gb,
-            "available_ram_gb": available_ram_gb,
-            "total_storage_gb": total_storage_gb,
-            "available_storage_gb": available_storage_gb
-        }, headers=get_headers())
-        resp.raise_for_status()
-        return True
-    except Exception as e:
-        logger.error(f"Failed to register: {e}")
-        return False
+def heartbeat_loop():
+    is_startup = True
+    while True:
+        total_ram_gb, available_ram_gb = get_ram_info()
+        total_storage_gb, available_storage_gb = get_storage_info()
+        try:
+            resp = requests.post(f"{HEADNODE_URL}/register_worker", json={
+                "worker_id": WORKER_ID,
+                "hostname": HOSTNAME,
+                "service_url": SERVICE_URL,
+                "total_ram_gb": total_ram_gb,
+                "available_ram_gb": available_ram_gb,
+                "total_storage_gb": total_storage_gb,
+                "available_storage_gb": available_storage_gb,
+                "is_startup": is_startup
+            }, headers=get_headers())
+            resp.raise_for_status()
+            is_startup = False
+        except Exception as e:
+            logger.error(f"Failed to send heartbeat: {e}")
+        time.sleep(10)
 
 def poll_for_job():
     try:
@@ -385,13 +388,15 @@ def start_webhook_server():
 def main_loop():
     # Start webhook server in background thread
     threading.Thread(target=start_webhook_server, daemon=True).start()
+    
+    # Start heartbeat in background thread
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
 
     while True:
-        if register():
-            job = poll_for_job()
-            if job:
-                execute_job(job)
-        time.sleep(10)
+        job = poll_for_job()
+        if job:
+            execute_job(job)
+        time.sleep(5)
 
 if __name__ == '__main__':
     main_loop()

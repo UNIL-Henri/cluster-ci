@@ -107,13 +107,16 @@ def register_worker():
                 last_seen = CURRENT_TIMESTAMP,
                 status = 'online'
         ''', (worker_id, hostname, service_url, total_ram_gb, total_ram_gb, total_storage_gb, available_storage_gb, hostname, service_url, total_ram_gb, total_storage_gb, available_storage_gb))
-        # If a worker re-registers, it means it restarted and lost any running jobs.
+        
+        # If a worker re-registers (is_startup=True), it means it restarted and lost any running jobs.
         # We must mark any 'running' or 'assigned' jobs for this worker as 'failed'.
-        cursor.execute('''
-            UPDATE jobs
-            SET status = 'failed', exit_code = COALESCE(exit_code, -98)
-            WHERE worker_id = ? AND status IN ('running', 'assigned')
-        ''', (worker_id,))
+        is_startup = data.get('is_startup', False)
+        if is_startup:
+            cursor.execute('''
+                UPDATE jobs
+                SET status = 'failed', exit_code = COALESCE(exit_code, -98)
+                WHERE worker_id = ? AND status IN ('running', 'assigned')
+            ''', (worker_id,))
         
         conn.commit()
 
