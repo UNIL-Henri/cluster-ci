@@ -172,9 +172,6 @@ if __name__ == '__main__':
             for k, v in secrets_dict.items():
                 if k.lower() != 'github_token':
                     env_vars[k] = v
-                    # Provide fallback for HF_TOKEN
-                    if k.upper() in ["HUGGINGFACE_TOKEN", "HUGGING_FACE_TOKEN", "HUGGING_FACE_HUB_TOKEN"] and "HF_TOKEN" not in env_vars:
-                        env_vars["HF_TOKEN"] = v
         except Exception as e:
             print(f"⚠️ Failed to parse ALL_GITHUB_SECRETS: {e}")
 

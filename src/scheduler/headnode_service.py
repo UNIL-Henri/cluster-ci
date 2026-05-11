@@ -264,6 +264,30 @@ def check_space():
 
 REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
 
+def find_local_repo(repo_slug):
+    """Find the local clone of a repo, handling owner name mismatches.
+    
+    The DB might store 'UNIL-DESI/llm-as-recommender' but the clone could
+    be under 'UNIL-Henri/llm-as-recommender'. We check exact match first,
+    then search by repo name across all owner directories.
+    """
+    # Try exact match first
+    exact = os.path.join(REPOS_DIR, repo_slug)
+    if os.path.exists(exact):
+        return exact
+    
+    # Fallback: search by repo name only across all owner dirs
+    repo_name = repo_slug.split('/')[-1] if '/' in repo_slug else repo_slug
+    if os.path.exists(REPOS_DIR):
+        for owner_dir in os.listdir(REPOS_DIR):
+            if owner_dir.startswith('_'):  # Skip _tmp_artifacts etc.
+                continue
+            candidate = os.path.join(REPOS_DIR, owner_dir, repo_name)
+            if os.path.isdir(candidate):
+                return candidate
+    
+    return None
+
 @app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
 def artifacts(repo_owner, repo_name, rev, file_path):
     """
@@ -280,8 +304,8 @@ def artifacts(repo_owner, repo_name, rev, file_path):
     os.makedirs(tmp_dir, exist_ok=True)
 
     try:
-        local_repo_path = os.path.join(REPOS_DIR, repo_slug)
-        source = local_repo_path if os.path.exists(local_repo_path) else repo_url
+        local_repo_path = find_local_repo(repo_slug)
+        source = local_repo_path if local_repo_path else repo_url
         cmd = [DVC_CMD, "get", source, file_path, "--rev", rev, "--out", tmp_dir]
         result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -391,9 +415,9 @@ def api_list_runs(repo):
         ''', (repo,))
         runs = [dict(row) for row in cursor.fetchall()]
 
-    local_repo_path = os.path.join(REPOS_DIR, repo)
+    local_repo_path = find_local_repo(repo)
     
-    if os.path.exists(local_repo_path):
+    if local_repo_path:
         hashes = [run['commit_hash'] for run in runs if run.get('commit_hash')]
         if hashes:
             try:
@@ -462,8 +486,8 @@ def api_run_files(job_id):
     pat = os.environ.get("GITHUB_PAT")
     repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git" if pat else f"https://github.com/{repo}.git"
 
-    local_repo_path = os.path.join(REPOS_DIR, repo)
-    source = local_repo_path if os.path.exists(local_repo_path) else repo_url
+    local_repo_path = find_local_repo(repo)
+    source = local_repo_path if local_repo_path else repo_url
 
     try:
         env = os.environ.copy()
@@ -617,8 +641,8 @@ def view_project(owner, repo, path=''):
         return proxy_request(target_url)
 
     # --- Case 2: Historical (Local) ---
-    repo_path = os.path.join(REPOS_DIR, owner, repo)
-    if not os.path.exists(repo_path):
+    repo_path = find_local_repo(repo_full_name)
+    if not repo_path:
         return f"Project {repo_full_name} not found locally and not active.", 404
 
     with local_viewers_lock:

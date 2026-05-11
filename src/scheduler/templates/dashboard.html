@@ -674,12 +674,8 @@
                     const col = document.createElement('div');
                     col.className = 'col';
 
-                    // IMPROVED Folder detection:
-                    // In DVC list --json:
-                    // - Directories often have a trailing slash in 'path' (e.g., 'data/')
-                    // - They might have isout: true
-                    // - They NEVER have a 'hash' or 'size' in the list output for their own entry
-                    const isDir = item.path.endsWith('/') || (!item.hash && !item.size);
+                    // Use DVC's native 'isdir' field from JSON output
+                    const isDir = item.isdir === true;
                     const iconClass = isDir ? 'bi-folder-fill folder-icon' : 'bi-file-earmark-text-fill file-icon';
 
                     // Construct download link using commit hash if available for consistency
