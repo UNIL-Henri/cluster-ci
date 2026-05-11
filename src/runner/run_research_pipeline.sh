@@ -190,7 +190,7 @@ CACHED_IMAGE=$(docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user
 if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
     log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
     docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
-        bash -c "rm -rf /home/user/.local /home/user/.cache/uv 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
+        bash -c "rm -rf /home/user/.local /home/user/.cache/uv /home/user/.cluster-ci-deps-hash 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
 fi
 
 function docker_exec() {
@@ -390,12 +390,11 @@ log_info "Pre-flight Validation..."
 docker_exec "uv run --with tomlkit python3 /cluster-ci/src/runner/validate_pyproject.py --ci"
 
 log_info "Launching: dvc repro $DVC_ARGS via Docker"
-# Execution of repro and uv dependencies if present
+# Smart dependency installation: only re-install if pyproject.toml/uv.lock changed.
+# The smart_install.sh script hashes dependency files and caches the result in the
+# persistent Docker volume. Skips entirely if nothing changed → saves ~3GB bandwidth.
 if [ -f "pyproject.toml" ]; then
-    # Install project locally for the non-root user, leveraging system packages.
-    # We use --prerelease allow to force uv to accept the highly-optimized NGC PyTorch system version
-    # (which often has a +nv local version tag) and prevent it from downloading vanilla PyTorch.
-    EXEC_CMD="(command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1) && uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local . && dvc repro $DVC_ARGS"
+    EXEC_CMD="bash /cluster-ci/src/runner/smart_install.sh && dvc repro $DVC_ARGS"
 else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
