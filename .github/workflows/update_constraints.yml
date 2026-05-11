@@ -5,9 +5,7 @@ on:
     - cron: '0 0 * * 0' # Weekly on Sundays at midnight
   workflow_dispatch: # Allows manual trigger
   push:
-    paths:
-      - 'scripts/update_cluster_constraints.sh'
-      - '.github/workflows/update_constraints.yml'
+    branches: [ main, master ]
 
 jobs:
   update-constraints:
