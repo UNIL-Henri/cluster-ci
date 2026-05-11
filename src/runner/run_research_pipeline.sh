@@ -223,6 +223,20 @@ docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id 
 #!/bin/bash
 if [ \"\$1\" = \"run\" ]; then
     shift
+    # Collect --with packages and strip uv-specific flags
+    WITH_PKGS=\"\"
+    while [ \$# -gt 0 ]; do
+        case \"\$1\" in
+            --with) WITH_PKGS=\"\$WITH_PKGS \$2\"; shift 2 ;;
+            --python) shift 2 ;;  # flag + value (ignored)
+            --no-project|--no-sync) shift ;;  # flag only (ignored)
+            *) break ;;
+        esac
+    done
+    # Install --with packages if any
+    if [ -n \"\$WITH_PKGS\" ]; then
+        pip install --quiet \$WITH_PKGS 2>/dev/null || true
+    fi
     echo \"🚀 [Cluster-CI Shim] Intercepting 'uv run', executing natively: \$@\"
     exec \"\$@\"
 elif [ \"\$1\" = \"sync\" ]; then
