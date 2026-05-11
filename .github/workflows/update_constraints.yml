@@ -1,0 +1,44 @@
+name: Auto-update Cluster Constraints
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sundays at midnight
+  workflow_dispatch: # Allows manual trigger
+  push:
+    paths:
+      - 'scripts/update_cluster_constraints.sh'
+      - '.github/workflows/update_constraints.yml'
+
+jobs:
+  update-constraints:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for pushing changes
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        run: |
+          # Docker is pre-installed on ubuntu-latest, but we ensure it's ready
+          docker version
+
+      - name: Update Constraints
+        run: |
+          chmod +x scripts/update_cluster_constraints.sh
+          ./scripts/update_cluster_constraints.sh
+
+      - name: Check for Changes
+        id: git-check
+        run: |
+          git diff --exit-code cluster_constraints.txt || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and Push Changes
+        if: steps.git-check.outputs.changed == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add cluster_constraints.txt
+          git commit -m "chore: auto-update cluster constraints [skip ci]"
+          git push
