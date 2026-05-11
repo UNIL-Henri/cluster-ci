@@ -91,8 +91,7 @@ def simulate_resolution(pyproject_path, constraints_path):
     log_info("Simulating ARM64 resolution with uv...")
     cmd = [
         "uv", "pip", "compile",
-        "--os", "linux",
-        "--arch", "aarch64",
+        "--python-platform", "aarch64-unknown-linux-gnu",
         "--python", "3.12",
         "-c", constraints_path,
         pyproject_path
