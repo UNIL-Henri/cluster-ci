@@ -214,78 +214,73 @@ if required and not avail:
 docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Preparing smart environment shims (uv/poetry)..."
-SHIM_DIR="/home/user/shims"
-docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c "
-    mkdir -p $SHIM_DIR
-    
-    # UV Shim
-    cat <<EOF > $SHIM_DIR/uv
+docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c 'SHIM_DIR=/home/user/shims && mkdir -p $SHIM_DIR &&
+
+# UV Shim
+cat > $SHIM_DIR/uv << '"'"'SHIMEOF'"'"'
 #!/bin/bash
-if [ \"\$1\" = \"run\" ]; then
+if [ "$1" = "run" ]; then
     shift
     # Collect --with packages and strip uv-specific flags
-    WITH_PKGS=\"\"
-    while [ \$# -gt 0 ]; do
-        case \"\$1\" in
-            --with) WITH_PKGS=\"\$WITH_PKGS \$2\"; shift 2 ;;
-            --python) shift 2 ;;  # flag + value (ignored)
-            --no-project|--no-sync) shift ;;  # flag only (ignored)
+    WITH_PKGS=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --with) WITH_PKGS="$WITH_PKGS $2"; shift 2 ;;
+            --python) shift 2 ;;
+            --no-project|--no-sync) shift ;;
             *) break ;;
         esac
     done
-    # Install --with packages if any
-    if [ -n \"\$WITH_PKGS\" ]; then
-        pip install --quiet \$WITH_PKGS 2>/dev/null || true
+    if [ -n "$WITH_PKGS" ]; then
+        pip install --quiet $WITH_PKGS 2>/dev/null || true
     fi
-    echo \"🚀 [Cluster-CI Shim] Intercepting 'uv run', executing natively: \$@\"
-    exec \"\$@\"
-elif [ \"\$1\" = \"sync\" ]; then
-    echo \"ℹ️  [Cluster-CI Shim] Ignoring 'uv sync', dependencies are pre-installed in system.\"
+    echo "🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: $@"
+    exec "$@"
+elif [ "$1" = "sync" ]; then
+    echo "ℹ️  [Cluster-CI Shim] Ignoring uv sync, dependencies are pre-installed in system."
     exit 0
 else
     # Fallback to real uv — strip shim dir from PATH to avoid infinite recursion
-    if [ -x \"/home/user/.local/bin/uv\" ]; then
-        exec /home/user/.local/bin/uv \"\$@\"
+    if [ -x "/home/user/.local/bin/uv" ]; then
+        exec /home/user/.local/bin/uv "$@"
     else
-        REAL_UV=\$(PATH=\${PATH#/home/user/shims:} command -v uv 2>/dev/null || true)
-        if [ -n \"\$REAL_UV\" ]; then
-            exec \"\$REAL_UV\" \"\$@\"
+        REAL_UV=$(PATH=${PATH#/home/user/shims:} command -v uv 2>/dev/null || true)
+        if [ -n "$REAL_UV" ]; then
+            exec "$REAL_UV" "$@"
         else
-            echo \"❌ [Cluster-CI Shim] uv not found. Install it first.\" >&2
+            echo "❌ [Cluster-CI Shim] uv not found. Install it first." >&2
             exit 1
         fi
     fi
 fi
-EOF
-    chmod +x $SHIM_DIR/uv
+SHIMEOF
+chmod +x $SHIM_DIR/uv &&
 
-    # Poetry Shim
-    cat <<EOF > $SHIM_DIR/poetry
+# Poetry Shim
+cat > $SHIM_DIR/poetry << '"'"'SHIMEOF'"'"'
 #!/bin/bash
-if [ \"\$1\" = \"run\" ]; then
+if [ "$1" = "run" ]; then
     shift
-    echo \"🚀 [Cluster-CI Shim] Intercepting 'poetry run', executing natively: \$@\"
-    exec \"\$@\"
-elif [ \"\$1\" = \"install\" ] || [ \"\$1\" = \"sync\" ]; then
-    echo \"ℹ️  [Cluster-CI Shim] Ignoring 'poetry install', dependencies are pre-installed.\"
+    echo "🚀 [Cluster-CI Shim] Intercepting poetry run, executing natively: $@"
+    exec "$@"
+elif [ "$1" = "install" ] || [ "$1" = "sync" ]; then
+    echo "ℹ️  [Cluster-CI Shim] Ignoring poetry install, dependencies are pre-installed."
     exit 0
 else
-    # Fallback to real poetry — strip shim dir from PATH to avoid infinite recursion
-    if [ -x \"/home/user/.local/bin/poetry\" ]; then
-        exec /home/user/.local/bin/poetry \"\$@\"
+    if [ -x "/home/user/.local/bin/poetry" ]; then
+        exec /home/user/.local/bin/poetry "$@"
     else
-        REAL_POETRY=\$(PATH=\${PATH#/home/user/shims:} command -v poetry 2>/dev/null || true)
-        if [ -n \"\$REAL_POETRY\" ]; then
-            exec \"\$REAL_POETRY\" \"\$@\"
+        REAL_POETRY=$(PATH=${PATH#/home/user/shims:} command -v poetry 2>/dev/null || true)
+        if [ -n "$REAL_POETRY" ]; then
+            exec "$REAL_POETRY" "$@"
         else
-            echo \"❌ [Cluster-CI Shim] poetry not found. Install it first.\" >&2
+            echo "❌ [Cluster-CI Shim] poetry not found. Install it first." >&2
             exit 1
         fi
     fi
 fi
-EOF
-    chmod +x $SHIM_DIR/poetry
-"
+SHIMEOF
+chmod +x $SHIM_DIR/poetry'
 
 log_info "Installing base dependencies in persistent volume..."
 # Bootstrap commands MUST bypass shims — use a raw docker run without /home/user/shims in PATH.
