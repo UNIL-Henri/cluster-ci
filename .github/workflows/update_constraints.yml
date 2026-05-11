@@ -19,9 +19,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker
         run: |
-          # Docker is pre-installed on ubuntu-latest, but we ensure it's ready
           docker version
 
       - name: Update Constraints
