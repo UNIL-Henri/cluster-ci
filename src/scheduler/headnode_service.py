@@ -468,7 +468,11 @@ def api_run_files(job_id):
     try:
         env = os.environ.copy()
 
+        # Support subfolder navigation via optional 'path' query parameter
+        sub_path = request.args.get('path', '')
         cmd = [DVC_CMD, "list", source, "--rev", commit_hash, "--dvc-only", "--json"]
+        if sub_path:
+            cmd = [DVC_CMD, "list", source, sub_path, "--rev", commit_hash, "--dvc-only", "--json"]
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         if result.returncode != 0:

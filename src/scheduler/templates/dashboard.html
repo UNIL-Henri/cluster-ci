@@ -335,7 +335,8 @@
             jobId: null,
             branch: null,
             commitHash: null,
-            createdAt: null
+            createdAt: null,
+            subPath: '' // Current subfolder path within a run
         };
 
         function updateBreadcrumb() {
@@ -358,7 +359,7 @@
 
             if (currentState.jobId) {
                 const runLi = document.createElement('li');
-                runLi.className = 'breadcrumb-item active';
+                runLi.className = 'breadcrumb-item ' + (currentState.subPath ? '' : 'active');
                 if (currentState.createdAt) {
                     const runDate = new Date(currentState.createdAt);
                     runLi.textContent = runDate.toLocaleString('en-US', {
@@ -368,7 +369,27 @@
                 } else {
                     runLi.textContent = currentState.jobId.substring(0, 8) + '...';
                 }
+                // If we have a subPath, clicking the run breadcrumb navigates back to root of run
+                if (currentState.subPath) {
+                    runLi.onclick = () => navigateToSubPath('');
+                }
                 breadcrumb.appendChild(runLi);
+            }
+
+            // Render sub-path breadcrumb segments
+            if (currentState.subPath) {
+                const parts = currentState.subPath.split('/').filter(p => p);
+                parts.forEach((part, idx) => {
+                    const li = document.createElement('li');
+                    const isLast = idx === parts.length - 1;
+                    li.className = 'breadcrumb-item ' + (isLast ? 'active' : '');
+                    li.textContent = part;
+                    if (!isLast) {
+                        const targetPath = parts.slice(0, idx + 1).join('/');
+                        li.onclick = () => navigateToSubPath(targetPath);
+                    }
+                    breadcrumb.appendChild(li);
+                });
             }
         }
 
@@ -611,8 +632,8 @@
             loadProjects();
         }
 
-        async function loadRunDetails(jobId, status, repo, branch, commitHash, createdAt) {
-            currentState = { view: 'run', repo: repo, jobId: jobId, branch: branch, commitHash: commitHash, createdAt: createdAt };
+        async function loadRunDetails(jobId, status, repo, branch, commitHash, createdAt, subPath = '') {
+            currentState = { view: 'run', repo: repo, jobId: jobId, branch: branch, commitHash: commitHash, createdAt: createdAt, subPath: subPath };
             updateBreadcrumb();
             container.innerHTML = '<div class="col-12 text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
 
@@ -633,7 +654,8 @@
             }
 
             try {
-                const resp = await fetch(`/api/runs/${jobId}/files`);
+                const filesUrl = `/api/runs/${jobId}/files` + (subPath ? `?path=${encodeURIComponent(subPath)}` : '');
+                const resp = await fetch(filesUrl);
                 if (!resp.ok) {
                     const contentType = resp.headers.get('content-type');
                     let error = 'Internal Server Error'; try { if (contentType && contentType.includes('application/json')) { const data = await resp.json(); error = data.error || data.message || error; } else { error = 'Server returned ' + resp.status + ' (' + resp.statusText + ')'; } } catch(e) { console.error('Error parsing failure response:', e); error = 'Parse Error: ' + e.message; }
@@ -663,12 +685,17 @@
                     // Construct download link using commit hash if available for consistency
                     const [owner, name] = repo.split('/');
                     const rev = currentState.commitHash || currentState.branch || 'main';
-                    const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(item.path)}`;
+                    // Build full path for subfolder-aware download URL
+                    const fullFilePath = subPath ? subPath + '/' + item.path.replace(/\/$/, '') : item.path.replace(/\/$/, '');
+                    const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(fullFilePath)}`;
 
                     const card = document.createElement('div');
                     card.className = 'card h-100 explorer-item shadow-sm';
-                    if (!isDir) {
-                        card.onclick = () => previewFile(downloadUrl, item.path, item.size || 0);
+                    if (isDir) {
+                        const dirPath = subPath ? subPath + '/' + item.path.replace(/\/$/, '') : item.path.replace(/\/$/, '');
+                        card.onclick = () => navigateToSubPath(dirPath);
+                    } else {
+                        card.onclick = () => previewFile(downloadUrl, fullFilePath, item.size || 0);
                     }
 
                     const icon = document.createElement('i');
@@ -700,7 +727,19 @@
         }
 
         function navigateToRun(jobId, status, repo, branch, commitHash, createdAt) {
-            loadRunDetails(jobId, status, repo, branch, commitHash, createdAt);
+            loadRunDetails(jobId, status, repo, branch, commitHash, createdAt, '');
+        }
+
+        function navigateToSubPath(subPath) {
+            loadRunDetails(
+                currentState.jobId,
+                'completed', // Only completed runs can browse files
+                currentState.repo,
+                currentState.branch,
+                currentState.commitHash,
+                currentState.createdAt,
+                subPath
+            );
         }
 
         async function loadClusterStats() {
