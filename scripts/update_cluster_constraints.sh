@@ -1,5 +1,6 @@
 #!/bin/bash
-# Script to update cluster_constraints.txt from the Docker image
+# Script to extract the native PyPI versions from the reference Docker image
+# This script is automatically executed by the CI to keep constraints updated.
 set -e
 
 # Load .env if it exists
