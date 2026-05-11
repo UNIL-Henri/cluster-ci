@@ -293,8 +293,8 @@ function docker_exec_bootstrap() {
         "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
 docker_exec_bootstrap "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
-docker_exec_bootstrap "dvc version >/dev/null 2>&1 || /home/user/.local/bin/uv tool install dvc >/dev/null 2>&1"
-docker_exec_bootstrap "dvc-viewer --help >/dev/null 2>&1 || /home/user/.local/bin/uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
+docker_exec_bootstrap "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
+docker_exec_bootstrap "dvc-viewer --help >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
 
 log_info "Reading DVC parameters from .cluster-ci..."
 # Clean comments, remove internal flags like --ram, and put arguments on a single line
