@@ -61,17 +61,16 @@ Les fichiers index listent le contenu de leur sujet sous forme de tableau à 4 c
 - **Date** : À mettre à jour à chaque modification du fichier cible.
 - **Tag** : Indiquer si l'information est toujours d'actualité (`Up to date` ou `Legacy`).
 
-## 3. Tâches de la Roadmap (`docs/tasks/`)
+## 3. Tâches de la Roadmap (GitHub Issues)
 
-Toute tâche ajoutée à la **Roadmap** dans le README doit **OBLIGATOIREMENT** être liée à un fichier de spécification unique dans `docs/tasks/`.
+Toute tâche ajoutée à la **Roadmap** dans le README doit **OBLIGATOIREMENT** être liée à une **GitHub Issue** sur le dépôt du projet.
 
 ### Règle d'Or
-> **"Pas de fichier de tâche = Pas de ligne dans la Roadmap"**
+> **"Pas d'issue GitHub = Pas de ligne dans la Roadmap"**
 
-### Structure du Fichier de Tâche (`docs/tasks/xxx.md`)
-Ce fichier doit servir de point d'entrée pour l'agent qui réalisera la tâche.
+### Structure du Corps de l'Issue GitHub
+Le corps de l'issue doit servir de point d'entrée pour l'agent qui réalisera la tâche. Il doit suivre ce modèle :
 
-#### Modèle Obligatoire :
 ```markdown
 # [Titre de la Tâche]
 
@@ -90,6 +89,12 @@ Ce fichier doit servir de point d'entrée pour l'agent qui réalisera la tâche.
 * **NE PAS** écrire de plan d'implémentation détaillé (pas de "créer fonction x").
 * **NE PAS** écrire de pseudo-code.
 * **FOCUS** sur le résultat attendu et la valeur ajoutée.
+```
+
+### Lien dans le README
+Le lien dans la Roadmap doit pointer vers l'URL de l'issue GitHub :
+```markdown
+| [Nom de la Tâche](https://github.com/owner/repo/issues/XX) | Objectif | État | Dépendances |
 ```
 
 ## Bonnes pratiques forcées

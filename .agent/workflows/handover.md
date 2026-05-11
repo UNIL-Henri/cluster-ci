@@ -40,8 +40,8 @@ Liste clairement (tu as le droit aux listes ici pour la clarté) :
 Tu DOIS inclure ces instructions en gras :
 > **⚠️ ATTENTION : Ne pars PAS directement dans le code. AVANT TOUTE CHOSE, effectue au minimum 3 recherches (dans ta mémoire long-terme et/ou dans le codebase) pour explorer le projet et comprendre le périmètre. Ensuite, établis un PLAN d'implémentation clair et soumets-le à l'utilisateur. Discute des détails ambigus AVANT de toucher à quoi que ce soit.**
 
-**Référence au fichier de tâche** : Si un fichier de spécification de tâche existe (dans `docs/tasks/`), tu **DOIS** le mentionner explicitement :
-> **📋 Un fichier de spécification existe pour cette tâche : `docs/tasks/[nom-du-fichier].md`. Lis-le en priorité avant de commencer ton plan.**
+**Référence à l'issue GitHub** : Si une issue GitHub existe pour cette tâche, tu **DOIS** la mentionner explicitement avec son numéro :
+> **📋 Une issue GitHub existe pour cette tâche : #[NUMÉRO]. Lis-la en priorité (via `mcp_github-mcp-server_issue_read`) avant de commencer ton plan.**
 
 Donne ensuite le cap général de la mission (le "Quoi", pas le "Comment faire").
 
