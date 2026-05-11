@@ -166,20 +166,21 @@ if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$HOME_CACHE_VOLUME" >/dev/null
 fi
 # Ensure the volume is owned by the current user
-docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" chown -R "$(id -u):$(id -g)" /home/user
+docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "chown -R $(id -u):$(id -g) /home/user"
 
 # Detect Docker image change: if the cached image marker differs from the
 # current image, purge stale tool binaries to force a clean reinstall.
 MARKER_CMD="cat /home/user/.cluster-ci-image-marker 2>/dev/null || echo 'none'"
-CACHED_IMAGE=$(docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
+CACHED_IMAGE=$(docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
 if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
     log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
-    docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
+    docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
         bash -c "rm -rf /home/user/.local /home/user/.cache/uv 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
 fi
 
 function docker_exec() {
     docker run --rm \
+        --entrypoint "" \
         --gpus all \
         -v "$(pwd):/workspace" \
         -v "$HOME_CACHE_VOLUME:/home/user" \
@@ -214,7 +215,7 @@ docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Preparing smart environment shims (uv/poetry)..."
 SHIM_DIR="/home/user/shims"
-docker run --rm -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c "
+docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c "
     mkdir -p $SHIM_DIR
     
     # UV Shim
@@ -286,6 +287,7 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
 docker run --rm \
+    --entrypoint "" \
     -v "$(pwd):/workspace" -w /workspace \
     -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
