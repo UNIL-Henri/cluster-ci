@@ -130,4 +130,5 @@ cluster-ci/
 - [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation
 - [x] Migration vers conteneur NGC moderne (Python 3.12, PyTorch 2.12, CUDA 13.2)
 - [x] [Cluster-CI Pre-flight Scanner & Pre-commit Validator](https://github.com/UNIL-DESI/cluster-ci/issues/55)
+- [x] [Auto-génération des contraintes ARM64 via CI](https://github.com/UNIL-DESI/cluster-ci/issues/56)
 - [ ] Full Monitoring and Healthcheck
