@@ -107,6 +107,7 @@ if [[ "$ROLE" == "headnode" || "$ROLE" == "worker" ]]; then
     fi
 
     update_env_var "GITHUB_PAT" "$GITHUB_PAT"
+    update_env_var "TARGET_REPO" "$TARGET_REPO"
     update_env_var "HEADNODE_URL" "$HEADNODE_URL"
     update_env_var "CLUSTER_TOKEN" "$CLUSTER_TOKEN"
     update_env_var "GITHUB_CLIENT_ID" "$GITHUB_CLIENT_ID"
