@@ -229,11 +229,17 @@ elif [ \"\$1\" = \"sync\" ]; then
     echo \"ℹ️  [Cluster-CI Shim] Ignoring 'uv sync', dependencies are pre-installed in system.\"
     exit 0
 else
-    # Fallback to real uv if it exists in .local/bin
+    # Fallback to real uv — strip shim dir from PATH to avoid infinite recursion
     if [ -x \"/home/user/.local/bin/uv\" ]; then
         exec /home/user/.local/bin/uv \"\$@\"
     else
-        exec uv \"\$@\"
+        REAL_UV=\$(PATH=\${PATH#/home/user/shims:} command -v uv 2>/dev/null || true)
+        if [ -n \"\$REAL_UV\" ]; then
+            exec \"\$REAL_UV\" \"\$@\"
+        else
+            echo \"❌ [Cluster-CI Shim] uv not found. Install it first.\" >&2
+            exit 1
+        fi
     fi
 fi
 EOF
@@ -250,10 +256,17 @@ elif [ \"\$1\" = \"install\" ] || [ \"\$1\" = \"sync\" ]; then
     echo \"ℹ️  [Cluster-CI Shim] Ignoring 'poetry install', dependencies are pre-installed.\"
     exit 0
 else
+    # Fallback to real poetry — strip shim dir from PATH to avoid infinite recursion
     if [ -x \"/home/user/.local/bin/poetry\" ]; then
         exec /home/user/.local/bin/poetry \"\$@\"
     else
-        exec poetry \"\$@\"
+        REAL_POETRY=\$(PATH=\${PATH#/home/user/shims:} command -v poetry 2>/dev/null || true)
+        if [ -n \"\$REAL_POETRY\" ]; then
+            exec \"\$REAL_POETRY\" \"\$@\"
+        else
+            echo \"❌ [Cluster-CI Shim] poetry not found. Install it first.\" >&2
+            exit 1
+        fi
     fi
 fi
 EOF
