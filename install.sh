@@ -250,6 +250,7 @@ EOF
     cat <<EOF > "$HOOK_FILE"
 #!/bin/bash
 # Cluster-CI Pre-commit Validator
+exec < /dev/tty
 python3 .cluster-ci-tools/validate_pyproject.py --interactive --pyproject pyproject.toml --constraints .cluster-ci-tools/cluster_constraints.txt
 EOF
     chmod +x "$HOOK_FILE"
