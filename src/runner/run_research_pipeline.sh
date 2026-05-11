@@ -374,8 +374,8 @@ docker_exec "uv run --with tomlkit python3 src/runner/validate_pyproject.py --ci
 log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # Execution of repro and uv dependencies if present
 if [ -f "pyproject.toml" ]; then
-    # Use uv pip install --system to leverage native pre-installed packages (like PyTorch)
-    EXEC_CMD="(command -v uv >/dev/null || pip install uv --user >/dev/null 2>&1) && uv pip install --system --break-system-packages . && dvc repro $DVC_ARGS"
+    # Install project locally for the non-root user, leveraging system packages
+    EXEC_CMD="(command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1) && python3 -m pip install --user --break-system-packages . && dvc repro $DVC_ARGS"
 else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
