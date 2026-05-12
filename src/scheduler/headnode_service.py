@@ -159,12 +159,14 @@ def submit_job():
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    username = data.get('username')
+
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, gh_token, env_vars, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None))
+            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, gh_token, env_vars, username, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None, username))
         conn.commit()
 
     return jsonify({"job_id": job_id, "status": "pending", "required_hashes_count": len(required_hashes)})
@@ -326,7 +328,8 @@ def artifacts(repo_owner, repo_name, rev, file_path):
             worker = cursor.fetchone()
 
     if worker and worker['service_url']:
-        worker_url = f"{worker['service_url']}/api/worker/dvc/get?repo={repo_slug}&rev={rev}&path={file_path}"
+        inline_param = "&inline=true" if request.args.get("inline") == "true" else ""
+        worker_url = f"{worker['service_url']}/api/worker/dvc/get?repo={repo_slug}&rev={rev}&path={file_path}{inline_param}"
         app.logger.info(f"[P2P] Proxying artifact {file_path}@{rev} to worker {worker['service_url']}")
         try:
             resp = proxy_request(worker_url)
@@ -359,6 +362,13 @@ def artifacts(repo_owner, repo_name, rev, file_path):
             filename = os.path.basename(file_path)
             full_path = os.path.join(tmp_dir, filename)
 
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                mime_type = 'application/octet-stream'
+
+            disposition = "inline" if request.args.get("inline") == "true" else "attachment"
+
             def generate():
                 try:
                     with open(full_path, 'rb') as f:
@@ -370,8 +380,8 @@ def artifacts(repo_owner, repo_name, rev, file_path):
                 finally:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-            return Response(generate(), mimetype='application/octet-stream',
-                            headers={"Content-Disposition": f"attachment; filename={filename}"})
+            return Response(generate(), mimetype=mime_type,
+                            headers={"Content-Disposition": f"{disposition}; filename=\"{filename}\""})
 
         shutil.rmtree(tmp_dir, ignore_errors=True)
         error_msg = result.stderr.strip() if result.stderr else "Unknown DVC error"

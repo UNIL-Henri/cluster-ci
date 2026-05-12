@@ -44,7 +44,8 @@ def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
             "branch": branch,
             "ram_required_gb": ram_req,
             "gh_token": gh_token,
-            "env_vars": env_vars
+            "env_vars": env_vars,
+            "username": os.environ.get("GITHUB_ACTOR", "unknown")
         }, headers=headers)
         resp.raise_for_status()
         job_data = resp.json()

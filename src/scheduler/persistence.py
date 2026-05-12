@@ -100,6 +100,12 @@ def init_db():
     except sqlite3.OperationalError:
         pass # Already exists
 
+    # username migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN username TEXT')
+    except sqlite3.OperationalError:
+        pass # Already exists
+
     conn.commit()
     conn.close()
 

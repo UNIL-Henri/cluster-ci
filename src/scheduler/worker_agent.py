@@ -429,6 +429,12 @@ def worker_dvc_get():
             subprocess.run(["git", "fetch", "origin"], cwd=repo_path,
                            capture_output=True, timeout=30)
 
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            mime_type = 'application/octet-stream'
+        disposition = "inline" if request.args.get("inline") == "true" else "attachment"
+
         # Strategy 1: DVC extraction at specific revision (historical integrity)
         cmd = [DVC_CMD, "get", ".", file_path, "--out", tmp_dir]
         if rev: cmd += ["--rev", rev]
@@ -447,8 +453,8 @@ def worker_dvc_get():
                                 yield chunk
                     finally:
                         shutil.rmtree(tmp_dir, ignore_errors=True)
-                return Response(generate(), mimetype='application/octet-stream',
-                                headers={"Content-Disposition": f"attachment; filename={filename}"})
+                return Response(generate(), mimetype=mime_type,
+                                headers={"Content-Disposition": f"{disposition}; filename=\"{filename}\""})
 
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -458,7 +464,8 @@ def worker_dvc_get():
         direct_path = os.path.join(repo_path, file_path)
         if os.path.exists(direct_path) and os.path.isfile(direct_path):
             logger.info(f"[P2P] Serving {file_path} directly from working directory")
-            return send_file(direct_path, as_attachment=True,
+            return send_file(direct_path, as_attachment=(disposition == "attachment"),
+                             mimetype=mime_type,
                              download_name=os.path.basename(file_path))
 
         return jsonify({"error": f"File not found via DVC or filesystem: {file_path}"}), 404
