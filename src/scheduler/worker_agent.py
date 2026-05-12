@@ -309,11 +309,10 @@ def cancel_job(job_id):
                 parent = psutil.Process(current_process.pid)
                 for child in parent.children(recursive=True):
                     try:
-                        child.kill()
+                        child.terminate()
                     except psutil.NoSuchProcess:
                         pass
-                parent.kill()
-                return jsonify({"status": "cancelled", "message": "Process tree terminated"}), 200
+                return jsonify({"status": "cancelled", "message": "Termination signal sent to children"}), 200
             except psutil.NoSuchProcess:
                 return jsonify({"status": "already_finished", "message": "Process already finished"}), 200
             except Exception as e:

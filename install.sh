@@ -181,7 +181,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: \${{ github.repository }}
+  group: \${{ github.repository }}-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

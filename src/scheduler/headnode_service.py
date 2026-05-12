@@ -220,6 +220,14 @@ def update_job_status():
 
     with get_db_conn() as conn:
         cursor = conn.cursor()
+        
+        cursor.execute('SELECT status, worker_id, ram_required_gb FROM jobs WHERE job_id = ?', (job_id,))
+        job = cursor.fetchone()
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+            
+        current_status = job['status']
+
         if status == 'running':
             cursor.execute('''
                 UPDATE jobs SET
@@ -230,17 +238,15 @@ def update_job_status():
                 WHERE job_id = ?
             ''', (status, commit_hash, viewer_port, job_id))
         elif status in ['completed', 'failed']:
-            # Restore RAM to the worker
-            cursor.execute('SELECT worker_id, ram_required_gb FROM jobs WHERE job_id = ?', (job_id,))
-            job = cursor.fetchone()
-            if job and job['worker_id']:
+            # Restore RAM to the worker only if it wasn't already completed/failed
+            if current_status in ['running', 'assigned'] and job['worker_id']:
                 cursor.execute('''
                     UPDATE workers
                     SET available_ram_gb = available_ram_gb + ?
                     WHERE worker_id = ?
                 ''', (job['ram_required_gb'], job['worker_id']))
 
-            cursor.execute('UPDATE jobs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = ?, commit_hash = ? WHERE job_id = ?', (status, exit_code, commit_hash, job_id))
+            cursor.execute('UPDATE jobs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = COALESCE(?, exit_code), commit_hash = COALESCE(?, commit_hash) WHERE job_id = ?', (status, exit_code, commit_hash, job_id))
         else:
             cursor.execute('UPDATE jobs SET status = ? WHERE job_id = ?', (status, job_id))
         conn.commit()
@@ -313,8 +319,22 @@ def artifacts(repo_owner, repo_name, rev, file_path):
 
             
         source = local_repo_path if local_repo_path else repo_url
+        
+        # Inject secrets from the latest job for this repo to allow dvc get to authenticate
+        run_env = os.environ.copy()
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT env_vars FROM jobs WHERE repo = ? AND env_vars IS NOT NULL ORDER BY created_at DESC LIMIT 1', (repo_slug,))
+            latest_job = cursor.fetchone()
+            if latest_job and latest_job['env_vars']:
+                try:
+                    secrets = json.loads(latest_job['env_vars'])
+                    run_env.update(secrets)
+                except Exception as e:
+                    app.logger.error(f"Failed to load secrets for DVC: {e}")
+
         cmd = [DVC_CMD, "get", source, file_path, "--rev", rev, "--out", tmp_dir]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
 
         if result.returncode == 0:
             filename = os.path.basename(file_path)

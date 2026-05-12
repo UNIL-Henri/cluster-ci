@@ -392,7 +392,14 @@ else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
 
+set +e
 docker_exec "$EXEC_CMD"
+EXEC_RET=$?
+set -e
+
+if [ $EXEC_RET -ne 0 ]; then
+    log_error "Execution interrupted or failed (Exit code: $EXEC_RET). Forcing DVC sync before exiting..."
+fi
 
 # 4. Data Router: Verification before Push
 log_info "[Step 4/3] Data Router: Checking headnode space..."
@@ -440,4 +447,9 @@ echo "==========================================================================
 if [ -f "$LOG_FILE" ]; then
     tail -n 2000 "$LOG_FILE" > "${LOG_FILE}.tmp"
     mv "${LOG_FILE}.tmp" "$LOG_FILE"
+fi
+
+if [ $EXEC_RET -ne 0 ]; then
+    log_error "Exiting with error code $EXEC_RET due to previous failure."
+    exit $EXEC_RET
 fi
