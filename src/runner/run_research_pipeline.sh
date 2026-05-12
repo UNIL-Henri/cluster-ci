@@ -88,11 +88,20 @@ fi
 
 # 1.5 JIT Garbage Collection & Metadata update
 log_info "[Step 1.5/3] JIT Garbage Collection (GC) Management..."
+if [ -n "$JOB_ID" ]; then
+    SAFE_JOB_ID=$(echo "$JOB_ID" | tr -dc 'a-zA-Z0-9_-')
+    log_info "Preventive purge of containers for job $SAFE_JOB_ID..."
+    docker rm -f "cluster-job-$SAFE_JOB_ID" "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+fi
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 
 function update_status_idle() {
     log_info "Updating metadata (idle status)..."
+    if [ -n "$SAFE_JOB_ID" ]; then
+        docker stop "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+        docker rm -f "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+    fi
     [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
     log_info "Running post-flight Maintenance GC (Lazy Transfer)..."
@@ -197,6 +206,7 @@ fi
 
 function docker_exec() {
     docker run --rm \
+        $( [ -n "$SAFE_JOB_ID" ] && echo "--name cluster-job-$SAFE_JOB_ID" ) \
         --entrypoint "" \
         --gpus all \
         -v "$(pwd):/workspace" \
@@ -353,6 +363,7 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
 docker run --rm \
+    $( [ -n "$SAFE_JOB_ID" ] && echo "--name cluster-viewer-$SAFE_JOB_ID" ) \
     --entrypoint "" \
     -v "$(pwd):/workspace" -w /workspace \
     -v "$HOME_CACHE_VOLUME:/home/user" \
