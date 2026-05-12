@@ -5,14 +5,29 @@ import sys
 import time
 import fcntl
 import subprocess
+import requests
 from pathlib import Path
 
 # Config
+PANIC_THRESHOLD_GB = 50
+PANIC_THRESHOLD_BYTES = PANIC_THRESHOLD_GB * 1024 * 1024 * 1024
 DEFAULT_FREE_SPACE_THRESHOLD_GB = 100
 FREE_SPACE_THRESHOLD_GB = int(os.environ.get("GC_FREE_SPACE_THRESHOLD_GB", DEFAULT_FREE_SPACE_THRESHOLD_GB))
 FREE_SPACE_THRESHOLD_BYTES = FREE_SPACE_THRESHOLD_GB * 1024 * 1024 * 1024
 REGISTRY_FILENAME = "registry.json"
 LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024
+
+def get_executable(name):
+    """Finds an executable in system PATH, local bin, or current venv."""
+    cmd = shutil.which(name)
+    if cmd: return cmd
+    local_path = os.path.expanduser(f"~/.local/bin/{name}")
+    if os.path.exists(local_path): return local_path
+    venv_path = os.path.join(os.path.dirname(sys.executable), name)
+    if os.path.exists(venv_path): return venv_path
+    return name
+
+DVC_CMD = get_executable("dvc")
 
 def get_base_dir():
     # Assuming script is in src/runner/gc_orchestrator.py
@@ -135,7 +150,7 @@ def cleanup_level_1(project_path, project_name):
         # dvc gc -w (workspace) --keep-experiments --rev HEAD --rev HEAD~1
         # Note: we use -f (force) to avoid interactive prompt
         subprocess.run(
-            ["dvc", "gc", "-w", "-f", "--keep-experiments", "--rev", "HEAD", "--rev", "HEAD~1"],
+            [DVC_CMD, "gc", "-w", "-f", "--keep-experiments", "--rev", "HEAD", "--rev", "HEAD~1"],
             cwd=project_path,
             capture_output=True,
             text=True
@@ -204,10 +219,11 @@ def get_free_space():
     return usage.free
 
 def run_gc():
+    """Emergency GC: Purely destructive cleanup if space < 50GB."""
     repo_dir = get_repositories_dir()
 
     # Docker cleanup
-    print("🐳 Cleaning up Docker resources...")
+    print("[Cluster Emergency] 🐳 Cleaning up Docker resources...")
     try:
         # Purge stopped containers, unused networks, and dangling images
         subprocess.run(["docker", "system", "prune", "-f"], capture_output=True)
@@ -215,89 +231,114 @@ def run_gc():
         print(f"  Error during Docker prune: {e}")
 
     if not repo_dir.exists():
-        print("Repositories directory does not exist. No further GC needed.")
         return
 
     free_space = get_free_space()
-    print(f"Free space: {free_space / (1024**3):.2f} GB (Threshold: {FREE_SPACE_THRESHOLD_GB} GB)")
+    print(f"[Cluster Emergency] Free space: {free_space / (1024**3):.2f} GB (Threshold: {PANIC_THRESHOLD_GB} GB)")
 
-    if free_space < FREE_SPACE_THRESHOLD_BYTES:
-        print(f"Free space below threshold. Starting tiered cleanup...")
+    if free_space < PANIC_THRESHOLD_BYTES:
+        print(f"[Cluster Emergency] Critical space level! Starting emergency destructive cleanup...")
         registry_path = get_registry_path()
-        if not registry_path.exists():
-            print("Registry file not found. Nothing to clean.")
-            return
+        if not registry_path.exists(): return
 
         with open(registry_path, "a+") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 registry = load_registry(f)
-
-                # Filter idle projects and sort by last_execution (oldest first)
-                idle_projects = [
-                    (name, data) for name, data in registry.items()
-                    if data.get("status") == "idle"
-                ]
+                idle_projects = [(n, d) for n, d in registry.items() if d.get("status") == "idle"]
                 idle_projects.sort(key=lambda x: x[1].get("last_execution", 0))
 
-                any_cleanup_done = False
                 for project_name, data in idle_projects:
-                    if get_free_space() >= FREE_SPACE_THRESHOLD_BYTES:
-                        break
-
-                    validate_project_name(project_name)
+                    if get_free_space() >= PANIC_THRESHOLD_BYTES: break
                     project_path = repo_dir / project_name
-                    if not project_path.exists():
-                        continue
+                    if not project_path.exists(): continue
 
-                    print(f"Cleaning project: {project_name}")
-
-                    # Tiered cleanup levels
-                    cleanup_levels = [
-                        (cleanup_level_1, "Level 1"),
-                        (cleanup_level_2, "Level 2"),
-                        (cleanup_level_3, "Level 3"),
-                        (cleanup_level_4, "Level 4"),
-                        (cleanup_level_5, "Level 5")
-                    ]
-
-                    for cleanup_func, level_name in cleanup_levels:
-                        cleanup_func(project_path, project_name)
-                        any_cleanup_done = True
-
-                        current_free_space = get_free_space()
-                        print(f"  After {level_name}, free space: {current_free_space / (1024**3):.2f} GB")
-
-                        if current_free_space >= FREE_SPACE_THRESHOLD_BYTES:
-                            break
-
-                        if level_name == "Level 5": # Project is gone
-                            data["status"] = "deleted"
-                            data["size_bytes"] = 0
-                            break
-
-                    # Update size in registry after partial or full cleanup
-                    if project_path.exists():
-                        data["size_bytes"] = get_dir_size(project_path)
-                    else:
-                        data["size_bytes"] = 0
-                        data["status"] = "deleted"
+                    print(f"[Cluster Emergency] Purging {project_name} immediately...")
+                    cleanup_level_5(project_path, project_name)
+                    data["status"] = "deleted"
+                    data["size_bytes"] = 0
 
                 save_registry(f, registry)
-
-                if any_cleanup_done and get_free_space() >= FREE_SPACE_THRESHOLD_BYTES:
-                    # Notify headnode to trigger drain on workers
-                    headnode_url = os.environ.get("HEADNODE_URL", "http://localhost:5000")
-                    print(f"Threshold met. Notifying headnode at {headnode_url}...")
-                    try:
-                        import requests
-                        requests.post(f"{headnode_url}/notify_cleanup", timeout=5)
-                    except Exception as e:
-                        print(f"Failed to notify cleanup: {e}")
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
-    else:
-        print("Sufficient free space available. No GC needed.")
+
+def run_transfer_gc():
+    """Maintenance GC: Lazy transfer to headnode if space < 100GB."""
+    repo_dir = get_repositories_dir()
+    free_space = get_free_space()
+    print(f"[Cluster Maintenance] Free space: {free_space / (1024**3):.2f} GB (Threshold: {FREE_SPACE_THRESHOLD_GB} GB)")
+
+    if free_space < FREE_SPACE_THRESHOLD_BYTES:
+        print(f"[Cluster Maintenance] Space below threshold. Starting lazy transfer of old projects...")
+        registry_path = get_registry_path()
+        if not registry_path.exists(): return
+
+        headnode_url = os.environ.get("HEADNODE_URL", "http://localhost:5000")
+
+        # 1. Identify candidates (Locked briefly)
+        candidates = []
+        with open(registry_path, "r") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                registry = load_registry(f)
+                idle_projects = [(n, d) for n, d in registry.items() if d.get("status") == "idle"]
+                idle_projects.sort(key=lambda x: x[1].get("last_execution", 0))
+                candidates = [n for n, d in idle_projects]
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        for project_name in candidates:
+            if get_free_space() >= FREE_SPACE_THRESHOLD_BYTES: break
+            project_path = repo_dir / project_name
+            if not project_path.exists(): continue
+
+            print(f"[Cluster Maintenance] Archiving old project: {project_name}...")
+
+            # Check for DVC remote
+            has_remote = False
+            dvc_config = project_path / ".dvc" / "config"
+            if dvc_config.exists():
+                with open(dvc_config, "r") as cf:
+                    if "remote =" in cf.read(): has_remote = True
+
+            can_evict = True
+            sync_status = "done"
+            if has_remote:
+                try:
+                    resp = requests.get(f"{headnode_url}/check_space", timeout=5)
+                    if resp.status_code == 200 and resp.json().get("sufficient"):
+                        print(f"  Pushing {project_name} to headnode...")
+                        push_res = subprocess.run([DVC_CMD, "push"], cwd=project_path, capture_output=True)
+                        if push_res.returncode != 0:
+                            print(f"  ❌ dvc push failed for {project_name}. Postponing eviction.")
+                            sync_status = "pending"
+                            can_evict = False
+                    else:
+                        print(f"  ⚠️ Headnode full or unreachable. Postponing eviction of {project_name}.")
+                        sync_status = "pending"
+                        can_evict = False
+                except Exception as e:
+                    print(f"  ⚠️ Error contacting headnode: {e}")
+                    sync_status = "pending"
+                    can_evict = False
+
+            if can_evict:
+                print(f"  Evicting {project_name} from worker.")
+                cleanup_level_5(project_path, project_name)
+
+            # 2. Commit changes to registry (Locked briefly)
+            with open(registry_path, "a+") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    registry = load_registry(f)
+                    if project_name in registry:
+                        registry[project_name]["sync_status"] = sync_status
+                        if can_evict:
+                            registry[project_name]["status"] = "deleted"
+                            registry[project_name]["size_bytes"] = 0
+                    save_registry(f, registry)
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -313,6 +354,8 @@ if __name__ == "__main__":
             update_idle(sys.argv[2], sys.argv[3])
         elif command == "run-gc":
             run_gc()
+        elif command == "run-transfer-gc":
+            run_transfer_gc()
         elif command == "get-free-space":
             print(get_free_space())
         elif command == "mark-sync-pending":

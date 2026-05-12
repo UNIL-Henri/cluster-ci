@@ -95,6 +95,8 @@ function update_status_idle() {
     log_info "Updating metadata (idle status)..."
     [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
+    log_info "Running post-flight Maintenance GC (Lazy Transfer)..."
+    python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-transfer-gc
 }
 trap update_status_idle EXIT
 
@@ -401,43 +403,7 @@ if [ $EXEC_RET -ne 0 ]; then
     log_error "Execution interrupted or failed (Exit code: $EXEC_RET). Forcing DVC sync before exiting..."
 fi
 
-# 4. Data Router: Verification before Push
-log_info "[Step 4/3] Data Router: Checking headnode space..."
-HEADNODE_URL=${HEADNODE_URL:-"http://localhost:5000"}
-
-# Query headnode API for disk space
-SPACE_CHECK=$(curl -s "$HEADNODE_URL/check_space" || echo '{"sufficient": false, "error": "unreachable"}')
-SUFFICIENT=$(echo "$SPACE_CHECK" | jq -r '.sufficient')
-
-if [ "$SUFFICIENT" == "true" ]; then
-    log_info "Sufficient space on headnode. Synchronizing artifacts..."
-    # Check if a default DVC remote is configured by checking the config files
-    HAS_REMOTE=false
-    if [ -f ".dvc/config" ] && grep -E -q "^\s*remote\s*=" .dvc/config; then
-        HAS_REMOTE=true
-    elif [ -f ".dvc/config.local" ] && grep -E -q "^\s*remote\s*=" .dvc/config.local; then
-        HAS_REMOTE=true
-    fi
-
-    if [ "$HAS_REMOTE" = "true" ]; then
-        if docker_exec "dvc push"; then
-            python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
-            log_success "Synchronization complete."
-        else
-            log_error "dvc push failed. Project remains pending sync."
-            python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
-        fi
-    else
-        log_info "No default DVC remote configured. Skipping dvc push."
-        python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-done "$TARGET_REPO"
-        log_success "Synchronization complete (nothing to push)."
-    fi
-else
-    FREE_GB=$(echo "$SPACE_CHECK" | jq -r '.free_gb // "unknown"')
-    log_error "Insufficient space on headnode ($FREE_GB GB free). Push cancelled."
-    log_info "Project marked 'pending sync' for later transfer."
-    python3 "$BASE_DIR/src/runner/gc_orchestrator.py" mark-sync-pending "$TARGET_REPO"
-fi
+# Step 4 (Data Router) removed in favor of Post-Flight Lazy Transfer GC.
 
 echo "=========================================================================="
 log_success "CLUSTER-CI: GitOps execution completed successfully."

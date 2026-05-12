@@ -355,9 +355,36 @@ def artifacts(repo_owner, repo_name, rev, file_path):
             return Response(generate(), mimetype='application/octet-stream',
                             headers={"Content-Disposition": f"attachment; filename={filename}"})
 
-        # If DVC get failed, we DO NOT fallback to worker for historical revisions.
-        # We consider any request with a 'rev' as a historical request needing integrity.
-        return jsonify({"error": f"Failed to extract historical artifact: {result.stderr}"}), 404
+        # If local DVC get failed, attempt to proxy to a worker that might have it cached
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            # Try to find a worker that has executed a job for this EXACT revision
+            cursor.execute('''
+                SELECT w.service_url
+                FROM jobs j
+                JOIN workers w ON j.worker_id = w.worker_id
+                WHERE j.repo = ? AND j.commit_hash = ? AND w.status = 'online'
+                ORDER BY j.finished_at DESC LIMIT 1
+            ''', (repo_slug, rev))
+            worker = cursor.fetchone()
+
+            # Fallback: if 'rev' is not a commit hash but a branch name, find the last worker for that repo
+            if not worker:
+                cursor.execute('''
+                    SELECT w.service_url
+                    FROM jobs j
+                    JOIN workers w ON j.worker_id = w.worker_id
+                    WHERE j.repo = ? AND w.status = 'online'
+                    ORDER BY j.finished_at DESC LIMIT 1
+                ''', (repo_slug,))
+                worker = cursor.fetchone()
+
+        if worker and worker['service_url']:
+            worker_url = f"{worker['service_url']}/api/worker/dvc/get?repo={repo_slug}&rev={rev}&path={file_path}"
+            app.logger.info(f"Proxying artifact request for {repo_slug}@{rev} to worker {worker['service_url']}")
+            return proxy_request(worker_url)
+
+        return jsonify({"error": f"Failed to extract artifact locally and no worker found: {result.stderr}"}), 404
 
     except Exception as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -509,7 +536,7 @@ def api_run_files(job_id):
     branch = job['branch'] or 'main'
 
     if not commit_hash:
-        commit_hash = branch
+        return jsonify({"error": "Commit hash not found"}), 400
 
     pat = os.environ.get("GITHUB_PAT")
     repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git" if pat else f"https://github.com/{repo}.git"
@@ -527,7 +554,11 @@ def api_run_files(job_id):
     try:
         env = os.environ.copy()
 
-        # Strategy: try local repo first, git fetch if stale, then fallback to GitHub URL
+        # Strategy:
+        # 1. Try local headnode repo
+        # 2. Try proxying to a worker that ran this job
+        # 3. Fallback to GitHub URL
+
         if local_repo_path:
             cmd = build_dvc_cmd(local_repo_path, sub_path, commit_hash)
             result = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -542,8 +573,24 @@ def api_run_files(job_id):
             if result.returncode == 0:
                 return Response(result.stdout, mimetype='application/json')
 
-            # Local failed even after fetch — fallback to GitHub URL
-            app.logger.warning(f"Local DVC list failed for {repo}, falling back to GitHub URL: {result.stderr[:200]}")
+        # Strategy 2: Proxy to worker
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT w.service_url
+                FROM jobs j
+                JOIN workers w ON j.worker_id = w.worker_id
+                WHERE j.job_id = ? AND w.status = 'online'
+            ''', (job_id,))
+            worker = cursor.fetchone()
+
+        if worker and worker['service_url']:
+            worker_url = f"{worker['service_url']}/api/worker/dvc/list?repo={repo}&rev={commit_hash}"
+            app.logger.info(f"Proxying DVC list for job {job_id} to worker {worker['service_url']}")
+            try:
+                return proxy_request(worker_url)
+            except Exception as e:
+                app.logger.warning(f"Worker proxy failed for DVC list: {e}")
 
         # Fallback: use GitHub URL directly
         cmd = build_dvc_cmd(repo_url, sub_path, commit_hash)

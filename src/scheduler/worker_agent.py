@@ -11,7 +11,7 @@ import threading
 import json
 import tempfile
 import shutil
-from flask import Flask, jsonify, send_from_directory, request
+from flask import Flask, jsonify, send_from_directory, request, Response
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -373,6 +373,82 @@ def check_cache():
             found_hashes.append(h)
 
     return jsonify(found_hashes)
+
+def get_executable(name):
+    """Finds an executable in system PATH, local bin, or current venv."""
+    cmd = shutil.which(name)
+    if cmd: return cmd
+    local_path = os.path.expanduser(f"~/.local/bin/{name}")
+    if os.path.exists(local_path): return local_path
+    venv_path = os.path.join(os.path.dirname(sys.executable), name)
+    if os.path.exists(venv_path): return venv_path
+    return name
+
+DVC_CMD = get_executable("dvc")
+
+@app.route('/api/worker/dvc/list', methods=['GET'])
+def worker_dvc_list():
+    repo = request.args.get('repo')
+    rev = request.args.get('rev')
+    if not repo: return jsonify({"error": "Missing repo"}), 400
+
+    repo_path = os.path.join(REPOS_DIR, repo)
+    if not os.path.exists(repo_path):
+        return jsonify({"error": "Repository not found on this worker"}), 404
+
+    cmd = [DVC_CMD, "list", ".", "--dvc-only", "--json"]
+    if rev: cmd += ["--rev", rev]
+
+    try:
+        res = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True)
+        if res.returncode == 0:
+            return Response(res.stdout, mimetype='application/json')
+        return jsonify({"error": res.stderr}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/worker/dvc/get', methods=['GET'])
+def worker_dvc_get():
+    repo = request.args.get('repo')
+    rev = request.args.get('rev')
+    file_path = request.args.get('path')
+    if not repo or not file_path: return jsonify({"error": "Missing repo or path"}), 400
+
+    repo_path = os.path.join(REPOS_DIR, repo)
+    if not os.path.exists(repo_path):
+        return jsonify({"error": "Repository not found on this worker"}), 404
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        cmd = [DVC_CMD, "get", ".", file_path, "--out", tmp_dir]
+        if rev: cmd += ["--rev", rev]
+
+        res = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True)
+        if res.returncode != 0:
+            return jsonify({"error": res.stderr}), 500
+
+        filename = os.path.basename(file_path)
+        full_path = os.path.join(tmp_dir, filename)
+
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
+            shutil.rmtree(tmp_dir)
+            return jsonify({"error": "Path is a directory or not found"}), 400
+
+        def generate():
+            try:
+                with open(full_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(4096)
+                        if not chunk: break
+                        yield chunk
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return Response(generate(), mimetype='application/octet-stream',
+                        headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/webhook/drain_request', methods=['POST'])
 def drain_request():
