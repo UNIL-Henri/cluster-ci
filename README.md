@@ -139,3 +139,5 @@ cluster-ci/
 - [x] Fix false-positive Exit Code -98 (Heartbeat/Worker crash detection race condition)
 - [x] Résolution de l'échec du DVC P2P Pull (fichiers résiduels) dans le cache persistant
 - [x] Résolution de l'erreur HTTP 404 du Live DVC Viewer derrière le reverse proxy (chemins relatifs & `<base href>`)
+- [x] DVC Historical Extraction: Injection dynamique des identifiants (GITHUB_PAT) dans les miroirs Git locaux pour `dvc get`
+- [x] Limitation de la prévisualisation des fichiers texte à 100 lignes dans le Dashboard pour optimisation UI
