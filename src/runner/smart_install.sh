@@ -29,7 +29,7 @@ echo "📦 [Cluster-CI] Dependencies changed (hash: ${CACHED_HASH:0:8}… → ${
 command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1
 
 # Install project with system packages, allowing pre-releases for NGC PyTorch
-uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local .
+uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local -e .
 
 # Post-install: purge any PyPI-downloaded NVIDIA/PyTorch packages that would
 # shadow the highly-optimized NGC system libraries in /usr/local/lib/python3.*/
