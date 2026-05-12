@@ -75,7 +75,7 @@ class TestPortalAndProxy(unittest.TestCase):
             sess['token'] = {'access_token': 'fake_token'}
 
         # Create a dummy repo directory
-        os.makedirs('repositories/testowner/testrepo', exist_ok=True)
+        os.makedirs('repositories/testowner/testrepo/.git', exist_ok=True)
 
         with patch('subprocess.Popen') as mock_popen:
             mock_proc = MagicMock()
