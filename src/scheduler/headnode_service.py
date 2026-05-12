@@ -731,12 +731,18 @@ def proxy_request(target_url, base_href=None):
         headers = [(name, value) for (name, value) in resp.raw.headers.items()
                    if name.lower() not in excluded_headers]
 
-        # Inject <base> tag into HTML responses for correct relative URL resolution
+        # Rewrite absolute paths to relative paths in HTML responses
         content_type = resp.headers.get('content-type', '')
-        if base_href and 'text/html' in content_type:
+        if 'text/html' in content_type:
             body = resp.content.decode('utf-8', errors='replace')
-            # Insert <base> right after <head> so all relative URLs resolve correctly
-            body = body.replace('<head>', f'<head><base href="{base_href}">', 1)
+            # The <base href> tag is useless for absolute paths (starting with /).
+            # Instead, we directly rewrite the absolute paths in the HTML to relative paths.
+            body = body.replace('"/api/', '"api/')
+            body = body.replace("'/api/", "'api/")
+            body = body.replace('"/static/', '"static/')
+            body = body.replace("'/static/", "'static/")
+            if base_href:
+                body = body.replace('<head>', f'<head><base href="{base_href}">', 1)
             response = Response(body, status=resp.status_code, headers=headers)
             response.headers['Content-Type'] = content_type
             return response
