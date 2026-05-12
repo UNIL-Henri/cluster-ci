@@ -1,87 +1,82 @@
 import time
 import os
-import threading
+import json
 import subprocess
 from unittest.mock import MagicMock, patch
-from src.scheduler.worker_agent import LivenessWatchdog
+from src.runner.gc_orchestrator import run_zombie_gc, get_zombie_registry_path, get_repositories_dir
 
-def test_watchdog_zombie_detection():
-    job_id = "test-job-id"
-    log_path = "test_job.log"
+def test_run_zombie_gc_detection():
+    # Setup
+    repo_dir = get_repositories_dir()
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    registry_path = get_zombie_registry_path()
+    if registry_path.exists(): registry_path.unlink()
 
-    # Create a dummy log file
-    with open(log_path, "w") as f:
-        f.write("start\n")
+    container_name = "cluster-job-test-job"
 
-    # Initialize watchdog with a very short window for testing (e.g. 1 second)
-    # We'll mock the check interval and window to make it fast.
-    watchdog = LivenessWatchdog(job_id, log_path, window_minutes=0.01) # ~0.6 seconds
-    watchdog.window_seconds = 1 # Force 1 second window
+    # 1. Mock docker ps to return one container
+    with patch('subprocess.run') as mock_run:
+        def side_effect(cmd, **kwargs):
+            if cmd[0:2] == ["docker", "ps"]:
+                return MagicMock(stdout=container_name, returncode=0)
+            if cmd[0:2] == ["docker", "stats"]:
+                # First run: no activity
+                return MagicMock(stdout='{"cpu": "0.00%", "net": "0B / 0B"}', returncode=0)
+            if cmd[0] == "nvidia-smi":
+                return MagicMock(stdout="0", returncode=0)
+            return MagicMock(stdout="", returncode=0)
 
-    # Mock metrics to return 0 (no activity)
-    with patch.object(LivenessWatchdog, 'get_container_metrics', return_value={"cpu": "0.00%", "net": "0B / 0B"}), \
-         patch.object(LivenessWatchdog, 'get_gpu_metrics', return_value=0), \
-         patch('subprocess.run') as mock_run:
+        mock_run.side_effect = side_effect
 
-        # Start watchdog in a way that we can control its loop
-        # We'll monkeypatch the sleep to speed up the test
-        with patch('time.sleep', return_value=None):
-            # We need to ensure it runs at least once and then hits the timeout
-            # The run() loop uses a while not self.stop_event.is_set()
+        # Run first time to register
+        run_zombie_gc()
+        assert registry_path.exists()
 
-            def side_effect(*args, **kwargs):
-                # After a few iterations, if zombie_detected is True, we stop the event
-                if watchdog.zombie_detected:
-                    watchdog.stop()
+        with open(registry_path, "r") as f:
+            reg = json.load(f)
+            assert container_name in reg
+            first_activity = reg[container_name]["last_activity"]
 
-            # We can't easily side_effect on time.sleep to stop the loop because it's inside run()
-            # Let's run it in a thread and wait
-            watchdog.start()
+        # 2. Wait and run again with no activity
+        with patch('time.time', return_value=time.time() + 700): # 11 minutes later
+             run_zombie_gc()
 
-            # Wait for it to detect zombie
-            start_time = time.time()
-            while not watchdog.zombie_detected and time.time() - start_time < 5:
-                time.sleep(0.1)
+             # Check that docker rm was called
+             mock_run.assert_any_call(["docker", "rm", "-f", container_name], capture_output=True)
+             mock_run.assert_any_call(["docker", "rm", "-f", "cluster-viewer-test-job"], capture_output=True)
 
-            watchdog.stop()
-            watchdog.join(timeout=1)
+def test_run_zombie_gc_activity_resets_timer():
+    # Setup
+    repo_dir = get_repositories_dir()
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    registry_path = get_zombie_registry_path()
+    if registry_path.exists(): registry_path.unlink()
 
-            assert watchdog.zombie_detected is True
-            mock_run.assert_any_call(["docker", "kill", f"cluster-job-{job_id}"], capture_output=True)
+    container_name = "cluster-job-test-job-active"
 
-    if os.path.exists(log_path):
-        os.remove(log_path)
+    with patch('subprocess.run') as mock_run:
+        # First call: Idle
+        mock_run.side_effect = [
+            MagicMock(stdout=container_name, returncode=0), # ps
+            MagicMock(stdout='{"cpu": "0.00%", "net": "0B / 0B"}', returncode=0), # stats
+            MagicMock(stdout="0", returncode=0), # gpu
+        ]
+        run_zombie_gc()
 
-def test_watchdog_activity_prevents_kill():
-    job_id = "test-job-id-active"
-    log_path = "test_job_active.log"
+        with open(registry_path, "r") as f:
+            reg = json.load(f)
+            t1 = reg[container_name]["last_activity"]
 
-    with open(log_path, "w") as f:
-        f.write("start\n")
+        # Second call: 5 mins later with activity
+        with patch('time.time', return_value=time.time() + 300):
+            mock_run.side_effect = [
+                MagicMock(stdout=container_name, returncode=0), # ps
+                MagicMock(stdout='{"cpu": "10.00%", "net": "1KB / 0B"}', returncode=0), # stats (activity!)
+                MagicMock(stdout="0", returncode=0), # gpu
+            ]
+            run_zombie_gc()
 
-    watchdog = LivenessWatchdog(job_id, log_path, window_minutes=0.01)
-    watchdog.window_seconds = 2
-
-    # Mock metrics to return activity.
-    # For net, it needs to CHANGE to be detected as activity if tracked by delta.
-    metrics_seq = [
-        {"cpu": "10.00%", "net": "1KB / 1KB"},
-        {"cpu": "10.00%", "net": "2KB / 1KB"}
-    ]
-
-    with patch.object(LivenessWatchdog, 'get_container_metrics', side_effect=metrics_seq), \
-         patch.object(LivenessWatchdog, 'get_gpu_metrics', return_value=50), \
-         patch('subprocess.run') as mock_run:
-
-        watchdog.start()
-        time.sleep(3) # Wait longer than window_seconds
-        watchdog.stop()
-        watchdog.join(timeout=1)
-
-        assert watchdog.zombie_detected is False
-        # Ensure docker kill was NOT called
-        for call in mock_run.call_args_list:
-            assert "kill" not in call[0][0]
-
-    if os.path.exists(log_path):
-        os.remove(log_path)
+            with open(registry_path, "r") as f:
+                reg = json.load(f)
+                t2 = reg[container_name]["last_activity"]
+                assert t2 > t1

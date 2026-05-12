@@ -47,98 +47,6 @@ current_job_id = None
 current_process = None
 job_lock = threading.Lock()
 
-class LivenessWatchdog(threading.Thread):
-    def __init__(self, job_id, log_path, window_minutes=15):
-        super().__init__(daemon=True)
-        self.job_id = job_id
-        self.log_path = log_path
-        self.window_seconds = window_minutes * 60
-        self.safe_job_id = "".join(c for c in job_id if c.isalnum() or c in "-_")
-        self.container_name = f"cluster-job-{self.safe_job_id}"
-        self.stop_event = threading.Event()
-        self.zombie_detected = False
-        self.last_activity_time = time.time()
-        self.last_net_io = None
-
-    def get_container_metrics(self):
-        try:
-            # Get CPU and Network IO
-            cmd = ["docker", "stats", "--no-stream", "--format", '{"cpu": "{{.CPUPerc}}", "net": "{{.NetIO}}"}', self.container_name]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if res.returncode == 0:
-                return json.loads(res.stdout)
-        except Exception:
-            pass
-        return None
-
-    def get_gpu_metrics(self):
-        try:
-            # Get GPU utilization
-            cmd = ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if res.returncode == 0:
-                # Sum of all GPUs utilization
-                utils = [int(x) for x in res.stdout.strip().split("\n") if x.strip().isdigit()]
-                return sum(utils)
-        except Exception:
-            pass
-        return 0
-
-    def run(self):
-        logger.info(f"🚀 Starting Hybrid Liveness Watchdog for job {self.job_id}")
-        check_interval = 30 # Check every 30 seconds
-
-        while not self.stop_event.is_set():
-            has_activity = False
-
-            # 1. Check Logs activity
-            try:
-                if os.path.exists(self.log_path):
-                    mtime = os.path.getmtime(self.log_path)
-                    if mtime > self.last_activity_time:
-                        has_activity = True
-            except Exception:
-                pass
-
-            # 2. Check Docker metrics (CPU, Net)
-            metrics = self.get_container_metrics()
-            if metrics:
-                try:
-                    cpu_str = metrics.get("cpu", "0%").replace("%", "").strip()
-                    cpu_val = float(cpu_str)
-                    if cpu_val > 0.1: # Threshold 0.1%
-                        has_activity = True
-                except (ValueError, TypeError):
-                    pass
-
-                net_io = metrics.get("net")
-                if net_io and net_io != self.last_net_io:
-                    # If net_io changed since last check, it's activity
-                    if self.last_net_io is not None:
-                        has_activity = True
-                    self.last_net_io = net_io
-
-            # 3. Check GPU metrics
-            gpu_util = self.get_gpu_metrics()
-            if gpu_util > 0:
-                has_activity = True
-
-            now = time.time()
-            if has_activity:
-                self.last_activity_time = now
-
-            idle_duration = now - self.last_activity_time
-            if idle_duration >= self.window_seconds:
-                logger.error(f"⚠️ [WATCHDOG] Zombie job detected: {self.job_id} (Idle for {idle_duration/60:.1f}min). Killing container...")
-                subprocess.run(["docker", "kill", self.container_name], capture_output=True)
-                self.zombie_detected = True
-                break
-
-            time.sleep(check_interval)
-
-    def stop(self):
-        self.stop_event.set()
-
 def get_ram_info():
     mem = psutil.virtual_memory()
     total_gb = mem.total / (1024**3)
@@ -255,14 +163,11 @@ def execute_job(job):
     log_path = os.path.join(LOGS_DIR, f"{job_id}.log")
     log_file = open(log_path, 'w')
 
-    watchdog = LivenessWatchdog(job_id, log_path)
     try:
         process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT)
         with job_lock:
             current_process = process
         port_reported = False
-
-        watchdog.start()
 
         # Status monitoring loop (no more manual watchdog as it is handled by Docker)
         while process.poll() is None:
@@ -282,7 +187,6 @@ def execute_job(job):
             time.sleep(2)
 
         exit_code = process.wait()
-        watchdog.stop()
 
         # Try to extract the commit hash from the job's directory
         commit_hash = None
@@ -295,18 +199,13 @@ def execute_job(job):
                 logger.error(f"Failed to read commit hash file: {e}")
 
         if exit_code == 137:
-            if watchdog.zombie_detected:
-                error_msg = f"❌ [CLUSTER WATCHDOG] Execution timed out! Your job was killed because it showed no CPU, GPU, Network, or Log activity for 15 minutes. It might be a deadlock or an infinite loop.\n"
-                sys.stderr.write(error_msg)
-                sys.stderr.flush()
-                # Use exit code 124 for timeout
-                update_job_status(job_id, 'failed', 124, commit_hash=commit_hash)
-            else:
-                # Docker returns 137 when OOM-killed
-                error_msg = f"❌ [CLUSTER ARTIFICIAL OOM] Execution interrupted! You reserved {ram_limit_gb} GB of RAM in '.cluster-ci', but your pipeline was just killed by Docker. Please increase your reservation.\n"
-                sys.stderr.write(error_msg)
-                sys.stderr.flush()
-                update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)
+            # Docker returns 137 when OOM-killed or externally killed (e.g. by JIT Watchdog)
+            # We'll rely on the exit code 124 being set by the headnode or reported later if we detect it was a timeout.
+            # For now, we report 137. If it was a zombie kill, the script exit code should be 137 anyway.
+            error_msg = f"❌ [CLUSTER INTERRUPTED] Execution interrupted (Exit code 137). This usually means an OOM (Out of Memory) or a Zombie Job Cleanup.\n"
+            sys.stderr.write(error_msg)
+            sys.stderr.flush()
+            update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)
         elif exit_code == 0:
             update_job_status(job_id, 'completed', exit_code, commit_hash=commit_hash)
         elif exit_code < 0:

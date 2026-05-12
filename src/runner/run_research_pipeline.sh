@@ -93,6 +93,8 @@ if [ -n "$JOB_ID" ]; then
     log_info "Preventive purge of containers for job $SAFE_JOB_ID..."
     docker rm -f "cluster-job-$SAFE_JOB_ID" "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
 fi
+log_info "Scanning for zombie containers (JIT Zombie GC)..."
+python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-zombie-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 

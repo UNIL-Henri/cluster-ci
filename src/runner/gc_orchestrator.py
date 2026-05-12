@@ -15,7 +15,9 @@ DEFAULT_FREE_SPACE_THRESHOLD_GB = 100
 FREE_SPACE_THRESHOLD_GB = int(os.environ.get("GC_FREE_SPACE_THRESHOLD_GB", DEFAULT_FREE_SPACE_THRESHOLD_GB))
 FREE_SPACE_THRESHOLD_BYTES = FREE_SPACE_THRESHOLD_GB * 1024 * 1024 * 1024
 REGISTRY_FILENAME = "registry.json"
+ZOMBIE_REGISTRY_FILENAME = "zombie_registry.json"
 LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024
+ZOMBIE_TIMEOUT_MINUTES = 10
 
 def get_executable(name):
     """Finds an executable in system PATH, local bin, or current venv."""
@@ -38,6 +40,9 @@ def get_repositories_dir():
 
 def get_registry_path():
     return get_repositories_dir() / REGISTRY_FILENAME
+
+def get_zombie_registry_path():
+    return get_repositories_dir() / ZOMBIE_REGISTRY_FILENAME
 
 def load_registry(f):
     try:
@@ -262,6 +267,107 @@ def run_gc():
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
+def run_zombie_gc():
+    """JIT Zombie Detection: Purge containers inactive for > 10 minutes."""
+    repo_dir = get_repositories_dir()
+    if not repo_dir.exists(): return
+
+    zombie_registry_path = get_zombie_registry_path()
+    zombie_registry_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1. Get all running containers related to cluster-ci
+    try:
+        res = subprocess.run(
+            ["docker", "ps", "--filter", "name=cluster-job-", "--format", "{{.Names}}"],
+            capture_output=True, text=True
+        )
+        containers = [c.strip() for c in res.stdout.strip().split("\n") if c.strip()]
+    except Exception as e:
+        print(f"Error listing containers: {e}")
+        return
+
+    if not containers:
+        # Cleanup registry if no containers are running
+        if zombie_registry_path.exists():
+            try:
+                os.remove(zombie_registry_path)
+            except: pass
+        return
+
+    with open(zombie_registry_path, "a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            registry = load_registry(f)
+            now = time.time()
+            new_registry = {}
+
+            for container_name in containers:
+                has_activity = False
+
+                # Extract Job ID and find log file
+                # cluster-job-JOB_ID
+                job_id = container_name.replace("cluster-job-", "")
+                log_path = get_base_dir() / "job_logs" / f"{job_id}.log"
+
+                # Dimension 1: Logs
+                current_log_mtime = 0
+                if log_path.exists():
+                    current_log_mtime = log_path.stat().st_mtime
+
+                # Dimension 2: CPU & Net
+                current_cpu = 0.0
+                current_net = ""
+                try:
+                    cmd = ["docker", "stats", "--no-stream", "--format", '{"cpu": "{{.CPUPerc}}", "net": "{{.NetIO}}"}', container_name]
+                    stats_res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                    if stats_res.returncode == 0:
+                        stats = json.loads(stats_res.stdout)
+                        current_cpu = float(stats.get("cpu", "0%").replace("%", "").strip())
+                        current_net = stats.get("net", "")
+                except: pass
+
+                # Dimension 3: GPU
+                current_gpu = 0
+                try:
+                    gpu_res = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5)
+                    if gpu_res.returncode == 0:
+                        utils = [int(x) for x in gpu_res.stdout.strip().split("\n") if x.strip().isdigit()]
+                        current_gpu = sum(utils)
+                except: pass
+
+                # Check against previous state
+                prev_state = registry.get(container_name, {})
+                last_activity = prev_state.get("last_activity", now)
+
+                if current_cpu > 0.1 or current_gpu > 0:
+                    has_activity = True
+
+                if current_log_mtime > prev_state.get("log_mtime", 0):
+                    has_activity = True
+
+                if current_net and current_net != prev_state.get("net_io"):
+                    has_activity = True
+
+                if has_activity:
+                    last_activity = now
+
+                idle_duration = now - last_activity
+                if idle_duration > (ZOMBIE_TIMEOUT_MINUTES * 60):
+                    print(f"[Zombie GC] Killing zombie container {container_name} (Idle for {idle_duration/60:.1f}min)")
+                    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+                    # Also kill viewer if present
+                    subprocess.run(["docker", "rm", "-f", container_name.replace("cluster-job-", "cluster-viewer-")], capture_output=True)
+                else:
+                    new_registry[container_name] = {
+                        "last_activity": last_activity,
+                        "log_mtime": current_log_mtime,
+                        "net_io": current_net
+                    }
+
+            save_registry(f, new_registry)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
 def run_transfer_gc():
     """Maintenance GC: Lazy transfer to headnode if space < 100GB."""
     repo_dir = get_repositories_dir()
@@ -356,6 +462,8 @@ if __name__ == "__main__":
             run_gc()
         elif command == "run-transfer-gc":
             run_transfer_gc()
+        elif command == "run-zombie-gc":
+            run_zombie_gc()
         elif command == "get-free-space":
             print(get_free_space())
         elif command == "mark-sync-pending":
