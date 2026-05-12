@@ -204,6 +204,7 @@ function docker_exec() {
         -v /etc/group:/etc/group:ro \
         -w /workspace \
         --ipc=host \
+        --pid=host \
         --user "$(id -u):$(id -g)" \
         -e HOME=/home/user \
         --memory="${RAM_LIMIT}g" \
@@ -354,6 +355,8 @@ docker run --rm \
     -v "$(pwd):/workspace" -w /workspace \
     -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
+    --ipc=host \
+    --pid=host \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
     $ENV_FILE_FLAG \
     $DOCKER_IMAGE \
