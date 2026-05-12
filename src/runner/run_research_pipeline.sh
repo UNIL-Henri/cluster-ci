@@ -33,6 +33,13 @@ fi
 TARGET_REPO=${CLI_TARGET_REPO:-$TARGET_REPO}
 TARGET_BRANCH=${CLI_TARGET_BRANCH:-$TARGET_BRANCH}
 GH_TOKEN=${CLI_GH_TOKEN:-$GH_TOKEN}
+JOB_ID=${JOB_ID:-"manual-$(date +%s)"}
+
+# Robust Container Naming & Labeling
+SAFE_JOB_ID=$(echo "$JOB_ID" | tr '/' '-')
+MAIN_CONTAINER_NAME="cluster-job-${SAFE_JOB_ID}"
+VIEWER_CONTAINER_NAME="cluster-viewer-${SAFE_JOB_ID}"
+COMMON_LABELS="--label cluster-ci-job=${JOB_ID} --label cluster-ci-repo=${TARGET_REPO}"
 
 # Delegation mode: If not explicitly in executor mode,
 # delegate the task to the scheduler via submit_job.py
@@ -98,7 +105,12 @@ python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-zombie-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 
-function update_status_idle() {
+function cleanup_job_resources() {
+    log_info "Cleaning up job resources for ${JOB_ID}..."
+    # Graceful stop then force remove
+    docker stop "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
+    docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
+
     log_info "Updating metadata (idle status)..."
     if [ -n "$SAFE_JOB_ID" ]; then
         docker stop "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
@@ -109,14 +121,19 @@ function update_status_idle() {
     log_info "Running post-flight Maintenance GC (Lazy Transfer)..."
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-transfer-gc
 }
-trap update_status_idle EXIT
+# Trap EXIT, SIGINT, and SIGTERM to ensure cleanup
+trap cleanup_job_resources EXIT SIGINT SIGTERM
 
 # 2. Preventive Purge & Git State Management
-log_info "[Step 2/3] Preventive purge of residual dvc-viewer processes..."
-# Look for dvc-viewer processes whose CWD matches the project working directory
+log_info "[Step 2/3] Preventive purge of residual containers and processes..."
+# 2.1 Cleanup containers for this specific job ID
+# This ensures that if a previous attempt of the SAME job failed/crashed, we clean it up.
+docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
+
+# 2.2 Cleanup legacy dvc-viewer processes (fallback for non-dockerized viewers)
 for pid in $(pgrep -f "dvc-viewer" || true); do
     if pwdx "$pid" 2>/dev/null | grep -q ": $BASE_DIR/$REPO_WORK_DIR$"; then
-        log_info "Cleaning up ghost dvc-viewer process (PID: $pid)..."
+        log_info "Cleaning up ghost legacy dvc-viewer process (PID: $pid)..."
         kill -9 "$pid" 2>/dev/null || true
     fi
 done
@@ -193,41 +210,52 @@ HOME_CACHE_VOLUME="cluster-ci-home-$(echo "$TARGET_REPO" | tr '/' '-')"
 if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$HOME_CACHE_VOLUME" >/dev/null
 fi
-# Ensure the volume is owned by the current user
-docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "chown -R $(id -u):$(id -g) /home/user"
+
+# Ensure a clean state
+docker rm -f "${MAIN_CONTAINER_NAME}" || true
+
+# Launch the persistent main container
+docker run -d \
+    --name "${MAIN_CONTAINER_NAME}" \
+    $COMMON_LABELS \
+    --entrypoint "tail" \
+    --gpus all \
+    -v "$(pwd):/workspace" \
+    -v "$HOME_CACHE_VOLUME:/home/user" \
+    -v "$BASE_DIR:/cluster-ci:ro" \
+    -v /etc/passwd:/etc/passwd:ro \
+    -v /etc/group:/etc/group:ro \
+    -w /workspace \
+    --ipc=host \
+    --user "$(id -u):$(id -g)" \
+    -e HOME=/home/user \
+    --memory="${RAM_LIMIT}g" \
+    --shm-size="${SHM_LIMIT}" \
+    $ENV_FILE_FLAG \
+    -e HEADNODE_URL="$HEADNODE_URL" \
+    -e CLUSTER_CI_MODE=executor \
+    -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
+    "$DOCKER_IMAGE" -f /dev/null
+
+# Ensure the volume is owned by the current user (must be run as root)
+docker exec --user root "${MAIN_CONTAINER_NAME}" bash -c "chown -R $(id -u):$(id -g) /home/user"
 
 # Detect Docker image change: if the cached image marker differs from the
 # current image, purge stale tool binaries to force a clean reinstall.
 MARKER_CMD="cat /home/user/.cluster-ci-image-marker 2>/dev/null || echo 'none'"
-CACHED_IMAGE=$(docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
+CACHED_IMAGE=$(docker exec "${MAIN_CONTAINER_NAME}" bash -c "$MARKER_CMD")
 if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
     log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
-    docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
+    docker exec --user "$(id -u):$(id -g)" "${MAIN_CONTAINER_NAME}" \
         bash -c "rm -rf /home/user/.local /home/user/.cache/uv /home/user/.cluster-ci-deps-hash 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
 fi
 
 function docker_exec() {
-    docker run --rm \
-        $( [ -n "$SAFE_JOB_ID" ] && echo "--name cluster-job-$SAFE_JOB_ID" ) \
-        --entrypoint "" \
-        --gpus all \
-        -v "$(pwd):/workspace" \
-        -v "$HOME_CACHE_VOLUME:/home/user" \
-        -v "$BASE_DIR:/cluster-ci:ro" \
-        -v /etc/passwd:/etc/passwd:ro \
-        -v /etc/group:/etc/group:ro \
-        -w /workspace \
-        --ipc=host \
-        --pid=host \
-        --user "$(id -u):$(id -g)" \
-        -e HOME=/home/user \
-        --memory="${RAM_LIMIT}g" \
-        --shm-size="${SHM_LIMIT}" \
-        $ENV_FILE_FLAG \
+docker exec \
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
         -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
-        "$DOCKER_IMAGE" bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && $1"
+        "${MAIN_CONTAINER_NAME}" bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && $1"
 }
 
 log_info "Image used: $DOCKER_IMAGE"
@@ -252,7 +280,7 @@ if required and not avail:
 docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Preparing smart environment shims (uv/poetry)..."
-docker run --rm --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c 'SHIM_DIR=/home/user/shims && mkdir -p $SHIM_DIR &&
+docker exec --user "$(id -u):$(id -g)" "${MAIN_CONTAINER_NAME}" bash -c 'SHIM_DIR=/home/user/shims && mkdir -p $SHIM_DIR &&
 
 # UV Shim
 cat > $SHIM_DIR/uv << '"'"'SHIMEOF'"'"'
@@ -324,21 +352,8 @@ log_info "Installing base dependencies in persistent volume..."
 # Bootstrap commands MUST bypass shims — use a raw docker run without /home/user/shims in PATH.
 # Shims are only for user pipeline execution, not for installing the tools themselves.
 function docker_exec_bootstrap() {
-    docker run --rm \
-        --entrypoint "" \
-        --gpus all \
-        -v "$(pwd):/workspace" \
-        -v "$HOME_CACHE_VOLUME:/home/user" \
-        -v /etc/passwd:/etc/passwd:ro \
-        -v /etc/group:/etc/group:ro \
-        -w /workspace \
-        --ipc=host \
-        --user "$(id -u):$(id -g)" \
-        -e HOME=/home/user \
-        --memory="${RAM_LIMIT}g" \
-        --shm-size="${SHM_LIMIT}" \
-        $ENV_FILE_FLAG \
-        "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
+    docker exec \
+        "${MAIN_CONTAINER_NAME}" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
 docker_exec_bootstrap "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
 docker_exec_bootstrap "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
@@ -364,20 +379,22 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
+# IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
+docker rm -f "$VIEWER_CONTAINER_NAME" || true
 docker run --rm \
-    $( [ -n "$SAFE_JOB_ID" ] && echo "--name cluster-viewer-$SAFE_JOB_ID" ) \
+--name "$VIEWER_CONTAINER_NAME" \
+    $COMMON_LABELS \
     --entrypoint "" \
     -v "$(pwd):/workspace" -w /workspace \
     -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
     --ipc=host \
-    --pid=host \
+    --pid="container:${MAIN_CONTAINER_NAME}" \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
     -e CLUSTER_CI_MODE=executor \
     $ENV_FILE_FLAG \
     $DOCKER_IMAGE \
     bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
-DVC_VIEWER_PID=$!
 
 if [ -n "$DVC_REMOTE_P2P_URL" ]; then
     log_info "Data Plane: Configuring dynamic P2P remote to $DVC_REMOTE_P2P_URL..."

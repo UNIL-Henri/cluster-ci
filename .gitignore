@@ -15,7 +15,7 @@ patch.txt
 patch_script.py
 __pycache__/
 *.pyc
-*.db
+*.db*
 worker_id.txt
 artifacts/
 build/

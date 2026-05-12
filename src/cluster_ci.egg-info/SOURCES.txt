@@ -8,6 +8,7 @@ src/cluster_ci.egg-info/top_level.txt
 src/runner/gc_orchestrator.py
 src/runner/test_gc.py
 src/runner/test_tiered_gc.py
+src/runner/validate_pyproject.py
 src/scheduler/headnode_service.py
 src/scheduler/persistence.py
 src/scheduler/runner_manager.py
@@ -20,4 +21,5 @@ src/scheduler/tests/test_flow.py
 src/scheduler/tests/test_history_api.py
 src/scheduler/tests/test_locality.py
 src/scheduler/tests/test_portal.py
+src/scheduler/tests/test_watchdog_logic.py
 src/scheduler/tests/test_worker_api.py
