@@ -101,8 +101,8 @@ python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 function cleanup_job_resources() {
     log_info "Cleaning up job resources for ${JOB_ID}..."
     # Graceful stop then force remove
-    docker stop "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" >/dev/null 2>&1 || true
-    docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker stop "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
+    docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
 
     log_info "Updating metadata (idle status)..."
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
@@ -116,7 +116,7 @@ trap cleanup_job_resources EXIT SIGINT SIGTERM
 log_info "[Step 2/3] Preventive purge of residual containers and processes..."
 # 2.1 Cleanup containers for this specific job ID
 # This ensures that if a previous attempt of the SAME job failed/crashed, we clean it up.
-docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
 
 # 2.2 Cleanup legacy dvc-viewer processes (fallback for non-dockerized viewers)
 for pid in $(pgrep -f "dvc-viewer" || true); do
@@ -199,23 +199,23 @@ if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$HOME_CACHE_VOLUME" >/dev/null
 fi
 # Ensure the volume is owned by the current user
-docker rm -f "${MAIN_CONTAINER_NAME}" >/dev/null 2>&1 || true
+docker rm -f "${MAIN_CONTAINER_NAME}" || true
 docker run --rm --name "${MAIN_CONTAINER_NAME}" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "chown -R $(id -u):$(id -g) /home/user"
 
 # Detect Docker image change: if the cached image marker differs from the
 # current image, purge stale tool binaries to force a clean reinstall.
 MARKER_CMD="cat /home/user/.cluster-ci-image-marker 2>/dev/null || echo 'none'"
-docker rm -f "${MAIN_CONTAINER_NAME}" >/dev/null 2>&1 || true
+docker rm -f "${MAIN_CONTAINER_NAME}" || true
 CACHED_IMAGE=$(docker run --rm --name "${MAIN_CONTAINER_NAME}" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
 if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
     log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
-    docker rm -f "${MAIN_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker rm -f "${MAIN_CONTAINER_NAME}" || true
     docker run --rm --name "${MAIN_CONTAINER_NAME}" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
         bash -c "rm -rf /home/user/.local /home/user/.cache/uv /home/user/.cluster-ci-deps-hash 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
 fi
 
 function docker_exec() {
-    docker rm -f "$MAIN_CONTAINER_NAME" >/dev/null 2>&1 || true
+    docker rm -f "$MAIN_CONTAINER_NAME" || true
     docker run --rm \
         --name "$MAIN_CONTAINER_NAME" \
         $COMMON_LABELS \
@@ -261,7 +261,7 @@ if required and not avail:
 docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Preparing smart environment shims (uv/poetry)..."
-docker rm -f "$MAIN_CONTAINER_NAME" >/dev/null 2>&1 || true
+docker rm -f "$MAIN_CONTAINER_NAME" || true
 docker run --rm --name "$MAIN_CONTAINER_NAME" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c 'SHIM_DIR=/home/user/shims && mkdir -p $SHIM_DIR &&
 
 # UV Shim
@@ -334,7 +334,7 @@ log_info "Installing base dependencies in persistent volume..."
 # Bootstrap commands MUST bypass shims — use a raw docker run without /home/user/shims in PATH.
 # Shims are only for user pipeline execution, not for installing the tools themselves.
 function docker_exec_bootstrap() {
-    docker rm -f "$MAIN_CONTAINER_NAME" >/dev/null 2>&1 || true
+    docker rm -f "$MAIN_CONTAINER_NAME" || true
     docker run --rm \
         --name "$MAIN_CONTAINER_NAME" \
         $COMMON_LABELS \
@@ -377,7 +377,7 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
-docker rm -f "$VIEWER_CONTAINER_NAME" >/dev/null 2>&1 || true
+docker rm -f "$VIEWER_CONTAINER_NAME" || true
 docker run --rm \
     --name "$VIEWER_CONTAINER_NAME" \
     $COMMON_LABELS \
