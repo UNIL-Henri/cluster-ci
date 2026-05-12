@@ -358,15 +358,26 @@ def artifacts(repo_owner, repo_name, rev, file_path):
         # If local DVC get failed, attempt to proxy to a worker that might have it cached
         with get_db_conn() as conn:
             cursor = conn.cursor()
-            # Try to find an online worker that has executed a job for this repo
+            # Try to find a worker that has executed a job for this EXACT revision
             cursor.execute('''
                 SELECT w.service_url
                 FROM jobs j
                 JOIN workers w ON j.worker_id = w.worker_id
-                WHERE j.repo = ? AND w.status = 'online'
+                WHERE j.repo = ? AND j.commit_hash = ? AND w.status = 'online'
                 ORDER BY j.finished_at DESC LIMIT 1
-            ''', (repo_slug,))
+            ''', (repo_slug, rev))
             worker = cursor.fetchone()
+
+            # Fallback: if 'rev' is not a commit hash but a branch name, find the last worker for that repo
+            if not worker:
+                cursor.execute('''
+                    SELECT w.service_url
+                    FROM jobs j
+                    JOIN workers w ON j.worker_id = w.worker_id
+                    WHERE j.repo = ? AND w.status = 'online'
+                    ORDER BY j.finished_at DESC LIMIT 1
+                ''', (repo_slug,))
+                worker = cursor.fetchone()
 
         if worker and worker['service_url']:
             worker_url = f"{worker['service_url']}/api/worker/dvc/get?repo={repo_slug}&rev={rev}&path={file_path}"

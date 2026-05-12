@@ -430,9 +430,9 @@ def worker_dvc_get():
         filename = os.path.basename(file_path)
         full_path = os.path.join(tmp_dir, filename)
 
-        if not os.path.exists(full_path): # Handle if it was a directory
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
             shutil.rmtree(tmp_dir)
-            return jsonify({"error": "Path is a directory or not found"}), 404
+            return jsonify({"error": "Path is a directory or not found"}), 400
 
         def generate():
             try:

@@ -275,60 +275,70 @@ def run_transfer_gc():
 
         headnode_url = os.environ.get("HEADNODE_URL", "http://localhost:5000")
 
-        with open(registry_path, "a+") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+        # 1. Identify candidates (Locked briefly)
+        candidates = []
+        with open(registry_path, "r") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
             try:
                 registry = load_registry(f)
                 idle_projects = [(n, d) for n, d in registry.items() if d.get("status") == "idle"]
                 idle_projects.sort(key=lambda x: x[1].get("last_execution", 0))
-
-                for project_name, data in idle_projects:
-                    if get_free_space() >= FREE_SPACE_THRESHOLD_BYTES: break
-                    project_path = repo_dir / project_name
-                    if not project_path.exists(): continue
-
-                    print(f"[Cluster Maintenance] Archiving old project: {project_name}...")
-
-                    # 1. Check for DVC remote
-                    has_remote = False
-                    dvc_config = project_path / ".dvc" / "config"
-                    if dvc_config.exists():
-                        with open(dvc_config, "r") as cf:
-                            if "remote =" in cf.read(): has_remote = True
-
-                    can_evict = True
-                    if has_remote:
-                        # 2. Check headnode space
-                        try:
-                            resp = requests.get(f"{headnode_url}/check_space", timeout=5)
-                            if resp.status_code == 200 and resp.json().get("sufficient"):
-                                # 3. Attempt push
-                                print(f"  Pushing {project_name} to headnode...")
-                                push_res = subprocess.run([DVC_CMD, "push"], cwd=project_path, capture_output=True)
-                                if push_res.returncode != 0:
-                                    print(f"  ❌ dvc push failed for {project_name}. Postponing eviction.")
-                                    data["sync_status"] = "pending"
-                                    can_evict = False
-                                else:
-                                    data["sync_status"] = "done"
-                            else:
-                                print(f"  ⚠️ Headnode full or unreachable. Postponing eviction of {project_name}.")
-                                data["sync_status"] = "pending"
-                                can_evict = False
-                        except Exception as e:
-                            print(f"  ⚠️ Error contacting headnode: {e}")
-                            data["sync_status"] = "pending"
-                            can_evict = False
-
-                    if can_evict:
-                        print(f"  Evicting {project_name} from worker.")
-                        cleanup_level_5(project_path, project_name)
-                        data["status"] = "deleted"
-                        data["size_bytes"] = 0
-
-                save_registry(f, registry)
+                candidates = [n for n, d in idle_projects]
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
+
+        for project_name in candidates:
+            if get_free_space() >= FREE_SPACE_THRESHOLD_BYTES: break
+            project_path = repo_dir / project_name
+            if not project_path.exists(): continue
+
+            print(f"[Cluster Maintenance] Archiving old project: {project_name}...")
+
+            # Check for DVC remote
+            has_remote = False
+            dvc_config = project_path / ".dvc" / "config"
+            if dvc_config.exists():
+                with open(dvc_config, "r") as cf:
+                    if "remote =" in cf.read(): has_remote = True
+
+            can_evict = True
+            sync_status = "done"
+            if has_remote:
+                try:
+                    resp = requests.get(f"{headnode_url}/check_space", timeout=5)
+                    if resp.status_code == 200 and resp.json().get("sufficient"):
+                        print(f"  Pushing {project_name} to headnode...")
+                        push_res = subprocess.run([DVC_CMD, "push"], cwd=project_path, capture_output=True)
+                        if push_res.returncode != 0:
+                            print(f"  ❌ dvc push failed for {project_name}. Postponing eviction.")
+                            sync_status = "pending"
+                            can_evict = False
+                    else:
+                        print(f"  ⚠️ Headnode full or unreachable. Postponing eviction of {project_name}.")
+                        sync_status = "pending"
+                        can_evict = False
+                except Exception as e:
+                    print(f"  ⚠️ Error contacting headnode: {e}")
+                    sync_status = "pending"
+                    can_evict = False
+
+            if can_evict:
+                print(f"  Evicting {project_name} from worker.")
+                cleanup_level_5(project_path, project_name)
+
+            # 2. Commit changes to registry (Locked briefly)
+            with open(registry_path, "a+") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    registry = load_registry(f)
+                    if project_name in registry:
+                        registry[project_name]["sync_status"] = sync_status
+                        if can_evict:
+                            registry[project_name]["status"] = "deleted"
+                            registry[project_name]["size_bytes"] = 0
+                    save_registry(f, registry)
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
