@@ -11,7 +11,7 @@ import threading
 import json
 import tempfile
 import shutil
-from flask import Flask, jsonify, send_from_directory, request, Response
+from flask import Flask, jsonify, send_from_directory, send_file, request, Response
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -429,32 +429,40 @@ def worker_dvc_get():
             subprocess.run(["git", "fetch", "origin"], cwd=repo_path,
                            capture_output=True, timeout=30)
 
+        # Strategy 1: DVC extraction at specific revision (historical integrity)
         cmd = [DVC_CMD, "get", ".", file_path, "--out", tmp_dir]
         if rev: cmd += ["--rev", rev]
 
         res = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True)
-        if res.returncode != 0:
-            return jsonify({"error": res.stderr}), 500
+        if res.returncode == 0:
+            filename = os.path.basename(file_path)
+            full_path = os.path.join(tmp_dir, filename)
+            if os.path.exists(full_path) and os.path.isfile(full_path):
+                def generate():
+                    try:
+                        with open(full_path, 'rb') as f:
+                            while True:
+                                chunk = f.read(4096)
+                                if not chunk: break
+                                yield chunk
+                    finally:
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                return Response(generate(), mimetype='application/octet-stream',
+                                headers={"Content-Disposition": f"attachment; filename={filename}"})
 
-        filename = os.path.basename(file_path)
-        full_path = os.path.join(tmp_dir, filename)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        if not os.path.exists(full_path) or not os.path.isfile(full_path):
-            shutil.rmtree(tmp_dir)
-            return jsonify({"error": "Path is a directory or not found"}), 400
+        # Strategy 2: Direct filesystem fallback (P2P — file produced by dvc repro)
+        # When no remote storage is configured, dvc get fails but the file
+        # is already on disk from the last pipeline execution.
+        direct_path = os.path.join(repo_path, file_path)
+        if os.path.exists(direct_path) and os.path.isfile(direct_path):
+            logger.info(f"[P2P] Serving {file_path} directly from working directory")
+            return send_file(direct_path, as_attachment=True,
+                             download_name=os.path.basename(file_path))
 
-        def generate():
-            try:
-                with open(full_path, 'rb') as f:
-                    while True:
-                        chunk = f.read(4096)
-                        if not chunk: break
-                        yield chunk
-            finally:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({"error": f"File not found via DVC or filesystem: {file_path}"}), 404
 
-        return Response(generate(), mimetype='application/octet-stream',
-                        headers={"Content-Disposition": f"attachment; filename={filename}"})
     except Exception as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return jsonify({"error": str(e)}), 500
