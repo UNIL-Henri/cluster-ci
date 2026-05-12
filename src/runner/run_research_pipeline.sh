@@ -367,7 +367,7 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
     PULL_SUCCESS=false
 
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        if docker_exec "dvc pull -r peer_remote"; then
+        if docker_exec "dvc pull --force -r peer_remote"; then
             PULL_SUCCESS=true
             break
         fi

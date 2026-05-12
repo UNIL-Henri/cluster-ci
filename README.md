@@ -137,3 +137,4 @@ cluster-ci/
 - [x] [Full Monitoring Dashboard & Real-time Logs](https://github.com/UNIL-DESI/cluster-ci/issues/60)
 - [x] Smart Dependency Caching (hash-based skip of `uv pip install` when `pyproject.toml` unchanged)
 - [x] Fix false-positive Exit Code -98 (Heartbeat/Worker crash detection race condition)
+- [x] Résolution de l'échec du DVC P2P Pull (fichiers résiduels) dans le cache persistant
