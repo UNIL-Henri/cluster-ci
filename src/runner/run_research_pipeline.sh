@@ -358,6 +358,7 @@ docker run --rm \
     --ipc=host \
     --pid=host \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
+    -e CLUSTER_CI_MODE=executor \
     $ENV_FILE_FLAG \
     $DOCKER_IMAGE \
     bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
