@@ -137,6 +137,7 @@ def execute_job(job):
     env = os.environ.copy()
     env["CLUSTER_CI_MODE"] = "executor"
     env["JOB_ID"] = job_id
+    env["LOGS_DIR"] = LOGS_DIR
     if p2p_url:
         logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
         env["DVC_REMOTE_P2P_URL"] = p2p_url
@@ -198,8 +199,10 @@ def execute_job(job):
                 logger.error(f"Failed to read commit hash file: {e}")
 
         if exit_code == 137:
-            # Docker returns 137 when OOM-killed
-            error_msg = f"❌ [CLUSTER ARTIFICIAL OOM] Execution interrupted! You reserved {ram_limit_gb} GB of RAM in '.cluster-ci', but your pipeline was just killed by Docker. Please increase your reservation.\n"
+            # Docker returns 137 when OOM-killed or externally killed (e.g. by JIT Watchdog)
+            # We'll rely on the exit code 124 being set by the headnode or reported later if we detect it was a timeout.
+            # For now, we report 137. If it was a zombie kill, the script exit code should be 137 anyway.
+            error_msg = f"❌ [CLUSTER INTERRUPTED] Execution interrupted (Exit code 137). This usually means an OOM (Out of Memory) or a Zombie Job Cleanup.\n"
             sys.stderr.write(error_msg)
             sys.stderr.flush()
             update_job_status(job_id, 'failed', 137, commit_hash=commit_hash)

@@ -95,6 +95,13 @@ fi
 
 # 1.5 JIT Garbage Collection & Metadata update
 log_info "[Step 1.5/3] JIT Garbage Collection (GC) Management..."
+if [ -n "$JOB_ID" ]; then
+    SAFE_JOB_ID=$(echo "$JOB_ID" | tr -dc 'a-zA-Z0-9_-')
+    log_info "Preventive purge of containers for job $SAFE_JOB_ID..."
+    docker rm -f "cluster-job-$SAFE_JOB_ID" "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+fi
+log_info "Scanning for zombie containers (JIT Zombie GC)..."
+python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-zombie-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-gc
 python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 
@@ -105,6 +112,11 @@ function cleanup_job_resources() {
     docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
 
     log_info "Updating metadata (idle status)..."
+    if [ -n "$SAFE_JOB_ID" ]; then
+        docker stop "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+        docker rm -f "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+    fi
+    [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
     log_info "Running post-flight Maintenance GC (Lazy Transfer)..."
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" run-transfer-gc
@@ -239,7 +251,7 @@ if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
 fi
 
 function docker_exec() {
-    docker exec \
+docker exec \
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
         -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
@@ -370,7 +382,7 @@ log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
 docker rm -f "$VIEWER_CONTAINER_NAME" || true
 docker run --rm \
-    --name "$VIEWER_CONTAINER_NAME" \
+--name "$VIEWER_CONTAINER_NAME" \
     $COMMON_LABELS \
     --entrypoint "" \
     -v "$(pwd):/workspace" -w /workspace \
