@@ -138,3 +138,4 @@ cluster-ci/
 - [x] Smart Dependency Caching (hash-based skip of `uv pip install` when `pyproject.toml` unchanged)
 - [x] Fix false-positive Exit Code -98 (Heartbeat/Worker crash detection race condition)
 - [x] Résolution de l'échec du DVC P2P Pull (fichiers résiduels) dans le cache persistant
+- [x] Résolution de l'erreur HTTP 404 du Live DVC Viewer derrière le reverse proxy (chemins relatifs & `<base href>`)
