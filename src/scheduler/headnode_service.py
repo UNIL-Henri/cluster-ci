@@ -305,6 +305,10 @@ def artifacts(repo_owner, repo_name, rev, file_path):
 
     try:
         local_repo_path = find_local_repo(repo_slug)
+        if local_repo_path:
+            # Assure we have the latest commits, otherwise 'unknown Git revision' errors occur
+            subprocess.run(["git", "fetch", "origin"], cwd=local_repo_path, capture_output=True)
+            
         source = local_repo_path if local_repo_path else repo_url
         cmd = [DVC_CMD, "get", source, file_path, "--rev", rev, "--out", tmp_dir]
         result = subprocess.run(cmd, capture_output=True, text=True)
