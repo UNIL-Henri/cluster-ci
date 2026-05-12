@@ -239,7 +239,14 @@
                 } else if (isText) {
                     const resp = await fetch(url);
                     const text = await resp.text();
-                    previewContent.innerHTML = `<pre><code>${escapeHtml(text)}</code></pre>`;
+                    const lines = text.split('\n');
+                    let displayText = text;
+                    let truncationNotice = '';
+                    if (lines.length > 100) {
+                        displayText = lines.slice(0, 100).join('\n');
+                        truncationNotice = '<div class="text-muted small mt-2 text-center">Showing first 100 lines. Download the file for full content.</div>';
+                    }
+                    previewContent.innerHTML = `<pre><code>${escapeHtml(displayText)}</code></pre>${truncationNotice}`;
                 }
             } catch (err) {
                 previewContent.innerHTML = `<div class="alert alert-danger">Error loading preview: ${err.message}</div>`;
