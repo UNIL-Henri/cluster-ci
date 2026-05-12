@@ -36,11 +36,19 @@ def schedule_jobs():
                         time.sleep(5)
                         continue
 
-                    # 2. Fetch online workers
+                    # 2. Fetch online workers that are NOT already busy
+                    # Worker agents are single-threaded: they block in execute_job()
+                    # and cannot poll for new jobs until the current one finishes.
+                    # We must exclude workers that have a running or assigned job.
                     cursor.execute('''
                         SELECT * FROM workers
                         WHERE status = "online"
                         AND last_seen >= datetime('now', '-60 seconds')
+                        AND worker_id NOT IN (
+                            SELECT worker_id FROM jobs
+                            WHERE status IN ('running', 'assigned')
+                            AND worker_id IS NOT NULL
+                        )
                         ORDER BY available_ram_gb DESC
                     ''')
                     workers = [dict(row) for row in cursor.fetchall()]
