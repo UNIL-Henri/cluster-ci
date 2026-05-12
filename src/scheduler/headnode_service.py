@@ -265,15 +265,10 @@ def check_space():
 REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "repositories")
 
 def find_local_repo(repo_slug):
-    """Find the local clone of a repo, handling owner name mismatches.
-    
-    The DB might store 'UNIL-DESI/llm-as-recommender' but the clone could
-    be under 'UNIL-Henri/llm-as-recommender'. We check exact match first,
-    then search by repo name across all owner directories.
-    """
+    """Find the local clone of a repo, handling owner name mismatches."""
     # Try exact match first
     exact = os.path.join(REPOS_DIR, repo_slug)
-    if os.path.exists(exact):
+    if os.path.exists(exact) and os.path.exists(os.path.join(exact, ".git")):
         return exact
     
     # Fallback: search by repo name only across all owner dirs
@@ -283,9 +278,8 @@ def find_local_repo(repo_slug):
             if owner_dir.startswith('_'):  # Skip _tmp_artifacts etc.
                 continue
             candidate = os.path.join(REPOS_DIR, owner_dir, repo_name)
-            if os.path.isdir(candidate):
+            if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, ".git")):
                 return candidate
-    
     return None
 
 @app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
@@ -306,8 +300,17 @@ def artifacts(repo_owner, repo_name, rev, file_path):
     try:
         local_repo_path = find_local_repo(repo_slug)
         if local_repo_path:
+            # Inject current GITHUB_PAT into origin url to ensure fetch succeeds
+            pat = os.environ.get("GITHUB_PAT")
+            if pat:
+                new_url = f"https://x-access-token:{pat}@github.com/{repo_slug}.git"
+                subprocess.run(["git", "remote", "set-url", "origin", new_url], cwd=local_repo_path)
+            
             # Assure we have the latest commits, otherwise 'unknown Git revision' errors occur
-            subprocess.run(["git", "fetch", "origin"], cwd=local_repo_path, capture_output=True)
+            fetch_res = subprocess.run(["git", "fetch", "origin"], cwd=local_repo_path, capture_output=True, text=True)
+            if fetch_res.returncode != 0:
+                app.logger.error(f"Git fetch failed: {fetch_res.stderr}")
+
             
         source = local_repo_path if local_repo_path else repo_url
         cmd = [DVC_CMD, "get", source, file_path, "--rev", rev, "--out", tmp_dir]
