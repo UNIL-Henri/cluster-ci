@@ -143,7 +143,7 @@ def mark_sync_status(project_name, status):
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
-def cleanup_level_1(project_path, project_name):
+def cleanup_level_1(project_path, project_name=None):
     """Level 1: Purge DVC history (keep only the last 2 commits)."""
     print(f"  [Level 1] Purging DVC history for {project_path}")
     try:
@@ -158,7 +158,7 @@ def cleanup_level_1(project_path, project_name):
     except Exception as e:
         print(f"  Error in level 1 cleanup: {e}")
 
-def cleanup_level_2(project_path, project_name):
+def cleanup_level_2(project_path, project_name=None):
     """Level 2: Delete large untracked files (> 500Mo) in working dirs, excluding .git and .dvc."""
     print(f"  [Level 2] Deleting large untracked files in {project_path}")
     try:
@@ -180,8 +180,10 @@ def cleanup_level_2(project_path, project_name):
     except Exception as e:
         print(f"  Error in level 2 cleanup: {e}")
 
-def cleanup_level_3(project_path, project_name):
+def cleanup_level_3(project_path, project_name=None):
     """Level 3: Delete virtual environment (Docker volume)."""
+    if project_name is None:
+        return
     volume_name = f"cluster-ci-home-{project_name.replace('/', '-')}"
     print(f"  [Level 3] Deleting Docker volume {volume_name} for {project_name}")
     try:
@@ -193,7 +195,7 @@ def cleanup_level_3(project_path, project_name):
     except Exception as e:
         print(f"  Error in level 3 cleanup: {e}")
 
-def cleanup_level_4(project_path, project_name):
+def cleanup_level_4(project_path, project_name=None):
     """Level 4: Delete local DVC cache."""
     print(f"  [Level 4] Deleting DVC cache for {project_path}")
     cache_path = project_path / ".dvc" / "cache"
@@ -203,7 +205,7 @@ def cleanup_level_4(project_path, project_name):
         except Exception as e:
             print(f"  Error in level 4 cleanup: {e}")
 
-def cleanup_level_5(project_path, project_name):
+def cleanup_level_5(project_path, project_name=None):
     """Level 5: Delete the entire project directory."""
     print(f"  [Level 5] Deleting entire directory {project_path}")
     try:

@@ -136,6 +136,7 @@ def execute_job(job):
 
     env = os.environ.copy()
     env["CLUSTER_CI_MODE"] = "executor"
+    env["JOB_ID"] = job_id
     if p2p_url:
         logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
         env["DVC_REMOTE_P2P_URL"] = p2p_url
