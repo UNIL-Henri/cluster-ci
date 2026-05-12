@@ -198,45 +198,52 @@ HOME_CACHE_VOLUME="cluster-ci-home-$(echo "$TARGET_REPO" | tr '/' '-')"
 if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
     docker volume create "$HOME_CACHE_VOLUME" >/dev/null
 fi
-# Ensure the volume is owned by the current user
+
+# Ensure a clean state
 docker rm -f "${MAIN_CONTAINER_NAME}" || true
-docker run --rm --name "${MAIN_CONTAINER_NAME}" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "chown -R $(id -u):$(id -g) /home/user"
+
+# Launch the persistent main container
+docker run -d \
+    --name "${MAIN_CONTAINER_NAME}" \
+    $COMMON_LABELS \
+    --entrypoint "tail" \
+    --gpus all \
+    -v "$(pwd):/workspace" \
+    -v "$HOME_CACHE_VOLUME:/home/user" \
+    -v "$BASE_DIR:/cluster-ci:ro" \
+    -v /etc/passwd:/etc/passwd:ro \
+    -v /etc/group:/etc/group:ro \
+    -w /workspace \
+    --ipc=host \
+    --user "$(id -u):$(id -g)" \
+    -e HOME=/home/user \
+    --memory="${RAM_LIMIT}g" \
+    --shm-size="${SHM_LIMIT}" \
+    $ENV_FILE_FLAG \
+    -e HEADNODE_URL="$HEADNODE_URL" \
+    -e CLUSTER_CI_MODE=executor \
+    -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
+    "$DOCKER_IMAGE" -f /dev/null
+
+# Ensure the volume is owned by the current user (must be run as root)
+docker exec --user root "${MAIN_CONTAINER_NAME}" bash -c "chown -R $(id -u):$(id -g) /home/user"
 
 # Detect Docker image change: if the cached image marker differs from the
 # current image, purge stale tool binaries to force a clean reinstall.
 MARKER_CMD="cat /home/user/.cluster-ci-image-marker 2>/dev/null || echo 'none'"
-docker rm -f "${MAIN_CONTAINER_NAME}" || true
-CACHED_IMAGE=$(docker run --rm --name "${MAIN_CONTAINER_NAME}" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" "$DOCKER_IMAGE" bash -c "$MARKER_CMD")
+CACHED_IMAGE=$(docker exec "${MAIN_CONTAINER_NAME}" bash -c "$MARKER_CMD")
 if [ "$CACHED_IMAGE" != "$DOCKER_IMAGE" ]; then
     log_info "Docker image changed ($CACHED_IMAGE → $DOCKER_IMAGE). Purging stale tool cache..."
-    docker rm -f "${MAIN_CONTAINER_NAME}" || true
-    docker run --rm --name "${MAIN_CONTAINER_NAME}" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" \
+    docker exec --user "$(id -u):$(id -g)" "${MAIN_CONTAINER_NAME}" \
         bash -c "rm -rf /home/user/.local /home/user/.cache/uv /home/user/.cluster-ci-deps-hash 2>/dev/null; echo '$DOCKER_IMAGE' > /home/user/.cluster-ci-image-marker"
 fi
 
 function docker_exec() {
-    docker rm -f "$MAIN_CONTAINER_NAME" || true
-    docker run --rm \
-        --name "$MAIN_CONTAINER_NAME" \
-        $COMMON_LABELS \
-        --entrypoint "" \
-        --gpus all \
-        -v "$(pwd):/workspace" \
-        -v "$HOME_CACHE_VOLUME:/home/user" \
-        -v "$BASE_DIR:/cluster-ci:ro" \
-        -v /etc/passwd:/etc/passwd:ro \
-        -v /etc/group:/etc/group:ro \
-        -w /workspace \
-        --ipc=host \
-        --user "$(id -u):$(id -g)" \
-        -e HOME=/home/user \
-        --memory="${RAM_LIMIT}g" \
-        --shm-size="${SHM_LIMIT}" \
-        $ENV_FILE_FLAG \
+    docker exec \
         -e HEADNODE_URL="$HEADNODE_URL" \
         -e CLUSTER_CI_MODE=executor \
         -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
-        "$DOCKER_IMAGE" bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && $1"
+        "${MAIN_CONTAINER_NAME}" bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && $1"
 }
 
 log_info "Image used: $DOCKER_IMAGE"
@@ -261,8 +268,7 @@ if required and not avail:
 docker_exec "python3 -c \"$GPU_REQ_CMD\""
 
 log_info "Preparing smart environment shims (uv/poetry)..."
-docker rm -f "$MAIN_CONTAINER_NAME" || true
-docker run --rm --name "$MAIN_CONTAINER_NAME" $COMMON_LABELS --entrypoint "" -v "$HOME_CACHE_VOLUME:/home/user" --user "$(id -u):$(id -g)" "$DOCKER_IMAGE" bash -c 'SHIM_DIR=/home/user/shims && mkdir -p $SHIM_DIR &&
+docker exec --user "$(id -u):$(id -g)" "${MAIN_CONTAINER_NAME}" bash -c 'SHIM_DIR=/home/user/shims && mkdir -p $SHIM_DIR &&
 
 # UV Shim
 cat > $SHIM_DIR/uv << '"'"'SHIMEOF'"'"'
@@ -334,24 +340,8 @@ log_info "Installing base dependencies in persistent volume..."
 # Bootstrap commands MUST bypass shims — use a raw docker run without /home/user/shims in PATH.
 # Shims are only for user pipeline execution, not for installing the tools themselves.
 function docker_exec_bootstrap() {
-    docker rm -f "$MAIN_CONTAINER_NAME" || true
-    docker run --rm \
-        --name "$MAIN_CONTAINER_NAME" \
-        $COMMON_LABELS \
-        --entrypoint "" \
-        --gpus all \
-        -v "$(pwd):/workspace" \
-        -v "$HOME_CACHE_VOLUME:/home/user" \
-        -v /etc/passwd:/etc/passwd:ro \
-        -v /etc/group:/etc/group:ro \
-        -w /workspace \
-        --ipc=host \
-        --user "$(id -u):$(id -g)" \
-        -e HOME=/home/user \
-        --memory="${RAM_LIMIT}g" \
-        --shm-size="${SHM_LIMIT}" \
-        $ENV_FILE_FLAG \
-        "$DOCKER_IMAGE" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
+    docker exec \
+        "${MAIN_CONTAINER_NAME}" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
 docker_exec_bootstrap "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
 docker_exec_bootstrap "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
@@ -377,6 +367,7 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
+# IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
 docker rm -f "$VIEWER_CONTAINER_NAME" || true
 docker run --rm \
     --name "$VIEWER_CONTAINER_NAME" \
@@ -386,6 +377,7 @@ docker run --rm \
     -v "$HOME_CACHE_VOLUME:/home/user" \
     -p "$VIEWER_PORT:$VIEWER_PORT" \
     --ipc=host \
+    --pid="container:${MAIN_CONTAINER_NAME}" \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \
     -e CLUSTER_CI_MODE=executor \
     $ENV_FILE_FLAG \
