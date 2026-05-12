@@ -141,3 +141,4 @@ cluster-ci/
 - [x] Résolution de l'erreur HTTP 404 du Live DVC Viewer derrière le reverse proxy (chemins relatifs & `<base href>`)
 - [x] DVC Historical Extraction: Injection dynamique des identifiants (GITHUB_PAT) dans les miroirs Git locaux pour `dvc get`
 - [x] Limitation de la prévisualisation des fichiers texte à 100 lignes dans le Dashboard pour optimisation UI
+- [x] Restreindre le *Live Viewer* en mode "Lecture Seule" et corriger la détection des étapes DVC s'exécutant dans les wrappers Bash des workers.
