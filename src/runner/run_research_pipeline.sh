@@ -108,8 +108,8 @@ python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-running "$TARGET_REPO"
 function cleanup_job_resources() {
     log_info "Cleaning up job resources for ${JOB_ID}..."
     # Graceful stop then force remove
-    docker stop "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
-    docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
+    docker stop "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" 2>/dev/null || true
+    docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" 2>/dev/null || true
 
     log_info "Updating metadata (idle status)..."
     if [ -n "$SAFE_JOB_ID" ]; then
@@ -128,7 +128,7 @@ trap cleanup_job_resources EXIT SIGINT SIGTERM
 log_info "[Step 2/3] Preventive purge of residual containers and processes..."
 # 2.1 Cleanup containers for this specific job ID
 # This ensures that if a previous attempt of the SAME job failed/crashed, we clean it up.
-docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" || true
+docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" 2>/dev/null || true
 
 # 2.2 Cleanup legacy dvc-viewer processes (fallback for non-dockerized viewers)
 for pid in $(pgrep -f "dvc-viewer" || true); do
@@ -212,7 +212,7 @@ if ! docker volume inspect "$HOME_CACHE_VOLUME" >/dev/null 2>&1; then
 fi
 
 # Ensure a clean state
-docker rm -f "${MAIN_CONTAINER_NAME}" || true
+docker rm -f "${MAIN_CONTAINER_NAME}" 2>/dev/null || true
 
 # Launch the persistent main container
 docker run -d \
@@ -369,6 +369,20 @@ else
     log_info "Arguments detected: $DVC_ARGS"
 fi
 
+if [ -n "$DVC_REMOTE_P2P_URL" ]; then
+    log_info "Data Plane: Configuring dynamic P2P remote to $DVC_REMOTE_P2P_URL..."
+    PEER_REMOTE_URL="$DVC_REMOTE_P2P_URL/$TARGET_REPO/.dvc/cache/files/md5"
+
+    docker_exec "dvc remote add -f peer_remote '$PEER_REMOTE_URL' --local"
+
+    log_info "Fetching data from peer (best-effort P2P pull)..."
+    if docker_exec "dvc pull --force -r peer_remote" 2>/dev/null; then
+        log_success "P2P transfer successful."
+    else
+        log_info "⚠️  P2P pull incomplete (some cache files missing on peer). dvc repro will regenerate missing stages."
+    fi
+fi
+
 log_info "AST analysis via dvc-viewer..."
 docker_exec "dvc-viewer hash"
 
@@ -380,7 +394,7 @@ echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
 # Pour le viewer en background, on expose le port
 # IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
-docker rm -f "$VIEWER_CONTAINER_NAME" || true
+docker rm -f "$VIEWER_CONTAINER_NAME" 2>/dev/null || true
 docker run --rm \
 --name "$VIEWER_CONTAINER_NAME" \
     $COMMON_LABELS \
@@ -395,20 +409,6 @@ docker run --rm \
     $ENV_FILE_FLAG \
     $DOCKER_IMAGE \
     bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
-
-if [ -n "$DVC_REMOTE_P2P_URL" ]; then
-    log_info "Data Plane: Configuring dynamic P2P remote to $DVC_REMOTE_P2P_URL..."
-    PEER_REMOTE_URL="$DVC_REMOTE_P2P_URL/$TARGET_REPO/.dvc/cache/files/md5"
-
-    docker_exec "dvc remote add -f peer_remote '$PEER_REMOTE_URL' --local"
-
-    log_info "Fetching data from peer (best-effort P2P pull)..."
-    if docker_exec "dvc pull --force -r peer_remote" 2>/dev/null; then
-        log_success "P2P transfer successful."
-    else
-        log_info "⚠️  P2P pull incomplete (some cache files missing on peer). dvc repro will regenerate missing stages."
-    fi
-fi
 
 log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present
