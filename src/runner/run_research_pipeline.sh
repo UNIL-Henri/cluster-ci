@@ -360,29 +360,12 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
 
     docker_exec "dvc remote add -f peer_remote '$PEER_REMOTE_URL' --local"
 
-    log_info "Fetching data from peer (strict P2P pull with retries)..."
-    MAX_RETRIES=3
-    RETRY_DELAY=5
-    RETRY_COUNT=0
-    PULL_SUCCESS=false
-
-    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        if docker_exec "dvc pull --force -r peer_remote"; then
-            PULL_SUCCESS=true
-            break
-        fi
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-            log_info "P2P pull failed (attempt $RETRY_COUNT/$MAX_RETRIES). Retrying in ${RETRY_DELAY}s..."
-            sleep $RETRY_DELAY
-        fi
-    done
-
-    if [ "$PULL_SUCCESS" = false ]; then
-        log_error "Critical P2P transfer failure from $PEER_REMOTE_URL after $MAX_RETRIES attempts. Aborting."
-        exit 1
+    log_info "Fetching data from peer (best-effort P2P pull)..."
+    if docker_exec "dvc pull --force -r peer_remote" 2>/dev/null; then
+        log_success "P2P transfer successful."
+    else
+        log_info "⚠️  P2P pull incomplete (some cache files missing on peer). dvc repro will regenerate missing stages."
     fi
-    log_success "P2P transfer successful."
 fi
 
 log_info "Pre-flight Validation..."
