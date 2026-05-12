@@ -74,7 +74,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 
 ## Main Results
 
-- **Status**: Under construction (Last updated: 11 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
+- **Status**: Under construction (Last updated: 12 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
 
 ## Documentation Index
 
@@ -142,4 +142,7 @@ cluster-ci/
 - [x] DVC Historical Extraction: Injection dynamique des identifiants (GITHUB_PAT) dans les miroirs Git locaux pour `dvc get`
 - [x] Limitation de la prévisualisation des fichiers texte à 100 lignes dans le Dashboard pour optimisation UI
 - [x] Restreindre le *Live Viewer* en mode "Lecture Seule" et corriger la détection des étapes DVC s'exécutant dans les wrappers Bash des workers.
+- [x] [Robust Docker Container Lifecycle and Orphan Process Eradication](https://github.com/UNIL-DESI/cluster-ci/pull/66)
+- [x] [Hybrid Liveness Watchdog — JIT Zombie Detection](https://github.com/UNIL-DESI/cluster-ci/pull/67)
+- [x] Fix Scheduler assigning jobs to busy workers (single-threaded worker exclusion)
 - [ ] [Implémenter un Global Execution Timeout pour empêcher le gel du worker sur un job bloqué](https://github.com/UNIL-DESI/cluster-ci/issues/63)
