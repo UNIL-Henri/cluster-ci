@@ -94,11 +94,11 @@ class TestGC(unittest.TestCase):
         with self.assertRaises(ValueError):
             gc_orchestrator.update_running("../escape")
 
-    def test_gc_logic(self):
-        # Simulate low space (below 100GB threshold)
+    def test_gc_logic_panic(self):
+        # Simulate critical space (below 50GB threshold)
         import unittest.mock
         original_disk_usage = shutil.disk_usage
-        shutil.disk_usage = lambda path: unittest.mock.MagicMock(free=90 * 1024 * 1024 * 1024, total=1000 * 1024 * 1024 * 1024)
+        shutil.disk_usage = lambda path: unittest.mock.MagicMock(free=40 * 1024 * 1024 * 1024, total=1000 * 1024 * 1024 * 1024)
 
         try:
             projects = ["p1", "p2", "p3"]
@@ -128,6 +128,28 @@ class TestGC(unittest.TestCase):
             self.assertEqual(registry["p1"]["status"], "deleted")
             self.assertEqual(registry["p3"]["status"], "deleted")
             self.assertEqual(registry["p2"]["status"], "running")
+
+        finally:
+            shutil.disk_usage = original_disk_usage
+
+    def test_gc_logic_maintenance(self):
+        # Simulate maintenance space (between 50GB and 100GB)
+        import unittest.mock
+        original_disk_usage = shutil.disk_usage
+        shutil.disk_usage = lambda path: unittest.mock.MagicMock(free=70 * 1024 * 1024 * 1024, total=1000 * 1024 * 1024 * 1024)
+
+        try:
+            p1_path = self.test_repo_dir / "p1"
+            p1_path.mkdir(parents=True, exist_ok=True)
+            with open(p1_path / "file.txt", "w") as f: f.write("data")
+            gc_orchestrator.update_idle("p1", str(p1_path))
+
+            # No remote configured, so it should be evicted immediately
+            gc_orchestrator.run_transfer_gc()
+
+            with open(gc_orchestrator.get_registry_path(), "r") as f:
+                registry = json.load(f)
+            self.assertEqual(registry["p1"]["status"], "deleted")
 
         finally:
             shutil.disk_usage = original_disk_usage
