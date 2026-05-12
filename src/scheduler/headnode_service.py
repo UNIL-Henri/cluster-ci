@@ -691,13 +691,12 @@ def view_project(owner, repo, path=''):
         # Start a new dvc-viewer process
         port = get_free_port()
         try:
-            # We assume dvc-viewer is available in the environment
-            # and it supports a --port argument.
-            # Using 'uv run' if possible or direct call
-            cmd = [UV_CMD, "run", "dvc-viewer", "serve", "--port", str(port)]
-            # If dvc-viewer is not a uv project, might need just ["dvc-viewer", "serve", ...]
-            # Given the context of the project, it's likely uv-managed or installed as a tool.
-            proc = subprocess.Popen(cmd, cwd=repo_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Start global dvc-viewer and inject read-only mode (CLUSTER_CI_MODE=executor)
+            viewer_env = os.environ.copy()
+            viewer_env["CLUSTER_CI_MODE"] = "executor"
+            viewer_env["PATH"] = os.path.expanduser("~/.local/bin") + ":" + viewer_env.get("PATH", "")
+            cmd = ["dvc-viewer", "serve", "--port", str(port)]
+            proc = subprocess.Popen(cmd, cwd=repo_path, env=viewer_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             # Wait a bit for the server to start
             time.sleep(2)
