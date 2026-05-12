@@ -424,6 +424,11 @@ def worker_dvc_get():
 
     tmp_dir = tempfile.mkdtemp()
     try:
+        # Ensure the requested revision is available locally
+        if rev:
+            subprocess.run(["git", "fetch", "origin"], cwd=repo_path,
+                           capture_output=True, timeout=30)
+
         cmd = [DVC_CMD, "get", ".", file_path, "--out", tmp_dir]
         if rev: cmd += ["--rev", rev]
 
