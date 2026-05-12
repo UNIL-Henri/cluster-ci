@@ -661,7 +661,8 @@ def view_project(owner, repo, path=''):
         parsed = urlparse(worker_base_url)
         target_host = parsed.hostname
         target_url = f"http://{target_host}:{viewer_port}/{path}"
-        return proxy_request(target_url)
+        base_href = f"/view/{owner}/{repo}/" if path == '' else None
+        return proxy_request(target_url, base_href=base_href)
 
     # --- Case 2: Historical (Local) ---
     repo_path = find_local_repo(repo_full_name)
@@ -675,7 +676,8 @@ def view_project(owner, repo, path=''):
             if viewer['proc'].poll() is None:
                 viewer['last_access'] = time.time()
                 target_url = f"http://localhost:{viewer['port']}/{path}"
-                return proxy_request(target_url)
+                base_href = f"/view/{owner}/{repo}/" if path == '' else None
+                return proxy_request(target_url, base_href=base_href)
             else:
                 del local_viewers[repo_full_name]
 
@@ -699,12 +701,20 @@ def view_project(owner, repo, path=''):
                 'last_access': time.time()
             }
             target_url = f"http://localhost:{port}/{path}"
-            return proxy_request(target_url)
+            base_href = f"/view/{owner}/{repo}/" if path == '' else None
+            return proxy_request(target_url, base_href=base_href)
         except Exception as e:
             return f"Failed to start dvc-viewer: {str(e)}", 500
 
-def proxy_request(target_url):
-    """Simple proxy that forwards the request to the target_url."""
+def proxy_request(target_url, base_href=None):
+    """Simple proxy that forwards the request to the target_url.
+
+    Args:
+        target_url: The URL to forward the request to.
+        base_href: If set, inject a <base href="..."> tag into HTML responses.
+                   This fixes relative URL resolution when the viewer is served
+                   behind a reverse proxy at a sub-path.
+    """
     try:
         resp = requests.request(
             method=request.method,
@@ -720,6 +730,16 @@ def proxy_request(target_url):
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         headers = [(name, value) for (name, value) in resp.raw.headers.items()
                    if name.lower() not in excluded_headers]
+
+        # Inject <base> tag into HTML responses for correct relative URL resolution
+        content_type = resp.headers.get('content-type', '')
+        if base_href and 'text/html' in content_type:
+            body = resp.content.decode('utf-8', errors='replace')
+            # Insert <base> right after <head> so all relative URLs resolve correctly
+            body = body.replace('<head>', f'<head><base href="{base_href}">', 1)
+            response = Response(body, status=resp.status_code, headers=headers)
+            response.headers['Content-Type'] = content_type
+            return response
 
         response = Response(stream_with_context(resp.iter_content(chunk_size=1024)),
                             status=resp.status_code,
