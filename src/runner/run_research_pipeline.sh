@@ -358,7 +358,7 @@ if [ -n "$DVC_REMOTE_P2P_URL" ]; then
     log_info "Data Plane: Configuring dynamic P2P remote to $DVC_REMOTE_P2P_URL..."
     PEER_REMOTE_URL="$DVC_REMOTE_P2P_URL/$TARGET_REPO/.dvc/cache/files/md5"
 
-    docker_exec "dvc remote add peer_remote '$PEER_REMOTE_URL' --local"
+    docker_exec "dvc remote add -f peer_remote '$PEER_REMOTE_URL' --local"
 
     log_info "Fetching data from peer (strict P2P pull with retries)..."
     MAX_RETRIES=3
