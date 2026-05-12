@@ -224,6 +224,12 @@ log_info "GPU Hardware Validation..."
 GPU_REQ_CMD="import torch, os;
 avail=torch.cuda.is_available();
 print(f'CUDA available: {avail}');
+if avail:
+    props=torch.cuda.get_device_properties(0);
+    free,total=torch.cuda.mem_get_info(0);
+    print(f'GPU Device: {props.name}');
+    print(f'GPU Memory (CUDA reports): {total/(1024**3):.1f} GB total, {free/(1024**3):.1f} GB free');
+    print(f'Compute Capability: {props.major}.{props.minor}');
 required=os.environ.get('CLUSTER_CI_GPU_REQUIRED', '0') == '1';
 if required and not avail:
     print('❌ Error: GPU required but not found!');
