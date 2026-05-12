@@ -291,14 +291,52 @@ def find_local_repo(repo_slug):
 @app.route('/artifacts/<repo_owner>/<repo_name>/<rev>/<path:file_path>', methods=['GET'])
 def artifacts(repo_owner, repo_name, rev, file_path):
     """
-    Unified artifact access API. Extracts files from local cache or remote GitHub
-    using DVC at a specific revision (commit hash or branch).
+    Unified artifact access API — P2P First architecture.
+
+    Strategy (in order):
+      1. Proxy to the worker that ran the job for this exact revision (P2P)
+      2. Proxy to any online worker that has run jobs for this repo (P2P)
+      3. Fallback: local DVC extraction on headnode (requires remote storage)
     """
     repo_slug = f"{repo_owner}/{repo_name}"
-    repo_url = f"https://github.com/{repo_slug}"
 
-    # --- Case 1: REAL DVC EXTRACTION (Historical Integrity) ---
-    # We extract the file exactly as it was at the given revision
+    # --- Strategy 1 & 2: P2P Worker Proxy (Primary Path) ---
+    # Workers have DVC caches from executing jobs — no remote storage needed.
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        # Try to find a worker that executed a job for this EXACT revision
+        cursor.execute('''
+            SELECT w.service_url
+            FROM jobs j
+            JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.repo = ? AND j.commit_hash = ? AND w.status = 'online'
+            ORDER BY j.finished_at DESC LIMIT 1
+        ''', (repo_slug, rev))
+        worker = cursor.fetchone()
+
+        # Fallback: any online worker that has run jobs for this repo
+        if not worker:
+            cursor.execute('''
+                SELECT w.service_url
+                FROM jobs j
+                JOIN workers w ON j.worker_id = w.worker_id
+                WHERE j.repo = ? AND w.status = 'online'
+                ORDER BY j.finished_at DESC LIMIT 1
+            ''', (repo_slug,))
+            worker = cursor.fetchone()
+
+    if worker and worker['service_url']:
+        worker_url = f"{worker['service_url']}/api/worker/dvc/get?repo={repo_slug}&rev={rev}&path={file_path}"
+        app.logger.info(f"[P2P] Proxying artifact {file_path}@{rev} to worker {worker['service_url']}")
+        try:
+            resp = proxy_request(worker_url)
+            if resp.status_code < 500:
+                return resp
+            app.logger.warning(f"[P2P] Worker proxy returned {resp.status_code}, falling back to local extraction")
+        except Exception as e:
+            app.logger.warning(f"[P2P] Worker proxy failed: {e}, falling back to local extraction")
+
+    # --- Strategy 3: Local Headnode DVC Extraction (Last Resort) ---
     request_id = str(uuid.uuid4())
     tmp_dir = os.path.join(REPOS_DIR, "_tmp_artifacts", request_id)
     os.makedirs(tmp_dir, exist_ok=True)
@@ -306,35 +344,16 @@ def artifacts(repo_owner, repo_name, rev, file_path):
     try:
         local_repo_path = find_local_repo(repo_slug)
         if local_repo_path:
-            # Inject current GITHUB_PAT into origin url to ensure fetch succeeds
             pat = os.environ.get("GITHUB_PAT")
             if pat:
                 new_url = f"https://x-access-token:{pat}@github.com/{repo_slug}.git"
                 subprocess.run(["git", "remote", "set-url", "origin", new_url], cwd=local_repo_path)
-            
-            # Assure we have the latest commits, otherwise 'unknown Git revision' errors occur
-            fetch_res = subprocess.run(["git", "fetch", "origin"], cwd=local_repo_path, capture_output=True, text=True)
-            if fetch_res.returncode != 0:
-                app.logger.error(f"Git fetch failed: {fetch_res.stderr}")
+            subprocess.run(["git", "fetch", "origin"], cwd=local_repo_path, capture_output=True, text=True)
 
-            
-        source = local_repo_path if local_repo_path else repo_url
-        
-        # Inject secrets from the latest job for this repo to allow dvc get to authenticate
-        run_env = os.environ.copy()
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT env_vars FROM jobs WHERE repo = ? AND env_vars IS NOT NULL ORDER BY created_at DESC LIMIT 1', (repo_slug,))
-            latest_job = cursor.fetchone()
-            if latest_job and latest_job['env_vars']:
-                try:
-                    secrets = json.loads(latest_job['env_vars'])
-                    run_env.update(secrets)
-                except Exception as e:
-                    app.logger.error(f"Failed to load secrets for DVC: {e}")
+        source = local_repo_path if local_repo_path else f"https://github.com/{repo_slug}"
 
         cmd = [DVC_CMD, "get", source, file_path, "--rev", rev, "--out", tmp_dir]
-        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ.copy())
 
         if result.returncode == 0:
             filename = os.path.basename(file_path)
@@ -349,46 +368,19 @@ def artifacts(repo_owner, repo_name, rev, file_path):
                                 break
                             yield chunk
                 finally:
-                    # Robust cleanup: delete the whole tmp directory for this request
                     shutil.rmtree(tmp_dir, ignore_errors=True)
 
             return Response(generate(), mimetype='application/octet-stream',
                             headers={"Content-Disposition": f"attachment; filename={filename}"})
 
-        # If local DVC get failed, attempt to proxy to a worker that might have it cached
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            # Try to find a worker that has executed a job for this EXACT revision
-            cursor.execute('''
-                SELECT w.service_url
-                FROM jobs j
-                JOIN workers w ON j.worker_id = w.worker_id
-                WHERE j.repo = ? AND j.commit_hash = ? AND w.status = 'online'
-                ORDER BY j.finished_at DESC LIMIT 1
-            ''', (repo_slug, rev))
-            worker = cursor.fetchone()
-
-            # Fallback: if 'rev' is not a commit hash but a branch name, find the last worker for that repo
-            if not worker:
-                cursor.execute('''
-                    SELECT w.service_url
-                    FROM jobs j
-                    JOIN workers w ON j.worker_id = w.worker_id
-                    WHERE j.repo = ? AND w.status = 'online'
-                    ORDER BY j.finished_at DESC LIMIT 1
-                ''', (repo_slug,))
-                worker = cursor.fetchone()
-
-        if worker and worker['service_url']:
-            worker_url = f"{worker['service_url']}/api/worker/dvc/get?repo={repo_slug}&rev={rev}&path={file_path}"
-            app.logger.info(f"Proxying artifact request for {repo_slug}@{rev} to worker {worker['service_url']}")
-            return proxy_request(worker_url)
-
-        return jsonify({"error": f"Failed to extract artifact locally and no worker found: {result.stderr}"}), 404
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        error_msg = result.stderr.strip() if result.stderr else "Unknown DVC error"
+        return jsonify({"error": f"No worker available and local extraction failed: {error_msg}"}), 404
 
     except Exception as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return jsonify({"error": f"Internal error during extraction: {str(e)}"}), 500
+
 
 @app.route('/notify_cleanup', methods=['POST'])
 def notify_cleanup():
