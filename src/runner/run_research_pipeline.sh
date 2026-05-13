@@ -403,7 +403,7 @@ docker run --rm \
     --entrypoint "" \
     -v "$(pwd):/workspace" -w /workspace \
     -v "$HOME_CACHE_VOLUME:/home/user" \
-    -p "$VIEWER_PORT:$VIEWER_PORT" \
+    -p "0.0.0.0:$VIEWER_PORT:$VIEWER_PORT" \
     --ipc=host \
     --pid="container:${MAIN_CONTAINER_NAME}" \
     --user "$(id -u):$(id -g)" -e HOME=/home/user \

@@ -1032,12 +1032,16 @@
                 if (epilogue) {
                     // Check for kill patterns in the epilogue
                     const killReason = getKillReason(epilogue);
+                    // Only say Post-Run if the last marker was sync:END (i.e. truly finished)
+                    const isTrulyFinished = (lastMatch.name === 'sync' || lastMatch.name === 'teardown');
+                    const defaultLabel = isTrulyFinished ? 'Post-Run' : 'System';
+                    
                     sections.push({
                         id: 'epilogue',
-                        label: killReason ? `☠️ ${killReason}` : 'Post-Run',
-                        icon: killReason ? 'bi-x-octagon-fill' : 'bi-flag-fill',
+                        label: killReason ? `☠️ ${killReason}` : defaultLabel,
+                        icon: killReason ? 'bi-x-octagon-fill' : 'bi-terminal',
                         content: epilogue,
-                        status: classifySection(epilogue, false)
+                        status: classifySection(epilogue, !isTrulyFinished)
                     });
                 }
             }

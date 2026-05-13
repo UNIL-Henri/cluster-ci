@@ -68,21 +68,7 @@ def schedule_jobs():
                     candidates = [w for w in workers if w['available_ram_gb'] >= ram_required]
 
                     if not candidates:
-                        # Check if it's fundamentally impossible by querying all online workers' total_ram_gb
-                        with get_db_conn() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute('SELECT MAX(total_ram_gb) FROM workers WHERE status = "online"')
-                            max_total = cursor.fetchone()[0] or 0.0
-                            
-                        if ram_required > max_total:
-                            logger.error(f"Job {job_id} requires {ram_required} GB but max cluster capacity is {max_total} GB. Failing job.")
-                            with get_db_conn() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("UPDATE jobs SET status = 'failed' WHERE job_id = ?", (job_id,))
-                                conn.commit()
-                            continue
-
-                        logger.info(f"Could not find worker for job {job_id} requiring {ram_required} GB (waiting for RAM to free up)")
+                        logger.info(f"Could not find worker for job {job_id} requiring {ram_required} GB")
                         continue
 
                     # Soft Constraint: Data Locality (P2P Discovery)
