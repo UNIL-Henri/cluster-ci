@@ -344,6 +344,19 @@ def get_job_logs(job_id):
         logger.error(f"Error reading logs for {job_id}: {e}")
         return jsonify({"logs": "", "offset": offset}), 500
 
+@app.route('/viewer_logs', methods=['GET'])
+def get_viewer_logs():
+    """Return the last 2000 chars of the dvc-viewer log file for diagnostics."""
+    log_path = os.path.join(BASE_DIR, "dvc-viewer.log")
+    if not os.path.exists(log_path):
+        return jsonify({"logs": "No dvc-viewer.log found on this worker."})
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return jsonify({"logs": content[-2000:] if len(content) > 2000 else content})
+    except Exception as e:
+        return jsonify({"logs": f"Error reading dvc-viewer.log: {e}"}), 500
+
 @app.route('/fetch_artifact/<path:file_path>', methods=['GET'])
 def fetch_artifact(file_path):
     """

@@ -929,12 +929,28 @@
         const ERROR_PATTERNS   = /\berror\b|❌|\bfailed\b|\bFATAL\b|\bTraceback\b|\bException\b|Error:|exit code [1-9]/i;
         const WARNING_PATTERNS = /\bwarning\b|⚠️|\bWARN\b|\bdeprecated\b/i;
         const SUCCESS_PATTERNS = /✅|\bcompleted successfully\b|\bsuccess\b/i;
+        const KILL_PATTERNS = [
+            { pattern: /Exit code 137|OOM|Out of Memory/i, reason: 'OOM Kill' },
+            { pattern: /CLUSTER INTERRUPTED/i, reason: 'Interrupted' },
+            { pattern: /zombie/i, reason: 'Zombie cleanup' },
+            { pattern: /cancel/i, reason: 'Cancelled' },
+            { pattern: /SIGTERM|SIGKILL|signal/i, reason: 'Killed' },
+            { pattern: /didn.t change, skipping/i, reason: null }, // Not a kill
+        ];
 
-        function classifySection(content) {
+        function classifySection(content, isInProgress) {
+            if (isInProgress) return 'running';
             if (ERROR_PATTERNS.test(content)) return 'error';
             if (WARNING_PATTERNS.test(content)) return 'warning';
             if (SUCCESS_PATTERNS.test(content)) return 'success';
             return 'neutral';
+        }
+
+        function getKillReason(content) {
+            for (const { pattern, reason } of KILL_PATTERNS) {
+                if (reason && pattern.test(content)) return reason;
+            }
+            return null;
         }
 
         function parseLogSections(rawText) {
@@ -966,7 +982,7 @@
                     label: 'Init',
                     icon: 'bi-rocket-takeoff-fill',
                     content: preamble,
-                    status: classifySection(preamble)
+                    status: classifySection(preamble, false)
                 });
             }
 
@@ -977,6 +993,7 @@
 
                 // Find matching END
                 const endMatch = matches.find((e, j) => j > i && e.name === m.name && e.type === 'END');
+                const isInProgress = !endMatch;
                 const contentStart = m.index + m.fullMatch.length;
                 const contentEnd = endMatch ? endMatch.index : rawText.length;
                 const stageContent = rawText.substring(contentStart, contentEnd).trim();
@@ -985,7 +1002,7 @@
 
                 if (m.name === 'dvc_repro') {
                     // Parse DVC sub-stages from the pipeline output
-                    const subStages = parseDvcSubStages(stageContent);
+                    const subStages = parseDvcSubStages(stageContent, isInProgress);
                     if (subStages.length > 1) {
                         subStages.forEach(sub => sections.push(sub));
                     } else {
@@ -994,7 +1011,7 @@
                             label: meta.label,
                             icon: meta.icon,
                             content: stageContent,
-                            status: classifySection(stageContent)
+                            status: classifySection(stageContent, isInProgress)
                         });
                     }
                 } else {
@@ -1003,28 +1020,32 @@
                         label: meta.label,
                         icon: meta.icon,
                         content: stageContent,
-                        status: classifySection(stageContent)
+                        status: classifySection(stageContent, isInProgress)
                     });
                 }
             }
 
-            // Content after last marker
+            // Content after last marker — only if last marker is an END (not mid-stage)
             const lastMatch = matches[matches.length - 1];
-            const epilogue = rawText.substring(lastMatch.index + lastMatch.fullMatch.length).trim();
-            if (epilogue) {
-                sections.push({
-                    id: 'epilogue',
-                    label: 'Post-Run',
-                    icon: 'bi-flag-fill',
-                    content: epilogue,
-                    status: classifySection(epilogue)
-                });
+            if (lastMatch.type === 'END') {
+                const epilogue = rawText.substring(lastMatch.index + lastMatch.fullMatch.length).trim();
+                if (epilogue) {
+                    // Check for kill patterns in the epilogue
+                    const killReason = getKillReason(epilogue);
+                    sections.push({
+                        id: 'epilogue',
+                        label: killReason ? `☠️ ${killReason}` : 'Post-Run',
+                        icon: killReason ? 'bi-x-octagon-fill' : 'bi-flag-fill',
+                        content: epilogue,
+                        status: classifySection(epilogue, false)
+                    });
+                }
             }
 
             return sections;
         }
 
-        function parseDvcSubStages(dvcContent) {
+        function parseDvcSubStages(dvcContent, parentIsInProgress) {
             // DVC outputs lines like: Running stage 'step_xxx':
             const stagePattern = /Running stage '([^']+)':/g;
             const stageMatches = [];
@@ -1038,7 +1059,7 @@
                 label: 'DVC Pipeline',
                 icon: 'bi-play-circle-fill',
                 content: dvcContent,
-                status: classifySection(dvcContent)
+                status: classifySection(dvcContent, parentIsInProgress)
             }];
 
             const sections = [];
@@ -1051,11 +1072,13 @@
                     label: 'Deps Install',
                     icon: 'bi-download',
                     content: preStage,
-                    status: classifySection(preStage)
+                    status: classifySection(preStage, false)
                 });
             }
 
             for (let i = 0; i < stageMatches.length; i++) {
+                const isLastSubStage = (i === stageMatches.length - 1);
+                const subStageInProgress = parentIsInProgress && isLastSubStage;
                 const start = stageMatches[i].index;
                 const end = i + 1 < stageMatches.length ? stageMatches[i + 1].index : dvcContent.length;
                 const content = dvcContent.substring(start, end).trim();
@@ -1073,7 +1096,7 @@
                     label: prettyLabel,
                     icon: 'bi-play-circle',
                     content: content,
-                    status: classifySection(content)
+                    status: classifySection(content, subStageInProgress)
                 });
             }
 

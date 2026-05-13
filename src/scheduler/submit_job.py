@@ -5,32 +5,62 @@ import time
 import argparse
 import signal
 
-def get_ram_requirement():
+def get_ram_requirement(repo=None, branch=None):
     """
     Reads RAM requirement from the .cluster-ci file.
+    First tries to fetch the file from the remote repo (shallow clone),
+    then falls back to reading from the current working directory.
     Expected format in .cluster-ci: --ram 16 or REQUIRED_RAM=16GB
     """
-    if not os.path.exists(".cluster-ci"):
-        return 2.0  # Default 2GB
+    content = None
 
-    with open(".cluster-ci", 'r') as f:
-        content = f.read()
-        import re
-        
-        # Try REQUIRED_RAM=16GB or REQUIRED_RAM=16.5
-        match_env = re.search(r'REQUIRED_RAM\s*=\s*(\d+(?:\.\d+)?)(?:GB|G)?', content)
-        if match_env:
-            return float(match_env.group(1))
-            
-        # Try --ram 16
-        match = re.search(r'--ram\s+(\d+(?:\.\d+)?)', content)
-        if match:
-            return float(match.group(1))
-    return 2.0 # Default
+    # Strategy 1: Fetch .cluster-ci from the remote repo
+    if repo and branch:
+        import tempfile, subprocess
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            gh_token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_PAT")
+            if gh_token:
+                repo_url = f"https://x-access-token:{gh_token}@github.com/{repo}.git"
+            else:
+                repo_url = f"https://github.com/{repo}.git"
+            subprocess.run(["git", "clone", "--depth", "1", "--branch", branch, "--no-checkout", repo_url, tmp_dir],
+                           check=True, capture_output=True, timeout=30)
+            subprocess.run(["git", "checkout", f"origin/{branch}", "--", ".cluster-ci"],
+                           cwd=tmp_dir, check=True, capture_output=True, timeout=10)
+            ci_file = os.path.join(tmp_dir, ".cluster-ci")
+            if os.path.exists(ci_file):
+                with open(ci_file, 'r') as f:
+                    content = f.read()
+        except Exception as e:
+            print(f"⚠️ Could not fetch .cluster-ci from {repo}@{branch}: {e}")
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Strategy 2: Fallback to local CWD
+    if content is None:
+        if os.path.exists(".cluster-ci"):
+            with open(".cluster-ci", 'r') as f:
+                content = f.read()
+        else:
+            return 2.0  # Default 2GB
+
+    import re
+    # Try REQUIRED_RAM=16GB or REQUIRED_RAM=16.5
+    match_env = re.search(r'REQUIRED_RAM\s*=\s*(\d+(?:\.\d+)?)(?:GB|G)?', content)
+    if match_env:
+        return float(match_env.group(1))
+
+    # Try --ram 16
+    match = re.search(r'--ram\s+(\d+(?:\.\d+)?)', content)
+    if match:
+        return float(match.group(1))
+    return 2.0  # Default
 
 def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
     """Submits a research job to the headnode scheduler."""
-    ram_req = get_ram_requirement()
+    ram_req = get_ram_requirement(repo, branch)
     print(f"🚀 Submitting job for {repo}@{branch} (Required RAM: {ram_req}GB)")
 
     token = os.environ.get("CLUSTER_TOKEN")

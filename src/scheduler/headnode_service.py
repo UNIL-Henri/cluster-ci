@@ -738,7 +738,40 @@ def view_project(owner, repo, path=''):
         target_host = parsed.hostname
         target_url = f"http://{target_host}:{viewer_port}/{path}"
         base_href = f"/view/{owner}/{repo}/" if path == '' else None
-        return proxy_request(target_url, base_href=base_href)
+
+        result = proxy_request(target_url, base_href=base_href)
+        # Check if proxy_request returned an error tuple (message, status_code)
+        if isinstance(result, tuple) and len(result) == 2 and result[1] == 502:
+            # Viewer is unreachable — show a diagnostic page instead of raw error
+            diag_msg = "DVC Viewer container may have crashed or failed to start."
+            try:
+                # Try to get viewer logs from worker
+                log_resp = requests.get(f"{worker_base_url}/viewer_logs", timeout=3)
+                if log_resp.status_code == 200:
+                    viewer_logs = log_resp.json().get('logs', '')
+                    if viewer_logs:
+                        diag_msg = f"Viewer container logs:\n{viewer_logs[-2000:]}"
+            except Exception:
+                pass
+
+            return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>DVC Viewer — Unavailable</title>
+<meta http-equiv="refresh" content="10">
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1a1a2e; color: #e0e0e0;
+       display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
+.card {{ background: #16213e; border-radius: 12px; padding: 40px; max-width: 700px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }}
+h1 {{ color: #e94560; margin-top: 0; }} pre {{ background: #0f3460; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; max-height: 300px; overflow-y: auto; }}
+.hint {{ color: #a0a0a0; font-size: 0.9em; margin-top: 20px; }}
+</style></head>
+<body><div class="card">
+<h1>⚠️ DVC Viewer Unreachable</h1>
+<p>The live viewer at <code>{target_host}:{viewer_port}</code> is not responding.</p>
+<pre>{diag_msg}</pre>
+<p class="hint">🔄 This page will auto-refresh every 10 seconds.<br>
+💡 Check <code>dvc-viewer.log</code> on the worker for details.</p>
+</div></body></html>""", 502
+        return result
 
     # --- Case 2: Historical (Local) ---
     repo_path = find_local_repo(repo_full_name)
