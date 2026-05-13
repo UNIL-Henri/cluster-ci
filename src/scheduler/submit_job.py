@@ -123,6 +123,7 @@ def wait_for_job(headnode_url, job_id):
 
     log_offset = 0
     status_printed = False
+    oom_detected = False
 
     while True:
         try:
@@ -139,6 +140,9 @@ def wait_for_job(headnode_url, job_id):
                         logs_data = logs_resp.json()
                         new_logs = logs_data.get('logs', '')
                         if new_logs:
+                            import re
+                            if re.search(r'Exit code 137|OOM|Out of Memory|exited with -9', new_logs, re.IGNORECASE):
+                                oom_detected = True
                             if not status_printed:
                                 print(f"\n\n[Streaming logs from {worker_url}]")
                                 status_printed = True
@@ -161,8 +165,8 @@ def wait_for_job(headnode_url, job_id):
                     print(f"\n❌ Job {job_id} failed: Worker became unreachable (timeout/offline). The job was orphaned.")
                 elif exit_code == -98:
                     print(f"\n❌ Job {job_id} failed: Worker restarted while the job was running/assigned.")
-                elif exit_code == 137:
-                    print(f"\n❌ Job {job_id} failed: Out of Memory (OOM killed by Docker).")
+                elif exit_code == 137 or oom_detected:
+                    print(f"\n❌ Job {job_id} failed: Out of Memory (OOM Kill detected).")
                 else:
                     print(f"\n❌ Job {job_id} failed with exit code {exit_code}")
                 return exit_code

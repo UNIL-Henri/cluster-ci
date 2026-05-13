@@ -930,11 +930,11 @@
         const WARNING_PATTERNS = /\bwarning\b|⚠️|\bWARN\b|\bdeprecated\b/i;
         const SUCCESS_PATTERNS = /✅|\bcompleted successfully\b|\bsuccess\b/i;
         const KILL_PATTERNS = [
-            { pattern: /Exit code 137|OOM|Out of Memory/i, reason: 'OOM Kill' },
+            { pattern: /Exit code 137|OOM|Out of Memory|exited with -9/i, reason: 'OOM Kill' },
             { pattern: /CLUSTER INTERRUPTED/i, reason: 'Interrupted' },
             { pattern: /zombie/i, reason: 'Zombie cleanup' },
             { pattern: /cancel/i, reason: 'Cancelled' },
-            { pattern: /SIGTERM|SIGKILL|signal/i, reason: 'Killed' },
+            { pattern: /SIGTERM|SIGKILL|signal|error code 255/i, reason: 'Killed' },
             { pattern: /didn.t change, skipping/i, reason: null }, // Not a kill
         ];
 
@@ -1030,8 +1030,8 @@
             if (lastMatch.type === 'END') {
                 const epilogue = rawText.substring(lastMatch.index + lastMatch.fullMatch.length).trim();
                 if (epilogue) {
-                    // Check for kill patterns in the epilogue
-                    const killReason = getKillReason(epilogue);
+                    // Check for kill patterns in the FULL text, since the kill might have occurred during a stage
+                    const killReason = getKillReason(rawText);
                     // Only say Post-Run if the last marker was sync:END (i.e. truly finished)
                     const isTrulyFinished = (lastMatch.name === 'sync' || lastMatch.name === 'teardown');
                     const defaultLabel = isTrulyFinished ? 'Post-Run' : 'System';
