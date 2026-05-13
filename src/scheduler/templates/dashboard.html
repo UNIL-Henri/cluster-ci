@@ -49,6 +49,59 @@
             flex: 0 0 100% !important;
             max-width: 100% !important;
         }
+        /* Log modal segmented view */
+        .log-stage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 8px;
+            padding: 12px;
+            background: #161616;
+            border-bottom: 1px solid #333;
+        }
+        .log-stage-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .log-stage-btn i { font-size: 1rem; flex-shrink: 0; }
+        .log-stage-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+        .log-stage-btn.active { box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(255,255,255,0.3); transform: translateY(-1px); }
+        /* Status colors */
+        .log-stage-btn.status-success { background: #198754; color: #fff; border-color: #198754; }
+        .log-stage-btn.status-warning { background: #ffc107; color: #212529; border-color: #ffc107; }
+        .log-stage-btn.status-error { background: #dc3545; color: #fff; border-color: #dc3545; }
+        .log-stage-btn.status-neutral { background: #2a2a2a; color: #adb5bd; border-color: #444; }
+        .log-stage-btn.status-running { background: #0d6efd; color: #fff; border-color: #0d6efd; animation: pulse-glow 2s infinite; }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 4px rgba(13,110,253,0.4); }
+            50% { box-shadow: 0 0 12px rgba(13,110,253,0.8); }
+        }
+        .log-section-content {
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+            color: #d4d4d4;
+            font-size: 0.9rem;
+            padding: 16px;
+            margin: 0;
+            min-height: 300px;
+        }
+        .btn-copy-logs {
+            transition: all 0.2s ease;
+        }
+        .btn-copy-logs.copied {
+            background-color: #198754 !important;
+            border-color: #198754 !important;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -106,7 +159,7 @@
         </div>
     </div>
 
-    <!-- Log Modal -->
+    <!-- Log Modal (Segmented by pipeline stage) -->
     <div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content bg-dark text-light">
@@ -114,10 +167,16 @@
                     <h5 class="modal-title" id="logModalLabel"><i class="bi bi-terminal"></i> Execution Logs</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body p-0" style="background-color: #1e1e1e;">
-                    <pre id="log-content" class="m-0 p-3" style="white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; color: #d4d4d4; font-size: 0.9rem;"></pre>
+                <div id="log-stage-grid" class="log-stage-grid">
+                    <!-- Stage buttons rendered dynamically -->
                 </div>
-                <div class="modal-footer border-secondary">
+                <div class="modal-body p-0" style="background-color: #1e1e1e;">
+                    <pre id="log-content" class="log-section-content"></pre>
+                </div>
+                <div class="modal-footer border-secondary d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-light btn-sm btn-copy-logs" onclick="copyLogs()">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -849,19 +908,264 @@
             }
         }
 
+        // ── Log Segmentation Engine ──────────────────────────────────────
         let logPollingInterval = null;
         let lastLogOffset = 0;
+        let fullLogBuffer = '';
+        let currentSelectedStage = null;
+
+        const STAGE_META = {
+            setup:     { label: 'Setup',           icon: 'bi-gear-fill' },
+            dvc_repro: { label: 'DVC Pipeline',    icon: 'bi-play-circle-fill' },
+            sync:      { label: 'Sync & GC',       icon: 'bi-cloud-upload-fill' },
+        };
+
+        const ERROR_PATTERNS   = /\berror\b|❌|\bfailed\b|\bFATAL\b|\bTraceback\b|\bException\b|Error:|exit code [1-9]/i;
+        const WARNING_PATTERNS = /\bwarning\b|⚠️|\bWARN\b|\bdeprecated\b/i;
+        const SUCCESS_PATTERNS = /✅|\bcompleted successfully\b|\bsuccess\b/i;
+
+        function classifySection(content) {
+            if (ERROR_PATTERNS.test(content)) return 'error';
+            if (WARNING_PATTERNS.test(content)) return 'warning';
+            if (SUCCESS_PATTERNS.test(content)) return 'success';
+            return 'neutral';
+        }
+
+        function parseLogSections(rawText) {
+            const sections = [];
+            const stageRegex = /===STAGE:(\w+):(BEGIN|END)===/g;
+            let matches = [];
+            let match;
+            while ((match = stageRegex.exec(rawText)) !== null) {
+                matches.push({ name: match[1], type: match[2], index: match.index, fullMatch: match[0] });
+            }
+
+            if (matches.length === 0) {
+                // Fallback: no markers found (legacy logs)
+                sections.push({
+                    id: 'full_log',
+                    label: 'Full Log',
+                    icon: 'bi-file-text-fill',
+                    content: rawText,
+                    status: classifySection(rawText)
+                });
+                return sections;
+            }
+
+            // Content before first marker
+            const preamble = rawText.substring(0, matches[0].index).trim();
+            if (preamble) {
+                sections.push({
+                    id: 'preamble',
+                    label: 'Init',
+                    icon: 'bi-rocket-takeoff-fill',
+                    content: preamble,
+                    status: classifySection(preamble)
+                });
+            }
+
+            // Parse BEGIN/END pairs
+            for (let i = 0; i < matches.length; i++) {
+                const m = matches[i];
+                if (m.type !== 'BEGIN') continue;
+
+                // Find matching END
+                const endMatch = matches.find((e, j) => j > i && e.name === m.name && e.type === 'END');
+                const contentStart = m.index + m.fullMatch.length;
+                const contentEnd = endMatch ? endMatch.index : rawText.length;
+                const stageContent = rawText.substring(contentStart, contentEnd).trim();
+
+                const meta = STAGE_META[m.name] || { label: m.name, icon: 'bi-circle' };
+
+                if (m.name === 'dvc_repro') {
+                    // Parse DVC sub-stages from the pipeline output
+                    const subStages = parseDvcSubStages(stageContent);
+                    if (subStages.length > 1) {
+                        subStages.forEach(sub => sections.push(sub));
+                    } else {
+                        sections.push({
+                            id: m.name,
+                            label: meta.label,
+                            icon: meta.icon,
+                            content: stageContent,
+                            status: classifySection(stageContent)
+                        });
+                    }
+                } else {
+                    sections.push({
+                        id: m.name,
+                        label: meta.label,
+                        icon: meta.icon,
+                        content: stageContent,
+                        status: classifySection(stageContent)
+                    });
+                }
+            }
+
+            // Content after last marker
+            const lastMatch = matches[matches.length - 1];
+            const epilogue = rawText.substring(lastMatch.index + lastMatch.fullMatch.length).trim();
+            if (epilogue) {
+                sections.push({
+                    id: 'epilogue',
+                    label: 'Post-Run',
+                    icon: 'bi-flag-fill',
+                    content: epilogue,
+                    status: classifySection(epilogue)
+                });
+            }
+
+            return sections;
+        }
+
+        function parseDvcSubStages(dvcContent) {
+            // DVC outputs lines like: Running stage 'step_xxx':
+            const stagePattern = /Running stage '([^']+)':/g;
+            const stageMatches = [];
+            let m;
+            while ((m = stagePattern.exec(dvcContent)) !== null) {
+                stageMatches.push({ name: m[1], index: m.index });
+            }
+
+            if (stageMatches.length === 0) return [{
+                id: 'dvc_repro',
+                label: 'DVC Pipeline',
+                icon: 'bi-play-circle-fill',
+                content: dvcContent,
+                status: classifySection(dvcContent)
+            }];
+
+            const sections = [];
+
+            // Content before first DVC stage (dep install etc.)
+            const preStage = dvcContent.substring(0, stageMatches[0].index).trim();
+            if (preStage) {
+                sections.push({
+                    id: 'dvc_pre',
+                    label: 'Deps Install',
+                    icon: 'bi-download',
+                    content: preStage,
+                    status: classifySection(preStage)
+                });
+            }
+
+            for (let i = 0; i < stageMatches.length; i++) {
+                const start = stageMatches[i].index;
+                const end = i + 1 < stageMatches.length ? stageMatches[i + 1].index : dvcContent.length;
+                const content = dvcContent.substring(start, end).trim();
+                const stageName = stageMatches[i].name;
+
+                // Prettify label: step_format -> Format, step_train -> Train, etc.
+                let prettyLabel = stageName;
+                if (stageName.startsWith('step_')) {
+                    prettyLabel = stageName.replace('step_', '').replace(/_/g, ' ');
+                    prettyLabel = prettyLabel.charAt(0).toUpperCase() + prettyLabel.slice(1);
+                }
+
+                sections.push({
+                    id: 'dvc_' + stageName,
+                    label: prettyLabel,
+                    icon: 'bi-play-circle',
+                    content: content,
+                    status: classifySection(content)
+                });
+            }
+
+            return sections;
+        }
+
+        function renderLogStageGrid(sections) {
+            const grid = document.getElementById('log-stage-grid');
+            grid.innerHTML = '';
+
+            // Add "All" button
+            const allBtn = document.createElement('button');
+            allBtn.className = `log-stage-btn status-neutral ${currentSelectedStage === '__all__' ? 'active' : ''}`;
+            allBtn.innerHTML = `<i class="bi bi-file-text-fill"></i> Raw Log`;
+            allBtn.onclick = (e) => selectStage('__all__', sections, e);
+            grid.appendChild(allBtn);
+
+            sections.forEach(section => {
+                const btn = document.createElement('button');
+                const isActive = currentSelectedStage === section.id;
+                btn.className = `log-stage-btn status-${section.status} ${isActive ? 'active' : ''}`;
+                btn.innerHTML = `<i class="bi ${section.icon}"></i> ${escapeHtml(section.label)}`;
+                btn.title = section.label;
+                btn.onclick = (e) => selectStage(section.id, sections, e);
+                grid.appendChild(btn);
+            });
+
+            // Add "Last Error" button if any section has error status
+            const hasError = sections.some(s => s.status === 'error');
+            if (hasError) {
+                const errBtn = document.createElement('button');
+                const isActive = currentSelectedStage === '__last_error__';
+                errBtn.className = `log-stage-btn status-error ${isActive ? 'active' : ''}`;
+                errBtn.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Last Error`;
+                errBtn.title = 'Show the last 100 lines of the full log';
+                errBtn.onclick = (e) => selectStage('__last_error__', sections, e);
+                grid.appendChild(errBtn);
+            }
+        }
+
+        function isUserAtBottom() {
+            const modalBody = document.querySelector('#logModal .modal-body');
+            if (!modalBody) return true;
+            // Consider "at bottom" if within 50px of the end
+            return (modalBody.scrollHeight - modalBody.scrollTop - modalBody.clientHeight) < 50;
+        }
+
+        function selectStage(stageId, sections, evt) {
+            currentSelectedStage = stageId;
+            const logContent = document.getElementById('log-content');
+
+            if (stageId === '__all__') {
+                logContent.textContent = fullLogBuffer;
+            } else if (stageId === '__last_error__') {
+                // Show only the last 100 lines of the full log
+                const lines = fullLogBuffer.split('\n');
+                logContent.textContent = lines.slice(-100).join('\n');
+            } else {
+                const section = sections.find(s => s.id === stageId);
+                logContent.textContent = section ? section.content : '';
+            }
+
+            // Update active button state
+            document.querySelectorAll('.log-stage-btn').forEach(btn => btn.classList.remove('active'));
+            if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
+
+            // Scroll to bottom on explicit user click
+            const modalBody = document.querySelector('#logModal .modal-body');
+            modalBody.scrollTop = modalBody.scrollHeight;
+        }
+
+        function copyLogs() {
+            const logContent = document.getElementById('log-content');
+            const text = logContent.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.btn-copy-logs');
+                btn.classList.add('copied');
+                btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
+                }, 2000);
+            });
+        }
 
         function showLogs(jobId) {
             const logModal = new bootstrap.Modal(document.getElementById('logModal'));
             const logContent = document.getElementById('log-content');
             logContent.textContent = 'Connecting to worker for logs...';
+            document.getElementById('log-stage-grid').innerHTML = '';
+            fullLogBuffer = '';
             lastLogOffset = 0;
-            
+            currentSelectedStage = null;
+
             if (logPollingInterval) clearInterval(logPollingInterval);
-            
+
             logModal.show();
-            
+
             const logElement = document.getElementById('logModal');
             logElement.addEventListener('hidden.bs.modal', () => {
                 if (logPollingInterval) {
@@ -878,17 +1182,43 @@
             try {
                 const resp = await fetch(`/api/jobs/${jobId}/logs?offset=${lastLogOffset}`);
                 const data = await resp.json();
-                
-                const logContent = document.getElementById('log-content');
+
                 if (data.logs) {
-                    if (lastLogOffset === 0) logContent.textContent = '';
-                    logContent.textContent += data.logs;
+                    fullLogBuffer += data.logs;
                     lastLogOffset = data.offset;
-                    
-                    const modalBody = document.querySelector('#logModal .modal-body');
-                    modalBody.scrollTop = modalBody.scrollHeight;
+
+                    const sections = parseLogSections(fullLogBuffer);
+
+                    // Auto-select first section on first load
+                    if (!currentSelectedStage && sections.length > 0) {
+                        // Find the last non-empty running stage, or just pick the last section
+                        currentSelectedStage = sections[sections.length - 1].id;
+                    }
+
+                    renderLogStageGrid(sections);
+
+                    // Check if user is at bottom BEFORE updating content
+                    const shouldAutoScroll = isUserAtBottom();
+
+                    // Update displayed content
+                    const logContent = document.getElementById('log-content');
+                    if (currentSelectedStage === '__all__') {
+                        logContent.textContent = fullLogBuffer;
+                    } else if (currentSelectedStage === '__last_error__') {
+                        const lines = fullLogBuffer.split('\n');
+                        logContent.textContent = lines.slice(-100).join('\n');
+                    } else {
+                        const activeSection = sections.find(s => s.id === currentSelectedStage);
+                        logContent.textContent = activeSection ? activeSection.content : fullLogBuffer;
+                    }
+
+                    // Only auto-scroll if user was already at the bottom
+                    if (shouldAutoScroll) {
+                        const modalBody = document.querySelector('#logModal .modal-body');
+                        modalBody.scrollTop = modalBody.scrollHeight;
+                    }
                 } else if (lastLogOffset === 0) {
-                    logContent.textContent = 'Waiting for logs...';
+                    document.getElementById('log-content').textContent = 'Waiting for logs...';
                 }
             } catch (err) {
                 console.error("Log polling error", err);

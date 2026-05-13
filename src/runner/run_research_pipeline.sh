@@ -78,6 +78,8 @@ log_info "   Target Branch : $TARGET_BRANCH"
 log_info "   Run Folder    : $BASE_DIR/$REPO_WORK_DIR"
 echo "=========================================================================="
 
+echo "===STAGE:setup:BEGIN==="
+
 # 1. Creation / switch to repositories/
 log_info "[Step 1/3] Initializing local cache..."
 mkdir -p "$BASE_DIR/repositories/$(dirname "$TARGET_REPO")"
@@ -414,6 +416,9 @@ log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present
 docker_exec "uv run --with tomlkit python3 /cluster-ci/src/runner/validate_pyproject.py --ci"
 
+echo "===STAGE:setup:END==="
+echo "===STAGE:dvc_repro:BEGIN==="
+
 log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # Smart dependency installation: only re-install if pyproject.toml/uv.lock changed.
 # The smart_install.sh script hashes dependency files and caches the result in the
@@ -429,6 +434,9 @@ docker_exec "$EXEC_CMD"
 EXEC_RET=$?
 set -e
 
+echo "===STAGE:dvc_repro:END==="
+echo "===STAGE:sync:BEGIN==="
+
 if [ $EXEC_RET -ne 0 ]; then
     log_error "Execution interrupted or failed (Exit code: $EXEC_RET). Forcing DVC sync before exiting..."
 fi
@@ -438,6 +446,8 @@ fi
 echo "=========================================================================="
 log_success "CLUSTER-CI: GitOps execution completed successfully."
 echo "=========================================================================="
+
+echo "===STAGE:sync:END==="
 
 # Truncate log to max 2000 lines (erases beginning to keep the end)
 if [ -f "$LOG_FILE" ]; then
