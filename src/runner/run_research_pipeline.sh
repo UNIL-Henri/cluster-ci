@@ -227,7 +227,6 @@ docker run -d \
     --ipc=host \
     --user "$(id -u):$(id -g)" \
     -e HOME=/home/user \
-    --memory="${RAM_LIMIT}g" \
     $ENV_FILE_FLAG \
     -e HEADNODE_URL="$HEADNODE_URL" \
     -e CLUSTER_CI_MODE=executor \
@@ -405,7 +404,7 @@ docker run --rm \
     -e CLUSTER_CI_MODE=executor \
     $ENV_FILE_FLAG \
     $DOCKER_IMAGE \
-    bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "$BASE_DIR/dvc-viewer.log" 2>&1 &
+    bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "dvc-viewer.log" 2>&1 &
 
 log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present

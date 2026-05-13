@@ -164,6 +164,14 @@ def execute_job(job):
     log_file = open(log_path, 'w')
 
     try:
+        # Delete stale port file from previous runs
+        port_file = os.path.join(REPOS_DIR, repo, ".cluster-ci-viewer-port")
+        if os.path.exists(port_file):
+            try:
+                os.remove(port_file)
+            except Exception as e:
+                logger.warning(f"Could not remove stale port file {port_file}: {e}")
+
         process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT)
         with job_lock:
             current_process = process
