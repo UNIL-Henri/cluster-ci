@@ -190,10 +190,6 @@ RAM_LIMIT=$(grep -oE -e 'REQUIRED_RAM=[0-9.]+' .cluster-ci | cut -d= -f2 | head 
 [ -z "$RAM_LIMIT" ] && RAM_LIMIT="2"
 log_info "RAM limit detected: ${RAM_LIMIT}GB"
 
-# Extract SHM limit from .cluster-ci (SHARED_MEMORY=64GB)
-SHM_LIMIT=$(grep -oE -e 'SHARED_MEMORY=[0-9a-zA-Z]+' .cluster-ci | cut -d= -f2 | head -n 1)
-[ -z "$SHM_LIMIT" ] && SHM_LIMIT="8g"
-log_info "SHM limit detected: ${SHM_LIMIT}"
 
 # Configuration Docker
 DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/pytorch:26.04-py3"}
@@ -232,7 +228,6 @@ docker run -d \
     --user "$(id -u):$(id -g)" \
     -e HOME=/home/user \
     --memory="${RAM_LIMIT}g" \
-    --shm-size="${SHM_LIMIT}" \
     $ENV_FILE_FLAG \
     -e HEADNODE_URL="$HEADNODE_URL" \
     -e CLUSTER_CI_MODE=executor \

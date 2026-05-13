@@ -151,4 +151,5 @@ cluster-ci/
 - [x] Fix Bug: Jobs en `pending` infini en cas de demande de RAM dépassant la capacité physique des workers (fail-fast implémenté).
 - [x] Fix Bug: `dvc-viewer` connection refused (port binding explicitement forcé sur 0.0.0.0 pour contourner l'isolation IPv6/loopback de Docker).
 - [x] Fix Bug: UI Frontend affichait prématurément le label `Post-Run` au lieu de `System/Logs` durant le run de la pipeline.
+- [x] Suppression de l'option obsolète `SHARED_MEMORY` (rendue inutile par `--ipc=host` qui alloue automatiquement 50% de la RAM hôte à `/dev/shm`) et ajout de la détection OOM en direct dans `submit_job.py` pour GitHub Actions.
 - [ ] [Implémenter un Global Execution Timeout pour empêcher le gel du worker sur un job bloqué](https://github.com/UNIL-DESI/cluster-ci/issues/63)
