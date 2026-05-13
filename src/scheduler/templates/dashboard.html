@@ -173,10 +173,11 @@
                 <div class="modal-body p-0" style="background-color: #1e1e1e;">
                     <pre id="log-content" class="log-section-content"></pre>
                 </div>
-                <div class="modal-footer border-secondary d-flex justify-content-between">
+                <div class="modal-footer border-secondary d-flex justify-content-between align-items-center">
                     <button type="button" class="btn btn-outline-light btn-sm btn-copy-logs" onclick="copyLogs()">
                         <i class="bi bi-clipboard"></i> Copy
                     </button>
+                    <span id="log-line-indicator" class="text-muted small"></span>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -914,6 +915,11 @@
         let fullLogBuffer = '';
         let currentSelectedStage = null;
 
+        // Lazy rendering state
+        const LOG_CHUNK_SIZE = 300; // lines per chunk
+        let currentSectionLines = []; // full lines array for active section
+        let renderedLineCount = 0;
+
         const STAGE_META = {
             setup:     { label: 'Setup',           icon: 'bi-gear-fill' },
             dvc_repro: { label: 'DVC Pipeline',    icon: 'bi-play-circle-fill' },
@@ -1117,31 +1123,75 @@
 
         function selectStage(stageId, sections, evt) {
             currentSelectedStage = stageId;
-            const logContent = document.getElementById('log-content');
-
-            if (stageId === '__all__') {
-                logContent.textContent = fullLogBuffer;
-            } else if (stageId === '__last_error__') {
-                // Show only the last 100 lines of the full log
-                const lines = fullLogBuffer.split('\n');
-                logContent.textContent = lines.slice(-100).join('\n');
-            } else {
-                const section = sections.find(s => s.id === stageId);
-                logContent.textContent = section ? section.content : '';
-            }
+            const content = getStageContent(stageId, sections);
+            renderLogContent(content, true);
 
             // Update active button state
             document.querySelectorAll('.log-stage-btn').forEach(btn => btn.classList.remove('active'));
             if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
 
-            // Scroll to bottom on explicit user click
+            // Scroll to top on explicit user click (they chose a new section)
             const modalBody = document.querySelector('#logModal .modal-body');
-            modalBody.scrollTop = modalBody.scrollHeight;
+            modalBody.scrollTop = 0;
+        }
+
+        function getStageContent(stageId, sections) {
+            if (stageId === '__all__') return fullLogBuffer;
+            if (stageId === '__last_error__') {
+                return fullLogBuffer.split('\n').slice(-100).join('\n');
+            }
+            const section = sections ? sections.find(s => s.id === stageId) : null;
+            return section ? section.content : '';
+        }
+
+        function renderLogContent(content, reset) {
+            currentSectionLines = content.split('\n');
+            const logContent = document.getElementById('log-content');
+
+            if (reset) {
+                renderedLineCount = 0;
+            }
+
+            if (currentSectionLines.length <= LOG_CHUNK_SIZE) {
+                // Small content: render everything at once
+                logContent.textContent = content;
+                renderedLineCount = currentSectionLines.length;
+            } else {
+                // Large content: render first chunk only
+                const end = Math.min(renderedLineCount + LOG_CHUNK_SIZE, currentSectionLines.length);
+                logContent.textContent = currentSectionLines.slice(0, end).join('\n');
+                renderedLineCount = end;
+            }
+
+            updateLineIndicator();
+        }
+
+        function loadMoreLogLines() {
+            if (renderedLineCount >= currentSectionLines.length) return;
+
+            const logContent = document.getElementById('log-content');
+            const end = Math.min(renderedLineCount + LOG_CHUNK_SIZE, currentSectionLines.length);
+            const nextChunk = currentSectionLines.slice(renderedLineCount, end);
+            logContent.textContent += '\n' + nextChunk.join('\n');
+            renderedLineCount = end;
+
+            updateLineIndicator();
+        }
+
+        function updateLineIndicator() {
+            const indicator = document.getElementById('log-line-indicator');
+            if (!indicator) return;
+            const total = currentSectionLines.length;
+            if (renderedLineCount >= total) {
+                indicator.textContent = `${total} lines`;
+            } else {
+                indicator.textContent = `${renderedLineCount} / ${total} lines ↓`;
+            }
         }
 
         function copyLogs() {
-            const logContent = document.getElementById('log-content');
-            const text = logContent.textContent;
+            // Always copy the FULL section content, not just the rendered portion
+            const text = currentSectionLines.join('\n');
             navigator.clipboard.writeText(text).then(() => {
                 const btn = document.querySelector('.btn-copy-logs');
                 btn.classList.add('copied');
@@ -1158,13 +1208,24 @@
             const logContent = document.getElementById('log-content');
             logContent.textContent = 'Connecting to worker for logs...';
             document.getElementById('log-stage-grid').innerHTML = '';
+            document.getElementById('log-line-indicator').textContent = '';
             fullLogBuffer = '';
             lastLogOffset = 0;
             currentSelectedStage = null;
+            currentSectionLines = [];
+            renderedLineCount = 0;
 
             if (logPollingInterval) clearInterval(logPollingInterval);
 
             logModal.show();
+
+            // Attach scroll listener for lazy loading
+            const modalBody = document.querySelector('#logModal .modal-body');
+            modalBody.onscroll = () => {
+                if (modalBody.scrollHeight - modalBody.scrollTop - modalBody.clientHeight < 150) {
+                    loadMoreLogLines();
+                }
+            };
 
             const logElement = document.getElementById('logModal');
             logElement.addEventListener('hidden.bs.modal', () => {
@@ -1172,6 +1233,7 @@
                     clearInterval(logPollingInterval);
                     logPollingInterval = null;
                 }
+                modalBody.onscroll = null;
             }, { once: true });
 
             pollLogs(jobId);
@@ -1200,17 +1262,9 @@
                     // Check if user is at bottom BEFORE updating content
                     const shouldAutoScroll = isUserAtBottom();
 
-                    // Update displayed content
-                    const logContent = document.getElementById('log-content');
-                    if (currentSelectedStage === '__all__') {
-                        logContent.textContent = fullLogBuffer;
-                    } else if (currentSelectedStage === '__last_error__') {
-                        const lines = fullLogBuffer.split('\n');
-                        logContent.textContent = lines.slice(-100).join('\n');
-                    } else {
-                        const activeSection = sections.find(s => s.id === currentSelectedStage);
-                        logContent.textContent = activeSection ? activeSection.content : fullLogBuffer;
-                    }
+                    // Update displayed content using lazy rendering
+                    const content = getStageContent(currentSelectedStage, sections);
+                    renderLogContent(content, false);
 
                     // Only auto-scroll if user was already at the bottom
                     if (shouldAutoScroll) {
