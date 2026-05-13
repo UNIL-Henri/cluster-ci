@@ -449,11 +449,27 @@ def api_list_projects():
 
         with get_db_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT DISTINCT repo FROM jobs')
-            projects_in_db = [row['repo'] for row in cursor.fetchall()]
+            cursor.execute('''
+                SELECT repo, status, job_id 
+                FROM jobs j1 
+                WHERE created_at = (SELECT MAX(created_at) FROM jobs j2 WHERE j1.repo = j2.repo)
+            ''')
+            db_projects = {}
+            for row in cursor.fetchall():
+                db_projects[row['repo']] = {'status': row['status'], 'job_id': row['job_id']}
 
         # Only return projects that are in the database AND the user has access to (case-insensitive)
-        projects = [p for p in projects_in_db if p.lower() in allowed_repos]
+        projects = []
+        for p, info in db_projects.items():
+            if p.lower() in allowed_repos:
+                projects.append({
+                    "name": p,
+                    "status": info['status'],
+                    "job_id": info['job_id']
+                })
+        
+        # Sort projects alphabetically by name
+        projects.sort(key=lambda x: x['name'].lower())
         return jsonify(projects)
     except Exception as e:
         app.logger.error(f"Error fetching repos in API: {e}")

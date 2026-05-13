@@ -546,26 +546,59 @@
                     return;
                 }
 
-                projects.forEach(repo => {
+                projects.forEach(proj => {
+                    const repoName = typeof proj === 'string' ? proj : proj.name;
+                    const status = proj.status;
+                    const jobId = proj.job_id;
+
                     const col = document.createElement('div');
                     col.className = 'col';
 
                     const card = document.createElement('div');
-                    card.className = 'card h-100 explorer-item shadow-sm';
-                    card.onclick = () => navigateToProject(repo);
+                    card.className = 'card h-100 explorer-item shadow-sm position-relative';
+                    card.onclick = () => navigateToProject(repoName);
 
                     const icon = document.createElement('i');
                     icon.className = 'bi bi-folder-fill explorer-icon folder-icon';
 
                     const title = document.createElement('h6');
                     title.className = 'card-title text-truncate';
-                    title.textContent = repo;
-                    title.title = repo;
+                    title.textContent = repoName;
+                    title.title = repoName;
 
                     card.appendChild(icon);
                     card.appendChild(title);
-                    col.appendChild(card);
 
+                    if (status) {
+                        const indicatorContainer = document.createElement('div');
+                        indicatorContainer.className = 'position-absolute top-0 end-0 m-2';
+                        
+                        let isClickable = false;
+                        
+                        if (status === 'running') {
+                            indicatorContainer.innerHTML = '<div class="spinner-grow spinner-grow-sm text-primary" role="status" title="Running"></div>';
+                            isClickable = true;
+                        } else if (status === 'completed') {
+                            indicatorContainer.innerHTML = '<span class="badge rounded-pill bg-success p-1" style="width: 12px; height: 12px;" title="Completed"></span>';
+                        } else if (status === 'failed') {
+                            indicatorContainer.innerHTML = '<span class="badge rounded-pill bg-danger p-1" style="width: 12px; height: 12px;" title="Failed"></span>';
+                            isClickable = true;
+                        } else if (status === 'cancelled') {
+                            indicatorContainer.innerHTML = '<span class="badge rounded-pill bg-secondary p-1" style="width: 12px; height: 12px;" title="Cancelled"></span>';
+                        }
+                        
+                        if (isClickable && jobId) {
+                            indicatorContainer.style.cursor = 'pointer';
+                            indicatorContainer.onclick = (e) => {
+                                e.stopPropagation();
+                                showLogs(jobId);
+                            };
+                        }
+                        
+                        card.appendChild(indicatorContainer);
+                    }
+
+                    col.appendChild(card);
                     container.appendChild(col);
                 });
             } catch (err) {
