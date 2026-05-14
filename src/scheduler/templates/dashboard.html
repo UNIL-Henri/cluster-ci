@@ -1341,6 +1341,13 @@
 
         // Initialize
         loadProjects();
+
+        // Periodically refresh cluster stats (every 10s)
+        setInterval(() => {
+            if (currentState.view === 'root') {
+                loadClusterStats();
+            }
+        }, 10000);
     </script>
 </body>
 </html>

@@ -94,7 +94,8 @@ def register_worker():
 
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        # On first registration, we initialize available_ram_gb to total_ram_gb
+        # available_ram_gb is now a derived state, but we keep the column for backward compatibility
+        # (it will be ignored by the dynamic calculation).
         cursor.execute('''
             INSERT INTO workers (worker_id, hostname, service_url, total_ram_gb, available_ram_gb, total_storage_gb, available_storage_gb, last_seen, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'online')
@@ -175,7 +176,18 @@ def submit_job():
 def list_workers():
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM workers')
+        # available_ram_gb is now a derived state: Total - Sum of RAM required by active jobs
+        cursor.execute('''
+            SELECT
+                worker_id, hostname, service_url, total_ram_gb,
+                (total_ram_gb - (
+                    SELECT COALESCE(SUM(ram_required_gb), 0)
+                    FROM jobs
+                    WHERE worker_id = workers.worker_id AND status IN ('running', 'assigned')
+                )) as available_ram_gb,
+                total_storage_gb, available_storage_gb, last_seen, status
+            FROM workers
+        ''')
         workers = [dict(row) for row in cursor.fetchall()]
     return jsonify(workers)
 
@@ -240,14 +252,6 @@ def update_job_status():
                 WHERE job_id = ?
             ''', (status, commit_hash, viewer_port, job_id))
         elif status in ['completed', 'failed']:
-            # Restore RAM to the worker only if it wasn't already completed/failed
-            if current_status in ['running', 'assigned'] and job['worker_id']:
-                cursor.execute('''
-                    UPDATE workers
-                    SET available_ram_gb = available_ram_gb + ?
-                    WHERE worker_id = ?
-                ''', (job['ram_required_gb'], job['worker_id']))
-
             cursor.execute('UPDATE jobs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = COALESCE(?, exit_code), commit_hash = COALESCE(?, commit_hash) WHERE job_id = ?', (status, exit_code, commit_hash, job_id))
         else:
             cursor.execute('UPDATE jobs SET status = ? WHERE job_id = ?', (status, job_id))
