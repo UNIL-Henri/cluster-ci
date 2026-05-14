@@ -176,11 +176,11 @@ def submit_job():
 def list_workers():
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        # available_ram_gb is now a derived state: Total - Sum of RAM required by active jobs
+        # available_ram_gb is now a derived state: Total - 2GB (OS margin) - Sum of RAM required by active jobs
         cursor.execute('''
             SELECT
                 worker_id, hostname, service_url, total_ram_gb,
-                (total_ram_gb - (
+                (total_ram_gb - 2.0 - (
                     SELECT COALESCE(SUM(ram_required_gb), 0)
                     FROM jobs
                     WHERE worker_id = workers.worker_id AND status IN ('running', 'assigned')

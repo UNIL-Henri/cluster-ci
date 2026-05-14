@@ -47,11 +47,11 @@ class TestDerivedRAM(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 200)
 
-        # 2. Check initial available RAM (should be 64.0)
+        # 2. Check initial available RAM (should be 64.0 - 2.0 safety margin = 62.0)
         resp = requests.get(f"{headnode_url}/workers")
         workers = resp.json()
         target_worker = next(w for w in workers if w['worker_id'] == worker_id)
-        self.assertEqual(target_worker['available_ram_gb'], 64.0)
+        self.assertEqual(target_worker['available_ram_gb'], 62.0)
 
         # 3. Submit a job requiring 16GB
         resp = requests.post(f"{headnode_url}/submit_job", json={
@@ -65,11 +65,11 @@ class TestDerivedRAM(unittest.TestCase):
         # 4. Wait for scheduler to assign the job
         time.sleep(7)
 
-        # 5. Check derived available RAM (should be 64.0 - 16.0 = 48.0)
+        # 5. Check derived available RAM (should be 64.0 - 2.0 margin - 16.0 = 46.0)
         resp = requests.get(f"{headnode_url}/workers")
         workers = resp.json()
         target_worker = next(w for w in workers if w['worker_id'] == worker_id)
-        self.assertEqual(target_worker['available_ram_gb'], 48.0)
+        self.assertEqual(target_worker['available_ram_gb'], 46.0)
 
         # 6. Complete the job
         resp = requests.post(f"{headnode_url}/update_job_status", json={
@@ -79,11 +79,11 @@ class TestDerivedRAM(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 200)
 
-        # 7. Check derived available RAM again (should be back to 64.0)
+        # 7. Check derived available RAM again (should be back to 62.0)
         resp = requests.get(f"{headnode_url}/workers")
         workers = resp.json()
         target_worker = next(w for w in workers if w['worker_id'] == worker_id)
-        self.assertEqual(target_worker['available_ram_gb'], 64.0)
+        self.assertEqual(target_worker['available_ram_gb'], 62.0)
 
     @classmethod
     def tearDownClass(cls):
