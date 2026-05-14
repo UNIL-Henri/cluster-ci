@@ -49,7 +49,7 @@ def schedule_jobs():
                             WHERE status IN ('running', 'assigned')
                             AND worker_id IS NOT NULL
                         )
-                        ORDER BY available_ram_gb DESC
+                        ORDER BY total_ram_gb DESC
                     ''')
                     workers = [dict(row) for row in cursor.fetchall()]
 
@@ -65,10 +65,27 @@ def schedule_jobs():
                     required_hashes = json.loads(job.get('required_hashes') or '[]')
 
                     # Hard Constraint: Filter workers by RAM
-                    candidates = [w for w in workers if w['available_ram_gb'] >= ram_required]
+                    # Since workers are single-threaded and exclusively run one job at a time,
+                    # they can use their full physical RAM minus a small OS overhead (2GB).
+                    # We don't use 'available_ram_gb' because it is artificially lowered by ZFS ARC and reclaimable caches.
+                    candidates = [w for w in workers if (w['total_ram_gb'] - 2.0) >= ram_required]
 
                     if not candidates:
-                        logger.info(f"Could not find worker for job {job_id} requiring {ram_required} GB")
+                        # Check if it's fundamentally impossible by querying all online workers' total_ram_gb
+                        with get_db_conn() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute('SELECT MAX(total_ram_gb) FROM workers WHERE status = "online"')
+                            max_total = cursor.fetchone()[0] or 0.0
+
+                        if ram_required > (max_total - 2.0):
+                            logger.error(f"Job {job_id} requires {ram_required} GB but max cluster capacity (minus 2GB OS overhead) is {max_total - 2.0:.1f} GB. Failing job.")
+                            with get_db_conn() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("UPDATE jobs SET status = 'failed' WHERE job_id = ?", (job_id,))
+                                conn.commit()
+                            continue
+
+                        logger.info(f"Could not find worker for job {job_id} requiring {ram_required} GB (waiting for a large enough worker to come online)")
                         continue
 
                     # Soft Constraint: Data Locality (P2P Discovery)
@@ -112,15 +129,9 @@ def schedule_jobs():
                         ''', (assigned_worker['worker_id'], p2p_url, job_id))
 
                         if cursor.rowcount > 0:
-                            # Optimistically decrease available RAM on worker for subsequent jobs in this loop
-                            new_available_ram = assigned_worker['available_ram_gb'] - ram_required
-                            cursor.execute('''
-                                UPDATE workers
-                                SET available_ram_gb = ?
-                                WHERE worker_id = ?
-                            ''', (new_available_ram, assigned_worker['worker_id']))
                             conn.commit()
-                            assigned_worker['available_ram_gb'] = new_available_ram
+                            # Mark worker as busy in-memory for subsequent jobs in this loop
+                            workers = [w for w in workers if w['worker_id'] != assigned_worker['worker_id']]
 
         except Exception as e:
             logger.error(f"Error in scheduler loop: {e}")
