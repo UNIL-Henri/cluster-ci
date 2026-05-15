@@ -63,6 +63,7 @@ def init_db():
             required_hashes TEXT,
             p2p_url TEXT,
             gh_token TEXT,
+            custom_web_app INTEGER DEFAULT 0,
             FOREIGN KEY (worker_id) REFERENCES workers (worker_id)
         )
     ''')
@@ -124,6 +125,12 @@ def init_db():
     # gh_run_id migration
     try:
         cursor.execute('ALTER TABLE jobs ADD COLUMN gh_run_id TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    # custom_web_app migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN custom_web_app INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass
 

@@ -190,6 +190,14 @@ RAM_LIMIT=$(grep -oE -e 'REQUIRED_RAM=[0-9.]+' .cluster-ci | cut -d= -f2 | head 
 [ -z "$RAM_LIMIT" ] && RAM_LIMIT="2"
 log_info "RAM limit detected: ${RAM_LIMIT}GB"
 
+# Extract CUSTOM_WEB_APP from .cluster-ci
+CUSTOM_WEB_APP=$(grep -iE -e 'CUSTOM_WEB_APP\s*=\s*(true|1)' .cluster-ci | head -n 1)
+if [ -n "$CUSTOM_WEB_APP" ]; then
+    CUSTOM_WEB_APP=true
+    log_info "Custom Web App mode enabled."
+else
+    CUSTOM_WEB_APP=false
+fi
 
 # Configuration Docker
 DOCKER_IMAGE=${DOCKER_BASE_IMAGE:-"nvcr.io/nvidia/pytorch:26.04-py3"}
@@ -213,9 +221,29 @@ fi
 docker rm -f "${MAIN_CONTAINER_NAME}" 2>/dev/null || true
 
 # Launch the persistent main container
+DOCKER_PORT_MAPPING=""
+
+log_info "Searching for a free port for web interface..."
+# Use EXPOSED_PORT if defined in .cluster-ci, otherwise find a free port
+EXPOSED_PORT=$(grep -oE -e 'EXPOSED_PORT=[0-9]+' .cluster-ci | cut -d= -f2 | head -n 1)
+if [ -n "$EXPOSED_PORT" ]; then
+    VIEWER_PORT=$EXPOSED_PORT
+    log_info "Using explicit EXPOSED_PORT from .cluster-ci: $VIEWER_PORT"
+else
+    VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+    log_info "No EXPOSED_PORT found. Dynamic port selected: $VIEWER_PORT"
+fi
+echo "$VIEWER_PORT" > .cluster-ci-viewer-port
+
+if [ "$CUSTOM_WEB_APP" = "true" ]; then
+    DOCKER_PORT_MAPPING="-p 0.0.0.0:$VIEWER_PORT:$VIEWER_PORT"
+    log_info "Main container will expose port $VIEWER_PORT (Custom Web App mode)"
+fi
+
 docker run -d \
     --name "${MAIN_CONTAINER_NAME}" \
     $COMMON_LABELS \
+    $DOCKER_PORT_MAPPING \
     --entrypoint "tail" \
     --gpus all \
     -v "$(pwd):/workspace" \
@@ -382,36 +410,28 @@ fi
 log_info "AST analysis via dvc-viewer..."
 docker_exec "dvc-viewer hash"
 
-log_info "Searching for a free port for dvc-viewer..."
-# Use EXPOSED_PORT if defined in .cluster-ci, otherwise find a free port
-EXPOSED_PORT=$(grep -oE -e 'EXPOSED_PORT=[0-9]+' .cluster-ci | cut -d= -f2 | head -n 1)
-if [ -n "$EXPOSED_PORT" ]; then
-    VIEWER_PORT=$EXPOSED_PORT
-    log_info "Using explicit EXPOSED_PORT from .cluster-ci: $VIEWER_PORT"
+if [ "$CUSTOM_WEB_APP" = "true" ]; then
+    log_info "Skipping secondary dvc-viewer container (Main container handles web app on port $VIEWER_PORT)."
 else
-    VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-    log_info "No EXPOSED_PORT found. Dynamic port selected: $VIEWER_PORT"
+    log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
+    # Pour le viewer en background, on expose le port
+    # IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
+    docker rm -f "$VIEWER_CONTAINER_NAME" 2>/dev/null || true
+    docker run --rm \
+    --name "$VIEWER_CONTAINER_NAME" \
+        $COMMON_LABELS \
+        --entrypoint "" \
+        -v "$(pwd):/workspace" -w /workspace \
+        -v "$HOME_CACHE_VOLUME:/home/user" \
+        -p "0.0.0.0:$VIEWER_PORT:$VIEWER_PORT" \
+        --ipc=host \
+        --pid="container:${MAIN_CONTAINER_NAME}" \
+        --user "$(id -u):$(id -g)" -e HOME=/home/user \
+        -e CLUSTER_CI_MODE=executor \
+        $ENV_FILE_FLAG \
+        $DOCKER_IMAGE \
+        bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "dvc-viewer.log" 2>&1 &
 fi
-echo "$VIEWER_PORT" > .cluster-ci-viewer-port
-
-log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
-# Pour le viewer en background, on expose le port
-# IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
-docker rm -f "$VIEWER_CONTAINER_NAME" 2>/dev/null || true
-docker run --rm \
---name "$VIEWER_CONTAINER_NAME" \
-    $COMMON_LABELS \
-    --entrypoint "" \
-    -v "$(pwd):/workspace" -w /workspace \
-    -v "$HOME_CACHE_VOLUME:/home/user" \
-    -p "0.0.0.0:$VIEWER_PORT:$VIEWER_PORT" \
-    --ipc=host \
-    --pid="container:${MAIN_CONTAINER_NAME}" \
-    --user "$(id -u):$(id -g)" -e HOME=/home/user \
-    -e CLUSTER_CI_MODE=executor \
-    $ENV_FILE_FLAG \
-    $DOCKER_IMAGE \
-    bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "dvc-viewer.log" 2>&1 &
 
 log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present

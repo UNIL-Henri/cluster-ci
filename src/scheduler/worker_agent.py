@@ -377,7 +377,8 @@ def cancel_job(job_id):
                 return jsonify({"status": "error", "message": str(e)}), 500
         else:
             if res.returncode == 0:
-            return jsonify({"status": "not_found", "message": "Job not active on this worker and no containers found"}), 404
+                return jsonify({"status": "not_found", "message": "Job not active on this worker and no containers found"}), 404
+            return jsonify({"status": "not_found", "message": "Job not active on this worker"}), 404
 
 @app.route('/job_logs/<job_id>', methods=['GET'])
 def get_job_logs(job_id):
