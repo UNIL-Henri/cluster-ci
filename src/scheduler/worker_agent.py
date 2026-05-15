@@ -339,11 +339,44 @@ def cancel_job(job_id):
 
     with job_lock:
         if current_job_id == job_id and current_process:
-            current_process.terminate()
-            return jsonify({"status": "cancelled", "message": "Docker containers destroyed and process terminated"}), 200
+            logger.info(f"Cancelling job {job_id}: killing Docker containers and process tree")
+            try:
+                # 1. Force-remove Docker containers (primary kill mechanism)
+                # The containers follow the naming convention from run_research_pipeline.sh
+                safe_job_id = job_id.replace('/', '-')
+                for prefix in ["cluster-job-", "cluster-viewer-"]:
+                    container_name = f"{prefix}{safe_job_id}"
+                    logger.info(f"Force-removing container: {container_name}")
+                    subprocess.run(
+                        ["docker", "rm", "-f", container_name],
+                        capture_output=True, timeout=10
+                    )
+
+                # 2. Kill process tree on host (belt-and-suspenders)
+                try:
+                    parent = psutil.Process(current_process.pid)
+                    for child in parent.children(recursive=True):
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                    parent.kill()
+                except psutil.NoSuchProcess:
+                    pass
+
+                # 3. Proactively update job status on headnode
+                # execute_job() will also update on process exit, but we do it
+                # here immediately so the DB is consistent even if cleanup is slow.
+                update_job_status(job_id, 'failed', exit_code=-15)
+
+                return jsonify({"status": "cancelled", "message": "Docker containers removed and process tree killed"}), 200
+            except Exception as e:
+                logger.error(f"Error while cancelling job: {e}")
+                # Still try to mark the job as failed even if cleanup had errors
+                update_job_status(job_id, 'failed', exit_code=-15)
+                return jsonify({"status": "error", "message": str(e)}), 500
         else:
             if res.returncode == 0:
-                 return jsonify({"status": "cancelled", "message": "Docker containers destroyed (process was not active)"}), 200
             return jsonify({"status": "not_found", "message": "Job not active on this worker and no containers found"}), 404
 
 @app.route('/job_logs/<job_id>', methods=['GET'])
