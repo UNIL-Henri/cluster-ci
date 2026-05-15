@@ -58,10 +58,75 @@ def get_ram_requirement(repo=None, branch=None):
         return float(match.group(1))
     return 2.0  # Default
 
+def get_config_value(pattern, content, default=None, is_float=False):
+    import re
+    match = re.search(pattern, content)
+    if match:
+        val = match.group(1)
+        return float(val) if is_float else val
+    return default
+
 def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
     """Submits a research job to the headnode scheduler."""
-    ram_req = get_ram_requirement(repo, branch)
-    print(f"🚀 Submitting job for {repo}@{branch} (Required RAM: {ram_req}GB)")
+    # Strategy: Fetch .cluster-ci content first to parse all requirements
+    content = None
+    import tempfile, subprocess, shutil, os
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        gh_token_inner = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_PAT")
+        if gh_token_inner:
+            repo_url = f"https://x-access-token:{gh_token_inner}@github.com/{repo}.git"
+        else:
+            repo_url = f"https://github.com/{repo}.git"
+        subprocess.run(["git", "clone", "--depth", "1", "--branch", branch, "--no-checkout", repo_url, tmp_dir],
+                       check=True, capture_output=True, timeout=30)
+        subprocess.run(["git", "checkout", f"origin/{branch}", "--", ".cluster-ci"],
+                       cwd=tmp_dir, check=True, capture_output=True, timeout=10)
+        ci_file = os.path.join(tmp_dir, ".cluster-ci")
+        if os.path.exists(ci_file):
+            with open(ci_file, 'r') as f:
+                content = f.read()
+    except Exception as e:
+        print(f"⚠️ Could not fetch .cluster-ci from {repo}@{branch}: {e}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if content is None and os.path.exists(".cluster-ci"):
+        with open(".cluster-ci", 'r') as f:
+            content = f.read()
+
+    if content is None:
+        content = ""
+
+    # Parse RAM
+    import re
+    ram_req = 2.0
+    match_env = re.search(r'REQUIRED_RAM\s*=\s*(\d+(?:\.\d+)?)(?:GB|G)?', content)
+    if match_env:
+        ram_req = float(match_env.group(1))
+    else:
+        match_ram = re.search(r'--ram\s+(\d+(?:\.\d+)?)', content)
+        if match_ram:
+            ram_req = float(match_ram.group(1))
+
+    # Parse MAX_RUNTIME_HOURS (Fail-Fast)
+    runtime_match = re.search(r'MAX_RUNTIME_HOURS\s*=\s*(\d+(?:\.\d+)?)', content)
+    if not runtime_match:
+        print("❌ Error: MAX_RUNTIME_HOURS is missing in .cluster-ci. This parameter is mandatory (max 24h).")
+        sys.exit(1)
+
+    max_runtime = float(runtime_match.group(1))
+    if max_runtime <= 0 or max_runtime > 24:
+        print(f"❌ Error: MAX_RUNTIME_HOURS must be between 0 and 24 hours (found: {max_runtime}).")
+        sys.exit(1)
+
+    # Parse EXPOSED_PORT
+    exposed_port = None
+    port_match = re.search(r'EXPOSED_PORT\s*=\s*(\d+)', content)
+    if port_match:
+        exposed_port = int(port_match.group(1))
+
+    print(f"🚀 Submitting job for {repo}@{branch} (RAM: {ram_req}GB, Timeout: {max_runtime}h)")
 
     token = os.environ.get("CLUSTER_TOKEN")
     headers = {}
@@ -73,6 +138,9 @@ def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
             "repo": repo,
             "branch": branch,
             "ram_required_gb": ram_req,
+            "max_runtime_hours": max_runtime,
+            "exposed_port": exposed_port,
+            "gh_run_id": os.environ.get("GITHUB_RUN_ID"),
             "gh_token": gh_token,
             "env_vars": env_vars,
             "username": os.environ.get("GITHUB_ACTOR", "unknown")

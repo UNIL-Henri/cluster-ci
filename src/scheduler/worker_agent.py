@@ -118,10 +118,10 @@ def execute_job(job):
     repo = job['repo']
     branch = job['branch']
     ram_limit_gb = job['ram_required_gb']
+    max_runtime_hours = job.get('max_runtime_hours')
     p2p_url = job.get('p2p_url')
     gh_token = job.get('gh_token')
     env_vars = job.get('env_vars')
-    ram_limit_bytes = ram_limit_gb * (1024**3)
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
     update_job_status(job_id, 'running')
@@ -176,9 +176,25 @@ def execute_job(job):
         with job_lock:
             current_process = process
         port_reported = False
+        start_time = time.time()
+        timeout_seconds = (max_runtime_hours * 3600) if max_runtime_hours else (24 * 3600)
 
-        # Status monitoring loop (no more manual watchdog as it is handled by Docker)
+        # Status monitoring loop
         while process.poll() is None:
+            # 1. Watchdog: Check for timeout
+            elapsed = time.time() - start_time
+            if elapsed > timeout_seconds:
+                logger.error(f"❌ [WATCHDOG] Job {job_id} exceeded its {max_runtime_hours}h limit. Triggering forced destruction.")
+                error_msg = f"\n❌ [CLUSTER WATCHDOG] Job exceeded maximum runtime of {max_runtime_hours} hours. Terminating.\n"
+                log_file.write(error_msg)
+                log_file.flush()
+
+                # Inconditional destruction
+                safe_job_id = job_id.replace('/', '-')
+                subprocess.run(["docker", "rm", "-f", f"cluster-job-{safe_job_id}", f"cluster-viewer-{safe_job_id}"], capture_output=True)
+                process.terminate()
+                break
+
             # Try to report dynamic viewer port if not already done
             if not port_reported:
                 port_file = os.path.join(REPOS_DIR, repo, ".cluster-ci-viewer-port")
@@ -314,25 +330,20 @@ def cancel_job(job_id):
     global current_job_id, current_process
     logger.info(f"Received cancellation request for job {job_id}")
 
+    safe_job_id = job_id.replace('/', '-')
+    # Strict Docker Purge (Isolation & Clean Kill)
+    logger.info(f"Forcing destruction of containers for job {job_id}")
+    res = subprocess.run(["docker", "rm", "-f", f"cluster-job-{safe_job_id}", f"cluster-viewer-{safe_job_id}"],
+                         capture_output=True, text=True)
+
     with job_lock:
         if current_job_id == job_id and current_process:
-            logger.info(f"Killing process tree for job {job_id}")
-            try:
-                parent = psutil.Process(current_process.pid)
-                for child in parent.children(recursive=True):
-                    try:
-                        child.terminate()
-                    except psutil.NoSuchProcess:
-                        pass
-                return jsonify({"status": "cancelled", "message": "Termination signal sent to children"}), 200
-            except psutil.NoSuchProcess:
-                return jsonify({"status": "already_finished", "message": "Process already finished"}), 200
-            except Exception as e:
-                logger.error(f"Error while killing process: {e}")
-                return jsonify({"status": "error", "message": str(e)}), 500
+            current_process.terminate()
+            return jsonify({"status": "cancelled", "message": "Docker containers destroyed and process terminated"}), 200
         else:
-            logger.warning(f"No active job matches {job_id} (current: {current_job_id})")
-            return jsonify({"status": "not_found", "message": "Job not running on this worker"}), 404
+            if res.returncode == 0:
+                 return jsonify({"status": "cancelled", "message": "Docker containers destroyed (process was not active)"}), 200
+            return jsonify({"status": "not_found", "message": "Job not active on this worker and no containers found"}), 404
 
 @app.route('/job_logs/<job_id>', methods=['GET'])
 def get_job_logs(job_id):
