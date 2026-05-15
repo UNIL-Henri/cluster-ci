@@ -206,17 +206,17 @@ EOF
         cat <<EOF > .cluster-ci
 # =========================================================================================
 # ⚠️ AI AGENT INSTRUCTIONS (JOULES / CURSOR) ⚠️
-# This file controls which DVC stages are executed on the remote cluster.
+# Configuration pour Cluster-CI.
 #
-# IMPORTANT: The remote environment already has all secret variables injected
-# automatically (GCP_CREDENTIALS, DVC_GDRIVE_TOKEN, etc.). You don't need to
-# worry about authentication or environment variables.
+# REQUIRED_RAM: Contrainte de placement (ex: 16GB). Défaut: 2GB.
+# MAX_RUNTIME_HOURS: Durée maximale du job (max 24h). OBLIGATOIRE.
 #
-# Leave this file empty to run the full 'dvc repro' pipeline by default.
-# To run specific stages, list them below (one per line or separated by spaces).
-# Example:
-# unit_tests integration_tests train_step
+# Liste ensuite les stages DVC à exécuter (un par ligne ou séparés par des espaces).
+# Laisse vide après les variables pour tout exécuter (dvc repro).
 # =========================================================================================
+REQUIRED_RAM=2GB
+MAX_RUNTIME_HOURS=1
+
 EOF
         echo "✅ .cluster-ci file created."
     else
@@ -287,6 +287,7 @@ En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes sui
    - Les commandes shell natives (`pytest`, `uv run`, etc.) ne doivent pas être utilisées dans les Github Actions.
    - **Toute exécution (tests, entraînement) DOIT passer par un stage DVC** défini dans `dvc.yaml`.
    - Pour cibler l'exécution, écris le nom du/des stage(s) DVC dans le fichier `.cluster-ci` à la racine.
+   - **Paramètres Obligatoires** : Tu DOIS définir `MAX_RUNTIME_HOURS` (max 24) dans `.cluster-ci`. Tu peux aussi définir `REQUIRED_RAM` (ex: `16GB`).
    - **Secrets** : Tous les secrets définis dans "GitHub Repository Secrets" sont automatiquement transmis au cluster.
 <!-- CLUSTER-CI:END -->
 EOF
