@@ -316,19 +316,41 @@ def cancel_job(job_id):
 
     with job_lock:
         if current_job_id == job_id and current_process:
-            logger.info(f"Killing process tree for job {job_id}")
+            logger.info(f"Cancelling job {job_id}: killing Docker containers and process tree")
             try:
-                parent = psutil.Process(current_process.pid)
-                for child in parent.children(recursive=True):
-                    try:
-                        child.terminate()
-                    except psutil.NoSuchProcess:
-                        pass
-                return jsonify({"status": "cancelled", "message": "Termination signal sent to children"}), 200
-            except psutil.NoSuchProcess:
-                return jsonify({"status": "already_finished", "message": "Process already finished"}), 200
+                # 1. Force-remove Docker containers (primary kill mechanism)
+                # The containers follow the naming convention from run_research_pipeline.sh
+                safe_job_id = job_id.replace('/', '-')
+                for prefix in ["cluster-job-", "cluster-viewer-"]:
+                    container_name = f"{prefix}{safe_job_id}"
+                    logger.info(f"Force-removing container: {container_name}")
+                    subprocess.run(
+                        ["docker", "rm", "-f", container_name],
+                        capture_output=True, timeout=10
+                    )
+
+                # 2. Kill process tree on host (belt-and-suspenders)
+                try:
+                    parent = psutil.Process(current_process.pid)
+                    for child in parent.children(recursive=True):
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                    parent.kill()
+                except psutil.NoSuchProcess:
+                    pass
+
+                # 3. Proactively update job status on headnode
+                # execute_job() will also update on process exit, but we do it
+                # here immediately so the DB is consistent even if cleanup is slow.
+                update_job_status(job_id, 'failed', exit_code=-15)
+
+                return jsonify({"status": "cancelled", "message": "Docker containers removed and process tree killed"}), 200
             except Exception as e:
-                logger.error(f"Error while killing process: {e}")
+                logger.error(f"Error while cancelling job: {e}")
+                # Still try to mark the job as failed even if cleanup had errors
+                update_job_status(job_id, 'failed', exit_code=-15)
                 return jsonify({"status": "error", "message": str(e)}), 500
         else:
             logger.warning(f"No active job matches {job_id} (current: {current_job_id})")
