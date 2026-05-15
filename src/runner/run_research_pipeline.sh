@@ -383,8 +383,15 @@ log_info "AST analysis via dvc-viewer..."
 docker_exec "dvc-viewer hash"
 
 log_info "Searching for a free port for dvc-viewer..."
-VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-log_info "Port selected: $VIEWER_PORT"
+# Use EXPOSED_PORT if defined in .cluster-ci, otherwise find a free port
+EXPOSED_PORT=$(grep -oE -e 'EXPOSED_PORT=[0-9]+' .cluster-ci | cut -d= -f2 | head -n 1)
+if [ -n "$EXPOSED_PORT" ]; then
+    VIEWER_PORT=$EXPOSED_PORT
+    log_info "Using explicit EXPOSED_PORT from .cluster-ci: $VIEWER_PORT"
+else
+    VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+    log_info "No EXPOSED_PORT found. Dynamic port selected: $VIEWER_PORT"
+fi
 echo "$VIEWER_PORT" > .cluster-ci-viewer-port
 
 log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."

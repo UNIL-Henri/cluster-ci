@@ -57,6 +57,9 @@ def init_db():
             finished_at TIMESTAMP,
             exit_code INTEGER,
             viewer_port INTEGER,
+            max_runtime_hours REAL,
+            exposed_port INTEGER,
+            gh_run_id TEXT,
             required_hashes TEXT,
             p2p_url TEXT,
             gh_token TEXT,
@@ -105,6 +108,24 @@ def init_db():
         cursor.execute('ALTER TABLE jobs ADD COLUMN username TEXT')
     except sqlite3.OperationalError:
         pass # Already exists
+
+    # max_runtime_hours migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN max_runtime_hours REAL')
+    except sqlite3.OperationalError:
+        pass
+
+    # exposed_port migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN exposed_port INTEGER')
+    except sqlite3.OperationalError:
+        pass
+
+    # gh_run_id migration
+    try:
+        cursor.execute('ALTER TABLE jobs ADD COLUMN gh_run_id TEXT')
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()

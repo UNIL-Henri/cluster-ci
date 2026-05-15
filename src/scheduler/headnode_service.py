@@ -129,6 +129,9 @@ def submit_job():
     repo = data.get('repo')
     branch = data.get('branch')
     ram_required_gb = data.get('ram_required_gb', 0)
+    max_runtime_hours = data.get('max_runtime_hours')
+    exposed_port = data.get('exposed_port')
+    gh_run_id = data.get('gh_run_id')
     gh_token = data.get('gh_token')
     env_vars = data.get('env_vars') # Dictionary of secrets
     job_id = str(uuid.uuid4())
@@ -165,9 +168,9 @@ def submit_job():
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, required_hashes, gh_token, env_vars, username, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-        ''', (job_id, repo, branch, ram_required_gb, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None, username))
+            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, max_runtime_hours, exposed_port, gh_run_id, required_hashes, gh_token, env_vars, username, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (job_id, repo, branch, ram_required_gb, max_runtime_hours, exposed_port, gh_run_id, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None, username))
         conn.commit()
 
     return jsonify({"job_id": job_id, "status": "pending", "required_hashes_count": len(required_hashes)})
@@ -614,6 +617,59 @@ def api_run_files(job_id):
 
 # --- Portal & OAuth Routes ---
 
+@app.route('/api/jobs/<job_id>/stop', methods=['POST'])
+def api_stop_job(job_id):
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT j.*, w.service_url
+            FROM jobs j
+            LEFT JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.job_id = ?
+        ''', (job_id,))
+        job = cursor.fetchone()
+
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    # 1. Cancel on Worker
+    if job['status'] in ['running', 'assigned'] and job['service_url']:
+        try:
+            requests.post(f"{job['service_url']}/cancel/{job_id}", timeout=5)
+        except Exception as e:
+            app.logger.error(f"Failed to send cancel to worker: {e}")
+
+    # 2. Cancel on GitHub Actions (if run_id exists)
+    if job['gh_run_id']:
+        try:
+            repo = job['repo']
+            run_id = job['gh_run_id']
+            gh_token = job['gh_token'] or os.environ.get("GITHUB_PAT")
+            if gh_token:
+                headers = {
+                    "Authorization": f"token {gh_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                gh_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel"
+                requests.post(gh_url, headers=headers, timeout=5)
+        except Exception as e:
+            app.logger.error(f"Failed to cancel GH Action: {e}")
+
+    # 3. Update Status in DB
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE jobs
+            SET status = 'failed', exit_code = -1, finished_at = CURRENT_TIMESTAMP
+            WHERE job_id = ?
+        ''', (job_id,))
+        conn.commit()
+
+    return jsonify({"status": "ok", "message": "Job stop sequence initiated"})
+
 @app.route('/api/runs/active', methods=['GET'])
 def api_active_runs():
     if 'user' not in session:
@@ -746,35 +802,78 @@ def view_project(owner, repo, path=''):
         result = proxy_request(target_url, base_href=base_href)
         # Check if proxy_request returned an error tuple (message, status_code)
         if isinstance(result, tuple) and len(result) == 2 and result[1] == 502:
-            # Viewer is unreachable — show a diagnostic page instead of raw error
-            diag_msg = "DVC Viewer container may have crashed or failed to start."
-            try:
-                # Try to get viewer logs from worker
-                log_resp = requests.get(f"{worker_base_url}/viewer_logs", timeout=3)
-                if log_resp.status_code == 200:
-                    viewer_logs = log_resp.json().get('logs', '')
-                    if viewer_logs:
-                        diag_msg = f"Viewer container logs:\n{viewer_logs[-2000:]}"
-            except Exception:
-                pass
+            # Smart Proxy: App Booting View with Real-time Logs
+            with get_db_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT job_id FROM jobs WHERE repo = ? AND status = "running" ORDER BY started_at DESC LIMIT 1', (repo_full_name,))
+                job_row = cursor.fetchone()
+                job_id = job_row['job_id'] if job_row else "unknown"
 
             return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>DVC Viewer — Unavailable</title>
-<meta http-equiv="refresh" content="10">
+<html><head><meta charset="utf-8"><title>Workspace — Booting...</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1a1a2e; color: #e0e0e0;
-       display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
-.card {{ background: #16213e; border-radius: 12px; padding: 40px; max-width: 700px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }}
-h1 {{ color: #e94560; margin-top: 0; }} pre {{ background: #0f3460; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; max-height: 300px; overflow-y: auto; }}
-.hint {{ color: #a0a0a0; font-size: 0.9em; margin-top: 20px; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f1f5f9;
+       display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; overflow: hidden; }}
+.container {{ background: #1e293b; border-radius: 16px; padding: 2rem; width: 90%; max-width: 900px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 1px solid #334155; }}
+.header {{ display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }}
+.spinner {{ width: 24px; height: 24px; border: 3px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }}
+@keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+h1 {{ font-size: 1.25rem; margin: 0; color: #38bdf8; }}
+.logs-container {{ background: #020617; border-radius: 8px; padding: 1rem; font-family: "Fira Code", "Cascadia Code", monospace; font-size: 0.85rem; height: 400px; overflow-y: auto; border: 1px solid #1e293b; position: relative; }}
+.logs-content {{ white-space: pre-wrap; color: #94a3b8; }}
+.status-bar {{ margin-top: 1rem; font-size: 0.75rem; color: #64748b; display: flex; justify-content: space-between; }}
 </style></head>
-<body><div class="card">
-<h1>⚠️ DVC Viewer Unreachable</h1>
-<p>The live viewer at <code>{target_host}:{viewer_port}</code> is not responding.</p>
-<pre>{diag_msg}</pre>
-<p class="hint">🔄 This page will auto-refresh every 10 seconds.<br>
-💡 Check <code>dvc-viewer.log</code> on the worker for details.</p>
-</div></body></html>""", 502
+<body><div class="container">
+    <div class="header">
+        <div class="spinner"></div>
+        <h1>🚀 Workspace Booting...</h1>
+    </div>
+    <p style="margin-top: 0; color: #94a3b8; font-size: 0.9rem;">Your application is starting on the worker. Please wait while we set up the environment.</p>
+    <div class="logs-container" id="log-scroll">
+        <div class="logs-content" id="logs">Connecting to log stream...</div>
+    </div>
+    <div class="status-bar">
+        <span>Worker: {target_host}:{viewer_port}</span>
+        <span id="poll-status">Polling for 200 OK...</span>
+    </div>
+</div>
+<script>
+    const logElement = document.getElementById('logs');
+    const scrollElement = document.getElementById('log-scroll');
+    const statusElement = document.getElementById('poll-status');
+    let offset = 0;
+
+    async function pollLogs() {{
+        try {{
+            const resp = await fetch(`/api/jobs/{job_id}/logs?offset=${{offset}}`);
+            const data = await resp.json();
+            if (data.logs) {{
+                if (offset === 0) logElement.textContent = '';
+                logElement.textContent += data.logs;
+                offset = data.offset;
+                scrollElement.scrollTop = scrollElement.scrollHeight;
+            }}
+        }} catch (e) {{ console.error("Log fetch error", e); }}
+    }}
+
+    async function checkApp() {{
+        try {{
+            const resp = await fetch(window.location.href, {{ method: 'HEAD', cache: 'no-store' }});
+            if (resp.status === 200) {{
+                statusElement.textContent = "✅ App is Ready! Redirecting...";
+                statusElement.style.color = "#4ade80";
+                setTimeout(() => window.location.reload(), 500);
+                return;
+            }}
+        }} catch (e) {{ }}
+        setTimeout(checkApp, 2000);
+    }}
+
+    setInterval(pollLogs, 2000);
+    pollLogs();
+    checkApp();
+</script>
+</body></html>""", 502
         return result
 
     # --- Case 2: Historical (Local) ---
