@@ -181,6 +181,7 @@ def execute_job(job):
 
         # Status monitoring loop
         while process.poll() is None:
+            time.sleep(5)
             # 1. Watchdog: Check for timeout
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:
