@@ -3,6 +3,16 @@ import requests
 import os
 import sys
 import socket
+
+# Force IPv4 to prevent infinite hangs on broken IPv6 networks (common on headless servers)
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+# Set a global timeout for all socket operations to prevent infinite hangs
+socket.setdefaulttimeout(20.0)
+
 import psutil
 import subprocess
 import logging
@@ -80,7 +90,7 @@ def heartbeat_loop():
                 "total_storage_gb": total_storage_gb,
                 "available_storage_gb": available_storage_gb,
                 "is_startup": is_startup
-            }, headers=get_headers())
+            }, headers=get_headers(), timeout=10)
             resp.raise_for_status()
             is_startup = False
         except Exception as e:
@@ -89,7 +99,7 @@ def heartbeat_loop():
 
 def poll_for_job():
     try:
-        resp = requests.get(f"{HEADNODE_URL}/worker_poll/{WORKER_ID}", headers=get_headers())
+        resp = requests.get(f"{HEADNODE_URL}/worker_poll/{WORKER_ID}", headers=get_headers(), timeout=10)
         resp.raise_for_status()
         data = resp.json()
         if data.get("job_id"):
@@ -107,7 +117,7 @@ def update_job_status(job_id, status, exit_code=None, commit_hash=None, viewer_p
             payload["commit_hash"] = commit_hash
         if viewer_port is not None:
             payload["viewer_port"] = viewer_port
-        resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers())
+        resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers(), timeout=10)
         resp.raise_for_status()
     except Exception as e:
         logger.error(f"Failed to update job status: {e}")
@@ -279,7 +289,7 @@ def drain_pending_syncs():
         if data.get("sync_status") == "pending":
             logger.info(f"Project {project_name} has pending sync. Checking headnode space...")
             try:
-                resp = requests.get(f"{HEADNODE_URL}/check_space", timeout=5, headers=get_headers())
+                resp = requests.get(f"{HEADNODE_URL}/check_space", timeout=10, headers=get_headers())
                 resp.raise_for_status()
                 space_info = resp.json()
 
@@ -548,6 +558,32 @@ def drain_request():
     threading.Thread(target=drain_pending_syncs).start()
     return jsonify({"status": "accepted"})
 
+def deferred_update(job_id):
+    """
+    Implements the 'Pull & Defer' strategy for GitOps auto-updates.
+    Wait for the headnode to register the assignment, then pull and restart.
+    """
+    logger.info(f"🚀 [GITOPS] Auto-update triggered by job {job_id}. Deferring for 5s...")
+    time.sleep(5)
+    try:
+        # Mark as running first to show progress on dashboard
+        update_job_status(job_id, 'running')
+
+        logger.info("🏗️ [GITOPS] Pulling latest changes...")
+        # BASE_DIR is the root of the cluster-ci repo
+        subprocess.run(["git", "pull"], cwd=BASE_DIR, check=True)
+
+        logger.info("✅ [GITOPS] Pull successful. Marking job as completed.")
+        update_job_status(job_id, 'completed', exit_code=0)
+
+        time.sleep(2) # Give some time for the status update to reach the headnode
+        logger.info("🔄 [GITOPS] Restarting cluster-worker service...")
+        # This will kill the current process
+        subprocess.Popen(["sudo", "systemctl", "restart", "cluster-worker"])
+    except Exception as e:
+        logger.error(f"❌ [GITOPS] Update failed: {e}")
+        update_job_status(job_id, 'failed', exit_code=-1)
+
 def start_webhook_server():
     app.run(host='0.0.0.0', port=AGENT_PORT)
 
@@ -561,7 +597,13 @@ def main_loop():
     while True:
         job = poll_for_job()
         if job:
-            execute_job(job)
+            # GitOps Auto-Update: if a job targets cluster-ci itself on main, we pull and restart.
+            repo = job.get('repo', '')
+            branch = job.get('branch', '')
+            if repo.lower() == 'unil-desi/cluster-ci' and branch == 'main':
+                threading.Thread(target=deferred_update, args=(job['job_id'],)).start()
+            else:
+                execute_job(job)
         time.sleep(5)
 
 if __name__ == '__main__':

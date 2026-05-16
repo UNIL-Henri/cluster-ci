@@ -16,6 +16,14 @@ def schedule_jobs():
                 with get_db_conn() as conn:
                     cursor = conn.cursor()
 
+                    # 0. Update worker status to offline if last_seen > 30s
+                    cursor.execute('''
+                        UPDATE workers
+                        SET status = 'offline'
+                        WHERE last_seen < datetime('now', '-30 seconds') AND status = 'online'
+                    ''')
+                    conn.commit()
+
                     # 1. Cleanup orphaned running/assigned jobs (workers that died/timed out)
                     cursor.execute('''
                         UPDATE jobs
