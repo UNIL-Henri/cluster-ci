@@ -16,6 +16,17 @@ def schedule_jobs():
                 with get_db_conn() as conn:
                     cursor = conn.cursor()
 
+                    # 0. Ghost Workers cleanup: mark stale workers as offline
+                    # Workers send heartbeats every 10s. If we haven't heard from one
+                    # in 120s (12 missed heartbeats), it's dead/frozen.
+                    cursor.execute('''
+                        UPDATE workers SET status = 'offline'
+                        WHERE status = 'online' AND last_seen < datetime('now', '-120 seconds')
+                    ''')
+                    if cursor.rowcount > 0:
+                        logger.warning(f"Marked {cursor.rowcount} ghost worker(s) as offline")
+                    conn.commit()
+
                     # 1. Cleanup orphaned running/assigned jobs (workers that died/timed out)
                     cursor.execute('''
                         UPDATE jobs

@@ -80,7 +80,7 @@ def heartbeat_loop():
                 "total_storage_gb": total_storage_gb,
                 "available_storage_gb": available_storage_gb,
                 "is_startup": is_startup
-            }, headers=get_headers())
+            }, headers=get_headers(), timeout=10)
             resp.raise_for_status()
             is_startup = False
         except Exception as e:
@@ -89,7 +89,7 @@ def heartbeat_loop():
 
 def poll_for_job():
     try:
-        resp = requests.get(f"{HEADNODE_URL}/worker_poll/{WORKER_ID}", headers=get_headers())
+        resp = requests.get(f"{HEADNODE_URL}/worker_poll/{WORKER_ID}", headers=get_headers(), timeout=10)
         resp.raise_for_status()
         data = resp.json()
         if data.get("job_id"):
@@ -107,7 +107,7 @@ def update_job_status(job_id, status, exit_code=None, commit_hash=None, viewer_p
             payload["commit_hash"] = commit_hash
         if viewer_port is not None:
             payload["viewer_port"] = viewer_port
-        resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers())
+        resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers(), timeout=10)
         resp.raise_for_status()
     except Exception as e:
         logger.error(f"Failed to update job status: {e}")
@@ -540,6 +540,50 @@ def worker_dvc_get():
     except Exception as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return jsonify({"error": str(e)}), 500
+
+@app.route('/webhook/update_self', methods=['POST'])
+def update_self():
+    """GitOps auto-update endpoint.
+    
+    Pulls latest code from main, syncs dependencies, and schedules a deferred
+    restart of the cluster-worker systemd service. The restart is deferred by 5s
+    so this endpoint can return 202 before the process is killed.
+    """
+    logger.info("Received update_self webhook — starting GitOps update")
+
+    def _do_update():
+        try:
+            # 1. Pull latest code
+            res = subprocess.run(
+                ["git", "pull", "origin", "main"],
+                cwd=BASE_DIR, capture_output=True, text=True, timeout=60
+            )
+            logger.info(f"git pull: {res.stdout.strip()}")
+            if res.returncode != 0:
+                logger.error(f"git pull failed: {res.stderr}")
+                return
+
+            # 2. Sync dependencies (non-blocking if uv is available)
+            uv_cmd = shutil.which("uv") or os.path.expanduser("~/.local/bin/uv")
+            if os.path.exists(uv_cmd):
+                res = subprocess.run(
+                    [uv_cmd, "sync"], cwd=BASE_DIR,
+                    capture_output=True, text=True, timeout=120
+                )
+                logger.info(f"uv sync: {res.stdout.strip()}")
+
+            # 3. Schedule deferred restart (5s delay so webhook can respond)
+            logger.info("Scheduling deferred restart of cluster-worker in 5 seconds...")
+            subprocess.Popen(
+                ["bash", "-c", "sleep 5 && sudo systemctl restart cluster-worker"],
+                cwd="/tmp", start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            logger.error(f"Update failed: {e}")
+
+    threading.Thread(target=_do_update, daemon=True).start()
+    return jsonify({"status": "accepted", "message": "Update in progress, restart scheduled"}), 202
 
 @app.route('/webhook/drain_request', methods=['POST'])
 def drain_request():

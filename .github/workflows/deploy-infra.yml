@@ -1,0 +1,32 @@
+name: Deploy Infrastructure (Auto-Update)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'install.sh'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch:
+
+# Only one deploy at a time
+concurrency:
+  group: deploy-infra
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Rolling Update (Pull & Defer)
+    runs-on: self-hosted
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Auto-Update Script
+        run: bash scripts/self_update_deferred.sh
+        env:
+          CLUSTER_TOKEN: ${{ secrets.CLUSTER_TOKEN }}
