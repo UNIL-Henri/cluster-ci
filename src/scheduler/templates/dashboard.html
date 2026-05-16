@@ -529,7 +529,7 @@
                                             <i class="bi bi-terminal"></i> View Logs
                                         </button>
                                         <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
-                                            <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                                            <i class="bi bi-broadcast"></i> ${run.custom_web_app ? 'Open Web Application' : 'Open Live DVC-Viewer'}
                                         </a>
                                     </div>
                                 </div>
@@ -672,7 +672,7 @@
                                             <i class="bi bi-terminal"></i> View Logs
                                         </button>
                                         <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
-                                            <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                                            <i class="bi bi-broadcast"></i> ${run.custom_web_app ? 'Open Web Application' : 'Open Live DVC-Viewer'}
                                         </a>
                                     </div>
                                 </div>
@@ -763,13 +763,15 @@
 
             if (status === 'running') {
                 const [owner, name] = repo.split('/');
+                const currentRun = window.allRuns.find(r => r.job_id === jobId);
+                const isCustom = currentRun && currentRun.custom_web_app;
                 container.innerHTML = `
                     <div class="col-12 text-center py-5">
                         <div class="card shadow-sm p-5">
                             <h3>Run is currently in progress</h3>
                             <p class="text-muted">Files are being processed and are not yet pushed to the headnode.</p>
                             <a href="/view/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/" class="btn btn-primary btn-lg mt-3">
-                                <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                                <i class="bi bi-broadcast"></i> ${isCustom ? 'Open Web Application' : 'Open Live DVC-Viewer'}
                             </a>
                         </div>
                     </div>

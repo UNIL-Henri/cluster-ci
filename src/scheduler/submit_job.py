@@ -126,7 +126,13 @@ def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
     if port_match:
         exposed_port = int(port_match.group(1))
 
-    print(f"🚀 Submitting job for {repo}@{branch} (RAM: {ram_req}GB, Timeout: {max_runtime}h)")
+    # Parse CUSTOM_WEB_APP
+    custom_web_app = False
+    custom_app_match = re.search(r'CUSTOM_WEB_APP\s*=\s*(true|1)', content, re.IGNORECASE)
+    if custom_app_match:
+        custom_web_app = True
+
+    print(f"🚀 Submitting job for {repo}@{branch} (RAM: {ram_req}GB, Timeout: {max_runtime}h, Custom App: {custom_web_app})")
 
     token = os.environ.get("CLUSTER_TOKEN")
     headers = {}
@@ -140,6 +146,7 @@ def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
             "ram_required_gb": ram_req,
             "max_runtime_hours": max_runtime,
             "exposed_port": exposed_port,
+            "custom_web_app": custom_web_app,
             "gh_run_id": os.environ.get("GITHUB_RUN_ID"),
             "gh_token": gh_token,
             "env_vars": env_vars,

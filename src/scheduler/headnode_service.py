@@ -131,6 +131,7 @@ def submit_job():
     ram_required_gb = data.get('ram_required_gb', 0)
     max_runtime_hours = data.get('max_runtime_hours')
     exposed_port = data.get('exposed_port')
+    custom_web_app = data.get('custom_web_app', False)
     gh_run_id = data.get('gh_run_id')
     gh_token = data.get('gh_token')
     env_vars = data.get('env_vars') # Dictionary of secrets
@@ -168,9 +169,9 @@ def submit_job():
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, max_runtime_hours, exposed_port, gh_run_id, required_hashes, gh_token, env_vars, username, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-        ''', (job_id, repo, branch, ram_required_gb, max_runtime_hours, exposed_port, gh_run_id, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None, username))
+            INSERT INTO jobs (job_id, repo, branch, ram_required_gb, max_runtime_hours, exposed_port, custom_web_app, gh_run_id, required_hashes, gh_token, env_vars, username, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (job_id, repo, branch, ram_required_gb, max_runtime_hours, exposed_port, 1 if custom_web_app else 0, gh_run_id, json.dumps(required_hashes), gh_token, json.dumps(env_vars) if env_vars else None, username))
         conn.commit()
 
     return jsonify({"job_id": job_id, "status": "pending", "required_hashes_count": len(required_hashes)})
@@ -471,7 +472,7 @@ def api_list_runs(repo):
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT job_id, branch, status, commit_hash, created_at, started_at, finished_at, exit_code
+            SELECT job_id, branch, status, commit_hash, created_at, started_at, finished_at, exit_code, custom_web_app
             FROM jobs
             WHERE repo = ?
             ORDER BY created_at DESC
