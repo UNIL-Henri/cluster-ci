@@ -499,11 +499,37 @@
                         col.className = 'col-12 full-width mb-4';
                         const [owner, name] = run.repo.split('/');
                         const viewerUrl = '/view/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
+                        const appUrl = '/app/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
                         
                         const runDate = new Date(run.created_at).toLocaleString('en-US', {
                             year: 'numeric', month: '2-digit', day: '2-digit',
                             hour: '2-digit', minute: '2-digit', second: '2-digit'
                         }).replace(',', '');
+
+                        let buttonsHtml = `
+                            <button class="btn btn-outline-danger" onclick="stopJob('${run.job_id}')">
+                                <i class="bi bi-stop-circle"></i> Stop Job
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="showLogs('${run.job_id}')">
+                                <i class="bi bi-terminal"></i> View Logs
+                            </button>
+                        `;
+
+                        if (run.custom_web_app && run.app_port) {
+                            buttonsHtml += `
+                                <a href="${appUrl}" class="btn btn-success" target="_blank">
+                                    <i class="bi bi-window"></i> Open Web Application
+                                </a>
+                            `;
+                        }
+
+                        if (run.viewer_port) {
+                            buttonsHtml += `
+                                <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
+                                    <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                                </a>
+                            `;
+                        }
 
                         col.innerHTML = `
                             <div class="card shadow-sm border-primary" style="background-color: #f8fbff;">
@@ -522,15 +548,7 @@
                                         </div>
                                     </div>
                                     <div class="d-flex gap-2">
-                                        <button class="btn btn-outline-danger" onclick="stopJob('${run.job_id}')">
-                                            <i class="bi bi-stop-circle"></i> Stop Job
-                                        </button>
-                                        <button class="btn btn-outline-primary" onclick="showLogs('${run.job_id}')">
-                                            <i class="bi bi-terminal"></i> View Logs
-                                        </button>
-                                        <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
-                                            <i class="bi bi-broadcast"></i> ${run.custom_web_app ? 'Open Web Application' : 'Open Live DVC-Viewer'}
-                                        </a>
+                                        ${buttonsHtml}
                                     </div>
                                 </div>
                             </div>
@@ -646,11 +664,37 @@
                         col.className = 'col-12 full-width mb-4';
                         const [owner, name] = repo.split('/');
                         const viewerUrl = '/view/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
+                        const appUrl = '/app/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/';
                         
                         const runDate = new Date(run.created_at).toLocaleString('en-US', {
                             year: 'numeric', month: '2-digit', day: '2-digit',
                             hour: '2-digit', minute: '2-digit', second: '2-digit'
                         }).replace(',', '');
+
+                        let buttonsHtml = `
+                            <button class="btn btn-outline-danger" onclick="stopJob('${run.job_id}')">
+                                <i class="bi bi-stop-circle"></i> Stop Job
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="showLogs('${run.job_id}')">
+                                <i class="bi bi-terminal"></i> View Logs
+                            </button>
+                        `;
+
+                        if (run.custom_web_app && run.app_port) {
+                            buttonsHtml += `
+                                <a href="${appUrl}" class="btn btn-success" target="_blank">
+                                    <i class="bi bi-window"></i> Open Web Application
+                                </a>
+                            `;
+                        }
+
+                        if (run.viewer_port) {
+                            buttonsHtml += `
+                                <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
+                                    <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                                </a>
+                            `;
+                        }
 
                         col.innerHTML = `
                             <div class="card shadow-sm border-primary" style="background-color: #f8fbff;">
@@ -665,15 +709,7 @@
                                         </p>
                                     </div>
                                     <div class="d-flex gap-2">
-                                        <button class="btn btn-outline-danger" onclick="stopJob('${run.job_id}')">
-                                            <i class="bi bi-stop-circle"></i> Stop Job
-                                        </button>
-                                        <button class="btn btn-outline-primary" onclick="showLogs('${run.job_id}')">
-                                            <i class="bi bi-terminal"></i> View Logs
-                                        </button>
-                                        <a href="${viewerUrl}" class="btn btn-primary" target="_blank">
-                                            <i class="bi bi-broadcast"></i> ${run.custom_web_app ? 'Open Web Application' : 'Open Live DVC-Viewer'}
-                                        </a>
+                                        ${buttonsHtml}
                                     </div>
                                 </div>
                             </div>
@@ -765,14 +801,25 @@
                 const [owner, name] = repo.split('/');
                 const currentRun = window.allRuns.find(r => r.job_id === jobId);
                 const isCustom = currentRun && currentRun.custom_web_app;
+
+                let viewButtons = '';
+                if (isCustom && currentRun.app_port) {
+                    viewButtons += `<a href="/app/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/" class="btn btn-success btn-lg mt-3 me-2">
+                        <i class="bi bi-window"></i> Open Web Application
+                    </a>`;
+                }
+                if (currentRun && currentRun.viewer_port) {
+                    viewButtons += `<a href="/view/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/" class="btn btn-primary btn-lg mt-3">
+                        <i class="bi bi-broadcast"></i> Open Live DVC-Viewer
+                    </a>`;
+                }
+
                 container.innerHTML = `
                     <div class="col-12 text-center py-5">
                         <div class="card shadow-sm p-5">
                             <h3>Run is currently in progress</h3>
                             <p class="text-muted">Files are being processed and are not yet pushed to the headnode.</p>
-                            <a href="/view/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/" class="btn btn-primary btn-lg mt-3">
-                                <i class="bi bi-broadcast"></i> ${isCustom ? 'Open Web Application' : 'Open Live DVC-Viewer'}
-                            </a>
+                            ${viewButtons}
                         </div>
                     </div>
                 `;

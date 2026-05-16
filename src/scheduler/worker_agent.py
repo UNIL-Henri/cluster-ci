@@ -98,7 +98,7 @@ def poll_for_job():
         logger.error(f"Failed to poll: {e}")
     return None
 
-def update_job_status(job_id, status, exit_code=None, commit_hash=None, viewer_port=None):
+def update_job_status(job_id, status, exit_code=None, commit_hash=None, viewer_port=None, app_port=None):
     try:
         payload = {"job_id": job_id, "status": status}
         if exit_code is not None:
@@ -107,6 +107,8 @@ def update_job_status(job_id, status, exit_code=None, commit_hash=None, viewer_p
             payload["commit_hash"] = commit_hash
         if viewer_port is not None:
             payload["viewer_port"] = viewer_port
+        if app_port is not None:
+            payload["app_port"] = app_port
         resp = requests.post(f"{HEADNODE_URL}/update_job_status", json=payload, headers=get_headers())
         resp.raise_for_status()
     except Exception as e:
@@ -196,18 +198,29 @@ def execute_job(job):
                 process.terminate()
                 break
 
-            # Try to report dynamic viewer port if not already done
+            # Try to report dynamic viewer and app ports if not already done
             if not port_reported:
                 port_file = os.path.join(REPOS_DIR, repo, ".cluster-ci-viewer-port")
+                app_port_file = os.path.join(REPOS_DIR, repo, ".cluster-ci-app-port")
+
+                v_port = None
                 if os.path.exists(port_file):
                     try:
                         with open(port_file, 'r') as f:
-                            viewer_port = int(f.read().strip())
-                        logger.info(f"Reporting dynamic viewer port {viewer_port} for job {job_id}")
-                        update_job_status(job_id, 'running', viewer_port=viewer_port)
-                        port_reported = True
-                    except Exception as e:
-                        logger.error(f"Failed to read/report viewer port: {e}")
+                            v_port = int(f.read().strip())
+                    except: pass
+
+                a_port = None
+                if os.path.exists(app_port_file):
+                    try:
+                        with open(app_port_file, 'r') as f:
+                            a_port = int(f.read().strip())
+                    except: pass
+
+                if v_port or a_port:
+                    logger.info(f"Reporting dynamic ports (Viewer: {v_port}, App: {a_port}) for job {job_id}")
+                    update_job_status(job_id, 'running', viewer_port=v_port, app_port=a_port)
+                    port_reported = True
 
             time.sleep(2)
 

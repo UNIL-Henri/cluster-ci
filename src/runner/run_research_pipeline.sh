@@ -223,21 +223,23 @@ docker rm -f "${MAIN_CONTAINER_NAME}" 2>/dev/null || true
 # Launch the persistent main container
 DOCKER_PORT_MAPPING=""
 
-log_info "Searching for a free port for web interface..."
-# Use EXPOSED_PORT if defined in .cluster-ci, otherwise find a free port
-EXPOSED_PORT=$(grep -oE -e 'EXPOSED_PORT=[0-9]+' .cluster-ci | cut -d= -f2 | head -n 1)
-if [ -n "$EXPOSED_PORT" ]; then
-    VIEWER_PORT=$EXPOSED_PORT
-    log_info "Using explicit EXPOSED_PORT from .cluster-ci: $VIEWER_PORT"
-else
-    VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-    log_info "No EXPOSED_PORT found. Dynamic port selected: $VIEWER_PORT"
-fi
+# 1. Allocate port for dvc-viewer (Always dynamic)
+VIEWER_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 echo "$VIEWER_PORT" > .cluster-ci-viewer-port
+log_info "Allocated port $VIEWER_PORT for dvc-viewer"
 
+# 2. Allocate port for custom app if needed
 if [ "$CUSTOM_WEB_APP" = "true" ]; then
-    DOCKER_PORT_MAPPING="-p 0.0.0.0:$VIEWER_PORT:$VIEWER_PORT"
-    log_info "Main container will expose port $VIEWER_PORT (Custom Web App mode)"
+    EXPOSED_PORT=$(grep -oE -e 'EXPOSED_PORT=[0-9]+' .cluster-ci | cut -d= -f2 | head -n 1)
+    if [ -n "$EXPOSED_PORT" ]; then
+        APP_PORT=$EXPOSED_PORT
+        log_info "Using explicit EXPOSED_PORT for custom app: $APP_PORT"
+    else
+        APP_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+        log_info "Allocated dynamic port $APP_PORT for custom app"
+    fi
+    echo "$APP_PORT" > .cluster-ci-app-port
+    DOCKER_PORT_MAPPING="-p 0.0.0.0:$APP_PORT:$APP_PORT"
 fi
 
 docker run -d \
@@ -410,28 +412,24 @@ fi
 log_info "AST analysis via dvc-viewer..."
 docker_exec "dvc-viewer hash"
 
-if [ "$CUSTOM_WEB_APP" = "true" ]; then
-    log_info "Skipping secondary dvc-viewer container (Main container handles web app on port $VIEWER_PORT)."
-else
-    log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
-    # Pour le viewer en background, on expose le port
-    # IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
-    docker rm -f "$VIEWER_CONTAINER_NAME" 2>/dev/null || true
-    docker run --rm \
-    --name "$VIEWER_CONTAINER_NAME" \
-        $COMMON_LABELS \
-        --entrypoint "" \
-        -v "$(pwd):/workspace" -w /workspace \
-        -v "$HOME_CACHE_VOLUME:/home/user" \
-        -p "0.0.0.0:$VIEWER_PORT:$VIEWER_PORT" \
-        --ipc=host \
-        --pid="container:${MAIN_CONTAINER_NAME}" \
-        --user "$(id -u):$(id -g)" -e HOME=/home/user \
-        -e CLUSTER_CI_MODE=executor \
-        $ENV_FILE_FLAG \
-        $DOCKER_IMAGE \
-        bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "dvc-viewer.log" 2>&1 &
-fi
+log_info "Launching live dvc-viewer server on port $VIEWER_PORT..."
+# Pour le viewer en background, on expose le port
+# IMPORTANT: On utilise --pid=container:${MAIN_CONTAINER_NAME} pour voir les processus du job principal
+docker rm -f "$VIEWER_CONTAINER_NAME" 2>/dev/null || true
+docker run --rm \
+--name "$VIEWER_CONTAINER_NAME" \
+    $COMMON_LABELS \
+    --entrypoint "" \
+    -v "$(pwd):/workspace" -w /workspace \
+    -v "$HOME_CACHE_VOLUME:/home/user" \
+    -p "0.0.0.0:$VIEWER_PORT:$VIEWER_PORT" \
+    --ipc=host \
+    --pid="container:${MAIN_CONTAINER_NAME}" \
+    --user "$(id -u):$(id -g)" -e HOME=/home/user \
+    -e CLUSTER_CI_MODE=executor \
+    $ENV_FILE_FLAG \
+    $DOCKER_IMAGE \
+    bash -c "export PATH=/home/user/shims:\$PATH:/home/user/.local/bin && dvc-viewer --port $VIEWER_PORT" > "dvc-viewer.log" 2>&1 &
 
 log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present

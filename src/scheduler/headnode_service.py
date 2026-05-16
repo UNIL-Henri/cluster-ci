@@ -235,6 +235,7 @@ def update_job_status():
     exit_code = data.get('exit_code')
     commit_hash = data.get('commit_hash')
     viewer_port = data.get('viewer_port')
+    app_port = data.get('app_port')
 
     with get_db_conn() as conn:
         cursor = conn.cursor()
@@ -252,9 +253,10 @@ def update_job_status():
                     status = ?,
                     started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
                     commit_hash = COALESCE(?, commit_hash),
-                    viewer_port = COALESCE(?, viewer_port)
+                    viewer_port = COALESCE(?, viewer_port),
+                    app_port = COALESCE(?, app_port)
                 WHERE job_id = ?
-            ''', (status, commit_hash, viewer_port, job_id))
+            ''', (status, commit_hash, viewer_port, app_port, job_id))
         elif status in ['completed', 'failed']:
             cursor.execute('UPDATE jobs SET status = ?, finished_at = CURRENT_TIMESTAMP, exit_code = COALESCE(?, exit_code), commit_hash = COALESCE(?, commit_hash) WHERE job_id = ?', (status, exit_code, commit_hash, job_id))
         else:
@@ -472,7 +474,7 @@ def api_list_runs(repo):
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT job_id, branch, status, commit_hash, created_at, started_at, finished_at, exit_code, custom_web_app
+            SELECT job_id, branch, status, commit_hash, created_at, started_at, finished_at, exit_code, custom_web_app, viewer_port, app_port
             FROM jobs
             WHERE repo = ?
             ORDER BY created_at DESC
@@ -770,19 +772,18 @@ def cleanup_inactive_viewers():
             for repo_name in to_delete:
                 del local_viewers[repo_name]
 
-@app.route('/view/<owner>/<repo>/')
-@app.route('/view/<owner>/<repo>/<path:path>')
-def view_project(owner, repo, path=''):
+@app.route('/app/<owner>/<repo>/')
+@app.route('/app/<owner>/<repo>/<path:path>')
+def view_app(owner, repo, path=''):
     if 'user' not in session:
         return redirect(url_for('dashboard'), code=302)
 
     repo_full_name = f"{owner}/{repo}"
 
-    # --- Case 1: Live (Running on a worker) ---
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT w.service_url, j.viewer_port
+            SELECT w.service_url, j.app_port, j.job_id
             FROM jobs j
             JOIN workers w ON j.worker_id = w.worker_id
             WHERE j.repo = ? AND j.status = 'running'
@@ -790,27 +791,23 @@ def view_project(owner, repo, path=''):
         ''', (repo_full_name,))
         job = cursor.fetchone()
 
-    if job and job['service_url']:
+    if job and job['service_url'] and job['app_port']:
         worker_base_url = job['service_url']
-        # Use dynamic port if available, otherwise fallback to default
-        viewer_port = job['viewer_port'] if ('viewer_port' in job.keys() and job['viewer_port'] is not None) else DVC_VIEWER_PORT
-        # Extract hostname/IP from service_url (e.g., http://worker1:6000 -> worker1)
+        app_port = job['app_port']
         parsed = urlparse(worker_base_url)
         target_host = parsed.hostname
-        target_url = f"http://{target_host}:{viewer_port}/{path}"
-        base_href = f"/view/{owner}/{repo}/" if path == '' else None
+        target_url = f"http://{target_host}:{app_port}/{path}"
+        base_href = f"/app/{owner}/{repo}/" if path == '' else None
 
         result = proxy_request(target_url, base_href=base_href)
-        # Check if proxy_request returned an error tuple (message, status_code)
         if isinstance(result, tuple) and len(result) == 2 and result[1] == 502:
-            # Smart Proxy: App Booting View with Real-time Logs
-            with get_db_conn() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT job_id FROM jobs WHERE repo = ? AND status = "running" ORDER BY started_at DESC LIMIT 1', (repo_full_name,))
-                job_row = cursor.fetchone()
-                job_id = job_row['job_id'] if job_row else "unknown"
+            return render_booting_view(repo_full_name, job['job_id'], target_host, app_port)
+        return result
 
-            return f"""<!DOCTYPE html>
+    return f"Application for {repo_full_name} not found or not active.", 404
+
+def render_booting_view(repo_full_name, job_id, target_host, port):
+    return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Workspace — Booting...</title>
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f1f5f9;
@@ -834,7 +831,7 @@ h1 {{ font-size: 1.25rem; margin: 0; color: #38bdf8; }}
         <div class="logs-content" id="logs">Connecting to log stream...</div>
     </div>
     <div class="status-bar">
-        <span>Worker: {target_host}:{viewer_port}</span>
+        <span>Worker: {target_host}:{port}</span>
         <span id="poll-status">Polling for 200 OK...</span>
     </div>
 </div>
@@ -874,7 +871,41 @@ h1 {{ font-size: 1.25rem; margin: 0; color: #38bdf8; }}
     pollLogs();
     checkApp();
 </script>
-</body></html>""", 502
+</body></html>"""
+
+@app.route('/view/<owner>/<repo>/')
+@app.route('/view/<owner>/<repo>/<path:path>')
+def view_project(owner, repo, path=''):
+    if 'user' not in session:
+        return redirect(url_for('dashboard'), code=302)
+
+    repo_full_name = f"{owner}/{repo}"
+
+    # --- Case 1: Live (Running on a worker) ---
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT w.service_url, j.viewer_port
+            FROM jobs j
+            JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.repo = ? AND j.status = 'running'
+            ORDER BY j.started_at DESC LIMIT 1
+        ''', (repo_full_name,))
+        job = cursor.fetchone()
+
+    if job and job['service_url']:
+        worker_base_url = job['service_url']
+        # Use dynamic port if available, otherwise fallback to default
+        viewer_port = job['viewer_port'] if ('viewer_port' in job.keys() and job['viewer_port'] is not None) else DVC_VIEWER_PORT
+        # Extract hostname/IP from service_url (e.g., http://worker1:6000 -> worker1)
+        parsed = urlparse(worker_base_url)
+        target_host = parsed.hostname
+        target_url = f"http://{target_host}:{viewer_port}/{path}"
+        base_href = f"/view/{owner}/{repo}/" if path == '' else None
+
+        result = proxy_request(target_url, base_href=base_href)
+        if isinstance(result, tuple) and len(result) == 2 and result[1] == 502:
+            return render_booting_view(repo_full_name, job['job_id'], target_host, viewer_port)
         return result
 
     # --- Case 2: Historical (Local) ---
