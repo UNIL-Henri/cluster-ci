@@ -89,6 +89,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 cluster-ci/
 ├── docs/           # Documentation, Index, and Task Specifications
 ├── install.sh      # Client-side installation script
+├── scripts/        # Operational scripts (auto-update, deployment)
 └── src/            # Runner and Orchestrator scripts
     ├── cluster/    # Local runner setup and management (systemd)
     ├── runner/     # GitOps Orchestrator (run_research_pipeline.sh)
@@ -109,6 +110,7 @@ cluster-ci/
 |----------|-------------|
 | `src/scheduler/submit_job.py` | Client-side script (CLI) to manually submit a job to the Headnode |
 | `src/scheduler/runner_manager.py` | Manages the lifecycle of ephemeral GitHub Actions runners (slot1, slot2) |
+| `scripts/self_update_deferred.sh` | GitOps auto-update script (Pull & Defer pattern): pulls code, signals workers, schedules deferred headnode restart |
 | `update_cluster.sh` | Updates the Headnode and Workers via SSH, uses an `.env` file to store credentials |
 
 ## Roadmap
@@ -152,4 +154,8 @@ cluster-ci/
 - [x] Fix Bug: `dvc-viewer` connection refused (port binding explicitement forcé sur 0.0.0.0 pour contourner l'isolation IPv6/loopback de Docker).
 - [x] Fix Bug: UI Frontend affichait prématurément le label `Post-Run` au lieu de `System/Logs` durant le run de la pipeline.
 - [x] Suppression de l'option obsolète `SHARED_MEMORY` (rendue inutile par `--ipc=host` qui alloue automatiquement 50% de la RAM hôte à `/dev/shm`) et ajout de la détection OOM en direct dans `submit_job.py` pour GitHub Actions.
+- [x] Fix Bug: Ghost Workers — Le scheduler marque automatiquement les workers offline après 120s sans heartbeat, empêchant le dashboard de mentir sur l'état réel du cluster.
+- [x] Hardening: Ajout de `timeout=10` explicite sur toutes les requêtes HTTP du worker agent pour prévenir les deadlocks TCP silencieux (firewall universitaire).
+- [x] GitOps Auto-Update (Pull & Defer): Déploiement automatique du cluster sur merge vers `main` via workflow GitHub Actions + webhook `/webhook/update_self` sur les workers + restart différé des services headnode.
 - [ ] [Implémenter un Global Execution Timeout pour empêcher le gel du worker sur un job bloqué](https://github.com/UNIL-DESI/cluster-ci/issues/63)
+
