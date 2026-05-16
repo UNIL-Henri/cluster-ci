@@ -64,6 +64,7 @@ oauth.register(
 
 FREE_SPACE_THRESHOLD_GB = 100
 CLUSTER_TOKEN = os.environ.get("CLUSTER_TOKEN")
+MAINTENANCE_MODE = False
 
 def check_token():
     if not CLUSTER_TOKEN:
@@ -77,10 +78,22 @@ def check_token():
 @app.before_request
 def require_token():
     # Only protect API endpoints that workers or users use to modify state
-    protected_endpoints = ['register_worker', 'submit_job', 'update_job_status', 'worker_poll', 'notify_cleanup']
+    protected_endpoints = ['register_worker', 'submit_job', 'update_job_status', 'worker_poll', 'notify_cleanup', 'maintenance_on', 'maintenance_off']
     if request.endpoint in protected_endpoints:
         if not check_token():
             return jsonify({"error": "Unauthorized"}), 401
+
+@app.route('/maintenance/on', methods=['POST'])
+def maintenance_on():
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = True
+    return jsonify({"status": "ok", "maintenance": True})
+
+@app.route('/maintenance/off', methods=['POST'])
+def maintenance_off():
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = False
+    return jsonify({"status": "ok", "maintenance": False})
 
 @app.route('/register_worker', methods=['POST'])
 def register_worker():
@@ -125,6 +138,8 @@ def register_worker():
 
 @app.route('/submit_job', methods=['POST'])
 def submit_job():
+    if MAINTENANCE_MODE:
+        return jsonify({"error": "Service Unavailable: Maintenance Mode Active"}), 503
     data = request.json
     repo = data.get('repo')
     branch = data.get('branch')
@@ -629,6 +644,59 @@ def api_run_files(job_id):
         return jsonify({"error": str(e)}), 500
 
 # --- Portal & OAuth Routes ---
+
+@app.route('/api/jobs/<job_id>/stop', methods=['POST'])
+def api_stop_job(job_id):
+    if 'user' not in session and not check_token():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT j.*, w.service_url
+            FROM jobs j
+            LEFT JOIN workers w ON j.worker_id = w.worker_id
+            WHERE j.job_id = ?
+        ''', (job_id,))
+        job = cursor.fetchone()
+
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    # 1. Cancel on Worker
+    if job['status'] in ['running', 'assigned'] and job['service_url']:
+        try:
+            requests.post(f"{job['service_url']}/cancel/{job_id}", timeout=5)
+        except Exception as e:
+            app.logger.error(f"Failed to send cancel to worker: {e}")
+
+    # 2. Cancel on GitHub Actions (if run_id exists)
+    if job['gh_run_id']:
+        try:
+            repo = job['repo']
+            run_id = job['gh_run_id']
+            gh_token = job['gh_token'] or os.environ.get("GITHUB_PAT")
+            if gh_token:
+                headers = {
+                    "Authorization": f"token {gh_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                gh_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel"
+                requests.post(gh_url, headers=headers, timeout=5)
+        except Exception as e:
+            app.logger.error(f"Failed to cancel GH Action: {e}")
+
+    # 3. Update Status in DB
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE jobs
+            SET status = 'failed', exit_code = -1, finished_at = CURRENT_TIMESTAMP
+            WHERE job_id = ?
+        ''', (job_id,))
+        conn.commit()
+
+    return jsonify({"status": "ok", "message": "Job stop sequence initiated"})
 
 @app.route('/api/runs/active', methods=['GET'])
 def api_active_runs():

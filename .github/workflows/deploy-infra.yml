@@ -18,8 +18,8 @@ concurrency:
 
 jobs:
   deploy:
-    name: Rolling Update (Pull & Defer)
-    runs-on: self-hosted
+    name: Rolling Update (Drain & Purge)
+    runs-on: [self-hosted, cluster-ci-admin]
     timeout-minutes: 5
 
     steps:

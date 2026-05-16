@@ -1,16 +1,19 @@
 #!/bin/bash
 # =============================================================================
-# self_update_deferred.sh — GitOps Auto-Update Script (Pull & Defer Pattern)
+# self_update_deferred.sh — GitOps Auto-Update Script (Drain & Purge Pattern)
 # =============================================================================
 #
 # This script is designed to be called by a CI runner (GitHub Actions, self-hosted)
-# running ON the headnode. It performs a safe rolling update of the cluster:
+# running ON the headnode via the cluster-ci-admin tag. It performs a safe
+# pre-emptive update of the cluster:
 #
-#   1. Pull latest code on the headnode
-#   2. Sync dependencies
-#   3. Signal each worker to update via their webhook
-#   4. Schedule a deferred restart of headnode services (after script exits)
-#   5. Exit 0 immediately — the CI reports success before the restart happens
+#   1. Enable Maintenance Mode (rejets new jobs)
+#   2. Purge active jobs (Drain & Purge)
+#   3. Pull latest code on the headnode
+#   4. Sync dependencies
+#   5. Signal ALL workers to update via their webhook
+#   6. Schedule a deferred restart of headnode services (after script exits)
+#   7. Exit 0 immediately — the CI reports success before the restart happens
 #
 # THE TRICK: If we restart the headnode services while this script is running,
 # we kill the GitHub Actions runner that launched us. By scheduling the restart
@@ -30,71 +33,95 @@ if [ -f "$ENV_FILE" ]; then
     set +a
 fi
 
-echo "=== [1/4] Pulling latest code on Headnode ==="
+CLUSTER_TOKEN="${CLUSTER_TOKEN:-}"
+HEADNODE_URL="${HEADNODE_URL:-http://localhost:5000}"
+
+echo "=== [1/6] Enabling Maintenance Mode ==="
+curl -s -X POST "${HEADNODE_URL}/maintenance/on" \
+     -H "Authorization: Bearer ${CLUSTER_TOKEN}" || echo "⚠️ Failed to enable maintenance mode"
+
+echo "=== [2/6] Drain & Purge: Cancelling active jobs ==="
+DB_PATH="${CLUSTER_DB_PATH:-cluster_scheduler.db}"
+if [ -f "$DB_PATH" ]; then
+    # Get all running or assigned jobs
+    ACTIVE_JOBS=$(sqlite3 "$DB_PATH" "SELECT job_id FROM jobs WHERE status IN ('running', 'assigned');")
+
+    for job_id in $ACTIVE_JOBS; do
+        echo "  → Purging job $job_id..."
+        curl -s -X POST "${HEADNODE_URL}/api/jobs/${job_id}/stop" \
+             -H "Authorization: Bearer ${CLUSTER_TOKEN}" || echo "  ⚠️ Failed to stop job $job_id"
+    done
+else
+    echo "⚠️ Database not found at $DB_PATH, skipping purge."
+fi
+
+echo "=== [3/6] Pulling latest code on Headnode ==="
 cd "$BASE_DIR"
 git pull origin main
 echo "✅ Code updated to: $(git rev-parse --short HEAD)"
 
-echo "=== [2/4] Syncing dependencies ==="
+echo "=== [4/6] Syncing dependencies ==="
 UV_CMD="${HOME}/.local/bin/uv"
-if [ -x "$UV_CMD" ]; then
+[ ! -x "$UV_CMD" ] && UV_CMD=$(which uv || echo "uv")
+
+if command -v "$UV_CMD" &> /dev/null; then
     "$UV_CMD" sync 2>&1 || echo "⚠️ uv sync had warnings (non-fatal)"
 else
     echo "⚠️ uv not found, skipping dependency sync"
 fi
 
-echo "=== [3/4] Signaling workers to update ==="
-WORKER_COUNT="${WORKER_COUNT:-0}"
-CLUSTER_TOKEN="${CLUSTER_TOKEN:-}"
+echo "=== [5/6] Signaling workers to update ==="
+if [ -f "$DB_PATH" ]; then
+    # Fetch all online workers from DB
+    WORKER_URLS=$(sqlite3 "$DB_PATH" "SELECT service_url FROM workers WHERE status = 'online';")
 
-update_worker() {
-    local worker_ip="$1"
-    local worker_port="${2:-6000}"
-    local url="http://${worker_ip}:${worker_port}/webhook/update_self"
+    for url in $WORKER_URLS; do
+        echo "  → Sending update to $url..."
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${url}/webhook/update_self" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${CLUSTER_TOKEN}" \
+            --connect-timeout 5 \
+            --max-time 10 \
+            2>/dev/null || echo "000")
 
-    echo "  → Sending update to $worker_ip..."
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X POST "$url" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer ${CLUSTER_TOKEN}" \
-        --connect-timeout 5 \
-        --max-time 10 \
-        2>/dev/null || echo "000")
+        if [ "$HTTP_CODE" = "202" ]; then
+            echo "  ✅ Worker $url accepted update (HTTP $HTTP_CODE)"
+        elif [ "$HTTP_CODE" = "000" ]; then
+            echo "  ⚠️ Worker $url unreachable"
+        else
+            echo "  ⚠️ Worker $url returned HTTP $HTTP_CODE"
+        fi
+    done
+else
+    echo "⚠️ Database not found, cannot signal workers."
+fi
 
-    if [ "$HTTP_CODE" = "202" ]; then
-        echo "  ✅ Worker $worker_ip accepted update (HTTP $HTTP_CODE)"
-    elif [ "$HTTP_CODE" = "000" ]; then
-        echo "  ⚠️ Worker $worker_ip unreachable (will update on next restart)"
-    else
-        echo "  ⚠️ Worker $worker_ip returned HTTP $HTTP_CODE"
-    fi
-}
-
-for ((i=1; i<=WORKER_COUNT; i++)); do
-    ip_var="WORKER_${i}_IP"
-    ip_val="${!ip_var:-}"
-    if [ -n "$ip_val" ]; then
-        update_worker "$ip_val"
-    fi
-done
-
-echo "=== [4/4] Scheduling deferred restart of Headnode services ==="
+echo "=== [6/6] Scheduling deferred restart of Headnode services ==="
 # We use nohup + disown to fully detach the restart from this process tree.
 # The 10-second delay ensures this script has time to exit 0 and the CI runner
 # reports success before the services (and the runner itself) are restarted.
-nohup bash -c '
+nohup bash -c "
     sleep 10
-    echo "[DEFERRED] Restarting cluster-scheduler..."
+    echo \"[DEFERRED] Disabling maintenance mode (in case restart fails)...\"
+    curl -s -X POST \"${HEADNODE_URL}/maintenance/off\" -H \"Authorization: Bearer ${CLUSTER_TOKEN}\" || true
+
+    echo \"[DEFERRED] Restarting cluster-scheduler...\"
     sudo systemctl restart cluster-scheduler 2>/dev/null || true
-    echo "[DEFERRED] Restarting cluster-scheduler-loop..."
+    echo \"[DEFERRED] Restarting cluster-scheduler-loop...\"
     sudo systemctl restart cluster-scheduler-loop 2>/dev/null || true
-    echo "[DEFERRED] Restart complete at $(date)"
-' > /tmp/cluster-ci-deferred-restart.log 2>&1 &
+    echo \"[DEFERRED] Restarting cluster-runner-manager...\"
+    sudo systemctl restart cluster-runner-manager 2>/dev/null || true
+
+    echo \"[DEFERRED] Restart complete at \$(date)\"
+" > /tmp/cluster-ci-deferred-restart.log 2>&1 &
 disown
 
 echo ""
 echo "=============================================="
 echo "✅ Auto-update complete!"
+echo "   Maintenance: Enabled"
+echo "   Drain & Purge: Executed"
 echo "   Workers: signaled to pull & restart"
 echo "   Headnode: restart scheduled in 10 seconds"
 echo "   Exiting now (CI will report success)"

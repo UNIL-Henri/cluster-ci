@@ -64,6 +64,7 @@ oauth.register(
 
 FREE_SPACE_THRESHOLD_GB = 100
 CLUSTER_TOKEN = os.environ.get("CLUSTER_TOKEN")
+MAINTENANCE_MODE = False
 
 def check_token():
     if not CLUSTER_TOKEN:
@@ -77,10 +78,22 @@ def check_token():
 @app.before_request
 def require_token():
     # Only protect API endpoints that workers or users use to modify state
-    protected_endpoints = ['register_worker', 'submit_job', 'update_job_status', 'worker_poll', 'notify_cleanup']
+    protected_endpoints = ['register_worker', 'submit_job', 'update_job_status', 'worker_poll', 'notify_cleanup', 'maintenance_on', 'maintenance_off']
     if request.endpoint in protected_endpoints:
         if not check_token():
             return jsonify({"error": "Unauthorized"}), 401
+
+@app.route('/maintenance/on', methods=['POST'])
+def maintenance_on():
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = True
+    return jsonify({"status": "ok", "maintenance": True})
+
+@app.route('/maintenance/off', methods=['POST'])
+def maintenance_off():
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = False
+    return jsonify({"status": "ok", "maintenance": False})
 
 @app.route('/register_worker', methods=['POST'])
 def register_worker():
@@ -125,6 +138,8 @@ def register_worker():
 
 @app.route('/submit_job', methods=['POST'])
 def submit_job():
+    if MAINTENANCE_MODE:
+        return jsonify({"error": "Service Unavailable: Maintenance Mode Active"}), 503
     data = request.json
     repo = data.get('repo')
     branch = data.get('branch')
@@ -620,7 +635,7 @@ def api_run_files(job_id):
 
 @app.route('/api/jobs/<job_id>/stop', methods=['POST'])
 def api_stop_job(job_id):
-    if 'user' not in session:
+    if 'user' not in session and not check_token():
         return jsonify({"error": "Unauthorized"}), 401
 
     with get_db_conn() as conn:
