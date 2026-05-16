@@ -33,6 +33,11 @@ if [ -f "$ENV_FILE" ]; then
     set +a
 fi
 
+# Ensure docker socket permissions (PR feedback)
+if [ -e /var/run/docker.sock ]; then
+    sudo chmod 666 /var/run/docker.sock || true
+fi
+
 CLUSTER_TOKEN="${CLUSTER_TOKEN:-}"
 HEADNODE_URL="${HEADNODE_URL:-http://localhost:5000}"
 
@@ -99,10 +104,10 @@ fi
 
 echo "=== [6/6] Scheduling deferred restart of Headnode services ==="
 # We use nohup + disown to fully detach the restart from this process tree.
-# The 10-second delay ensures this script has time to exit 0 and the CI runner
+# The 15-second delay ensures this script has time to exit 0 and the CI runner
 # reports success before the services (and the runner itself) are restarted.
 nohup bash -c "
-    sleep 10
+    sleep 15
     echo \"[DEFERRED] Disabling maintenance mode (in case restart fails)...\"
     curl -s -X POST \"${HEADNODE_URL}/maintenance/off\" -H \"Authorization: Bearer ${CLUSTER_TOKEN}\" || true
 
@@ -123,7 +128,7 @@ echo "✅ Auto-update complete!"
 echo "   Maintenance: Enabled"
 echo "   Drain & Purge: Executed"
 echo "   Workers: signaled to pull & restart"
-echo "   Headnode: restart scheduled in 10 seconds"
+echo "   Headnode: restart scheduled in 15 seconds"
 echo "   Exiting now (CI will report success)"
 echo "=============================================="
 exit 0

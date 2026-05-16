@@ -663,14 +663,18 @@ def api_stop_job(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
 
-    # 1. Cancel on Worker
+    # 1. Cancel on Worker (Safety check: prevent zombie containers)
     if job['status'] in ['running', 'assigned'] and job['service_url']:
         try:
-            requests.post(f"{job['service_url']}/cancel/{job_id}", timeout=5)
+            resp = requests.post(f"{job['service_url']}/cancel/{job_id}", timeout=10)
+            # 200: Success, 404: Job not on worker (safe to proceed)
+            if resp.status_code not in [200, 404]:
+                return jsonify({"error": f"Worker failed to cancel job (HTTP {resp.status_code}): {resp.text}"}), 502
         except Exception as e:
             app.logger.error(f"Failed to send cancel to worker: {e}")
+            return jsonify({"error": f"Could not reach worker to verify job cancellation: {str(e)}"}), 504
 
-    # 2. Cancel on GitHub Actions (if run_id exists)
+    # 2. Cancel on GitHub Actions (if run_id exists) - Best effort
     if job['gh_run_id']:
         try:
             repo = job['repo']
@@ -686,7 +690,7 @@ def api_stop_job(job_id):
         except Exception as e:
             app.logger.error(f"Failed to cancel GH Action: {e}")
 
-    # 3. Update Status in DB
+    # 3. Update Status in DB (Only reached if worker confirmed or unreachable with error returned above)
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -696,7 +700,7 @@ def api_stop_job(job_id):
         ''', (job_id,))
         conn.commit()
 
-    return jsonify({"status": "ok", "message": "Job stop sequence initiated"})
+    return jsonify({"status": "ok", "message": "Job stopped and verified"})
 
 @app.route('/api/runs/active', methods=['GET'])
 def api_active_runs():
