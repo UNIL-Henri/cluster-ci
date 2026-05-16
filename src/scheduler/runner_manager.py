@@ -44,14 +44,17 @@ class RunnerManager:
         response.raise_for_status()
         return response.json()["token"]
 
-    def run_slot(self, slot_id):
+    def run_slot(self, slot_id, labels="self-hosted,cluster-ci"):
         """Manages the lifecycle of an ephemeral runner for a given slot."""
-        slot_dir = self.runners_dir / f"slot{slot_id}"
+        if slot_id == "admin":
+            slot_dir = self.runners_dir / "admin"
+        else:
+            slot_dir = self.runners_dir / f"slot{slot_id}"
         logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': slot_id})
 
         while True:
             try:
-                logger.info("Preparing a new ephemeral runner...")
+                logger.info(f"Preparing a new ephemeral runner (labels: {labels})...")
 
                 # 1. Obtain a token
                 token = self.get_registration_token()
@@ -65,7 +68,7 @@ class RunnerManager:
                     "--unattended",
                     "--replace",
                     "--name", runner_name,
-                    "--labels", "self-hosted,cluster-ci",
+                    "--labels", labels,
                     "--ephemeral"
                 ]
 
@@ -86,14 +89,21 @@ class RunnerManager:
 
     def start(self):
         threads = []
+        # Standard slots
         for i in range(1, self.num_slots + 1):
             t = threading.Thread(target=self.run_slot, args=(i,))
             t.daemon = True
             t.start()
             threads.append(t)
 
+        # Exclusive Admin slot
+        t_admin = threading.Thread(target=self.run_slot, args=("admin", "self-hosted,cluster-ci-admin"))
+        t_admin.daemon = True
+        t_admin.start()
+        threads.append(t_admin)
+
         logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': 'MANAGER'})
-        logger.info(f"Runner manager started with {self.num_slots} slots for {self.target_repo}")
+        logger.info(f"Runner manager started with {self.num_slots} slots + 1 admin slot for {self.target_repo}")
 
         # Keep main thread alive
         try:

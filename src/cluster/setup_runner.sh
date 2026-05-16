@@ -100,7 +100,7 @@ if [ ! -f "$TEMPLATE_DIR/config.sh" ]; then
     rm actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz
 fi
 
-# Prepare 2 slots for ephemeral runners
+# Prepare slots for ephemeral runners (2 standard + 1 admin)
 for i in 1 2; do
     SLOT_DIR="runners/slot$i"
     if [ ! -d "$SLOT_DIR" ]; then
@@ -108,6 +108,13 @@ for i in 1 2; do
         cp -r "$TEMPLATE_DIR" "$SLOT_DIR"
     fi
 done
+
+# Provision exclusive Admin Runner slot
+ADMIN_SLOT_DIR="runners/admin"
+if [ ! -d "$ADMIN_SLOT_DIR" ]; then
+    echo "📂 Initializing Admin slot..."
+    cp -r "$TEMPLATE_DIR" "$ADMIN_SLOT_DIR"
+fi
 
 # 5. Systemd Installation
 if [ "$ROLE" == "headnode" ]; then
