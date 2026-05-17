@@ -71,7 +71,11 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 4. **Execution**: The orchestrator detects the `.cluster-ci` file, prepares the environment via `uv sync`, and runs `uv run dvc repro` with the provided arguments.
 5. **Authentication**: The runner silently injects credentials (Google Drive) by sourcing the global cluster `.env` and `.env.secrets` files.
 6. **CI Feedback**: Joules receives native failure and success notifications via GitHub PR integration.
-7. **Configuration `.cluster-ci`**: Les jobs nécessitant d'être schedulés peuvent déclarer une contrainte de RAM (ex: `REQUIRED_RAM=16GB`) et **DOIVENT** déclarer une durée maximale d'exécution (ex: `MAX_RUNTIME_HOURS=24`). Ces paramètres sont lus dans le fichier `.cluster-ci` à la racine. Le paramètre de RAM est une contrainte de placement, tandis que `MAX_RUNTIME_HOURS` est une limite stricte (max 24h) pour éviter les processus zombies. Une fois alloué, le conteneur a accès à 100% de la RAM hôte pour éviter les limites artificielles.
+7. **Configuration `.cluster-ci`**: Les jobs nécessitant d'être schedulés peuvent déclarer les paramètres suivants à la racine :
+    - `REQUIRED_RAM=16GB` : Contrainte de placement (défaut : 2GB).
+    - `MAX_RUNTIME_HOURS=24` : Durée maximale d'exécution (**OBLIGATOIRE**, max 24h) pour éviter les processus zombies.
+    - `EXPOSED_PORT=8501` : Active le routage vers une interface graphique (ex: Streamlit, Gradio) sur le port spécifié.
+   Une fois alloué, le conteneur a accès à 100% de la RAM hôte pour éviter les limites artificielles.
 ## Main Results
 
 - **Status**: Under construction (Last updated: 12 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
