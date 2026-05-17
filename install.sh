@@ -210,8 +210,7 @@ EOF
 #
 # REQUIRED_RAM: Contrainte de placement (ex: 16GB). Défaut: 2GB.
 # MAX_RUNTIME_HOURS: Durée maximale du job (max 24h). OBLIGATOIRE.
-# EXPOSED_PORT: Port à exposer (ex: 8501). Utilisé avec CUSTOM_WEB_APP=true.
-# CUSTOM_WEB_APP: Activer le routage pour une interface web (ex: true).
+# EXPOSED_PORT: Port à exposer (ex: 8501). Active le routage pour une interface web.
 #
 # Liste ensuite les stages DVC à exécuter (un par ligne ou séparés par des espaces).
 # Laisse vide après les variables pour tout exécuter (dvc repro).
@@ -290,7 +289,7 @@ En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes sui
    - **Toute exécution (tests, entraînement) DOIT passer par un stage DVC** défini dans `dvc.yaml`.
    - Pour cibler l'exécution, écris le nom du/des stage(s) DVC dans le fichier `.cluster-ci` à la racine.
    - **Paramètres Obligatoires** : Tu DOIS définir `MAX_RUNTIME_HOURS` (max 24) dans `.cluster-ci`. Tu peux aussi définir `REQUIRED_RAM` (ex: `16GB`).
-   - **Interfaces Graphiques** : Pour déployer une interface (Gradio, Streamlit, TensorBoard), ajoute `CUSTOM_WEB_APP=true` et `EXPOSED_PORT=<port>` dans `.cluster-ci`. Le système routera automatiquement le trafic vers ton application.
+   - **Interfaces Graphiques** : Pour déployer une interface (Gradio, Streamlit, TensorBoard), ajoute `EXPOSED_PORT=<port>` dans `.cluster-ci`. Le système routera automatiquement le trafic vers ton application.
    - **Secrets** : Tous les secrets définis dans "GitHub Repository Secrets" sont automatiquement transmis au cluster.
 <!-- CLUSTER-CI:END -->
 EOF

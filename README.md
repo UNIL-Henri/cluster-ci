@@ -74,8 +74,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 7. **Configuration `.cluster-ci`**: Les jobs nécessitant d'être schedulés peuvent déclarer les paramètres suivants à la racine :
     - `REQUIRED_RAM=16GB` : Contrainte de placement (défaut : 2GB).
     - `MAX_RUNTIME_HOURS=24` : Durée maximale d'exécution (**OBLIGATOIRE**, max 24h) pour éviter les processus zombies.
-    - `CUSTOM_WEB_APP=true` : Active le routage vers une interface graphique (ex: Streamlit, Gradio).
-    - `EXPOSED_PORT=8501` : Définit le port interne de l'application à exposer sur le cluster.
+    - `EXPOSED_PORT=8501` : Active le routage vers une interface graphique (ex: Streamlit, Gradio) sur le port spécifié.
    Une fois alloué, le conteneur a accès à 100% de la RAM hôte pour éviter les limites artificielles.
 ## Main Results
 
