@@ -142,6 +142,31 @@ else
     # --- Client-side Installation (Research Project) ---
     echo "🚀 Cluster-CI: Client Installation"
 
+    # 0. Dependencies check (GitHub CLI)
+    if ! command -v gh &> /dev/null; then
+        echo "🔍 GitHub CLI (gh) not found. Attempting installation..."
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            if command -v apt-get &> /dev/null; then
+                sudo apt-get update && sudo apt-get install -y gh
+            elif command -v dnf &> /dev/null; then
+                sudo dnf install -y gh
+            else
+                echo "❌ Could not auto-install gh. Please install it manually: https://cli.github.com/"
+                exit 1
+            fi
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+            if command -v brew &> /dev/null; then
+                brew install gh
+            else
+                echo "❌ Homebrew not found. Please install gh manually: https://cli.github.com/"
+                exit 1
+            fi
+        else
+            echo "❌ Unsupported OS. Please install gh manually: https://cli.github.com/"
+            exit 1
+        fi
+    fi
+
     # 1. Git environment check
     if [ ! -d ".git" ]; then
         echo "❌ Error: This script must be run at the root of a Git repository."
@@ -175,13 +200,13 @@ name: Cluster-CI Execution
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, cluster-draft/* ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
 
 concurrency:
-  group: \${{ github.repository }}-\${{ github.ref }}
+  group: \${{ github.workflow }}-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -294,6 +319,30 @@ En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes sui
 <!-- CLUSTER-CI:END -->
 EOF
     echo "✅ AGENTS.md updated."
+
+    # 6. Install cluster-run CLI
+    echo "🛠️  Installing cluster-run CLI..."
+    mkdir -p "$HOME/.local/bin"
+
+    # Download the script from the orchestrator repo
+    if [ -f "$(dirname "$0")/scripts/cluster-run.sh" ]; then
+        cp "$(dirname "$0")/scripts/cluster-run.sh" "$HOME/.local/bin/cluster-run"
+    else
+        curl -sSL "$RAW_URL/scripts/cluster-run.sh" -o "$HOME/.local/bin/cluster-run"
+    fi
+    chmod +x "$HOME/.local/bin/cluster-run"
+
+    # Add ~/.local/bin to PATH if not already there
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        SHELL_CONFIG=""
+        if [[ "$SHELL" == */zsh ]]; then SHELL_CONFIG="$HOME/.zshrc"; else SHELL_CONFIG="$HOME/.bashrc"; fi
+        if [ -f "$SHELL_CONFIG" ]; then
+            if ! grep -q ".local/bin" "$SHELL_CONFIG"; then
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_CONFIG"
+                echo "💡 Added ~/.local/bin to $SHELL_CONFIG. Please restart your shell or run: source $SHELL_CONFIG"
+            fi
+        fi
+    fi
 
     echo ""
     echo "🎉 Installation complete!"
