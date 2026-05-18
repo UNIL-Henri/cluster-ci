@@ -4,6 +4,10 @@ set -e
 # Cluster-CI Run CLI
 # Helps researchers submit jobs via "Shadow Push" to a draft branch.
 
+# Global variables for cleanup
+RUN_ID=""
+BRANCH=""
+
 show_help() {
     echo "Usage: cluster-run [COMMAND] [OPTIONS]"
     echo ""
@@ -42,86 +46,97 @@ get_current_user() {
     gh api user -q .login
 }
 
-delete_remote_branch() {
-    local branch=$1
-    git push origin --delete "$branch" --quiet >/dev/null 2>&1 || true
-}
-
 cleanup() {
-    local run_id=$1
-    local branch=$2
-    echo -e "\n🛑 Interruption detected. Cancelling run $run_id and cleaning up..."
-    gh run cancel "$run_id" >/dev/null 2>&1 || true
-    delete_remote_branch "$branch"
-    exit 130
+    # If we have a branch, try to delete it
+    if [ -n "$BRANCH" ]; then
+        # If we have a run_id, try to cancel it if it's not completed
+        if [ -n "$RUN_ID" ]; then
+             local status=$(gh run view "$RUN_ID" --json status -q .status 2>/dev/null || echo "completed")
+             if [[ "$status" != "completed" && "$status" != "success" && "$status" != "failure" && "$status" != "cancelled" ]]; then
+                 echo -e "\n🛑 Cancelling GitHub run $RUN_ID..."
+                 gh run cancel "$RUN_ID"
+             fi
+        fi
+        echo "🧹 Cleaning up remote branch $BRANCH..."
+        git push origin --delete "$BRANCH" --quiet >/dev/null 2>&1 || true
+    fi
 }
 
 shadow_run() {
     local background=$1
     check_gh_auth
     local user=$(get_current_user)
-    local branch="cluster-draft/$user"
+    BRANCH="cluster-draft/$user"
 
-    echo "🏗️  Preparing shadow push for user: $user"
+    # Register the cleanup trap to ensure the branch is deleted on exit
+    trap cleanup EXIT
 
-    # 1. Create a commit representing the current state (including uncommitted changes)
-    # git stash create returns a commit hash that is NOT reachable from any branch but contains everything.
-    local stash_hash=$(git stash create)
+    echo "🏗️  Preparing shadow push for user: $user (including untracked files)"
+
+    # Create a temporary index to include untracked files without affecting the current index
+    local temp_index=$(mktemp)
     local commit_to_push=""
 
-    if [ -z "$stash_hash" ]; then
-        commit_to_push=$(git rev-parse HEAD)
-        echo "✨ No uncommitted changes. Using HEAD ($commit_to_push)."
-    else
-        commit_to_push=$stash_hash
-        echo "📦 Included uncommitted changes (commit: $commit_to_push)."
+    # Use a subshell to keep the environment clean
+    commit_to_push=$(
+        export GIT_INDEX_FILE="$temp_index"
+        git read-tree HEAD
+        git add --all  # Includes tracked and untracked files
+        local tree=$(git write-tree)
+        git commit-tree "$tree" -p HEAD -m "Shadow commit for $user"
+    )
+    rm -f "$temp_index"
+
+    if [ -z "$commit_to_push" ]; then
+        echo "❌ Error: Failed to create shadow commit."
+        exit 1
     fi
 
-    # 2. Push to the shadow branch
-    echo "🚀 Shadow pushing to origin/$branch..."
-    git push origin "$commit_to_push:refs/heads/$branch" --force --quiet
+    echo "🚀 Shadow pushing to origin/$BRANCH..."
+    git push origin "$commit_to_push:refs/heads/$BRANCH" --force --quiet
 
     if [ "$background" = true ]; then
         echo "✅ Run submitted in background. You can watch it with: cluster-run list"
+        # In background mode, we DON'T want the EXIT trap to delete the branch immediately
+        # because the GHA is still running. The researcher will have to delete it later or
+        # it will be overwritten by next run.
+        # Actually, for background runs, we should probably just untrap.
+        trap - EXIT
         return
     fi
 
     # 3. Find and watch the run
     echo "⏳ Waiting for GitHub Actions to trigger..."
     sleep 3
-    local run_id=""
     for i in {1..15}; do
-        run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId,status -q '.[0] | select(.status != "completed") | .databaseId')
-        [ -n "$run_id" ] && break
+        RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId,status -q '.[0] | select(.status != "completed") | .databaseId')
+        [ -n "$RUN_ID" ] && break
         sleep 2
     done
 
-    if [ -z "$run_id" ]; then
+    if [ -z "$RUN_ID" ]; then
         # Check if it already finished (very fast run?)
-        run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId -q '.[0].databaseId')
+        RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId')
     fi
 
-    if [ -z "$run_id" ]; then
+    if [ -z "$RUN_ID" ]; then
         echo "❌ Error: Could not find the triggered workflow run."
         exit 1
     fi
 
-    echo "📺 Streaming logs for run $run_id (Ctrl+C to cancel)..."
+    echo "📺 Streaming logs for run $RUN_ID (Ctrl+C to cancel)..."
 
-    # Setup cleanup on SIGINT
-    trap "cleanup $run_id $branch" SIGINT
-
-    gh run watch "$run_id"
+    gh run watch "$RUN_ID"
 
     # Check final status
-    local conclusion=$(gh run view "$run_id" --json conclusion -q .conclusion)
+    local conclusion=$(gh run view "$RUN_ID" --json conclusion -q .conclusion)
     if [ "$conclusion" == "success" ]; then
         echo "✅ Cluster-CI run completed successfully."
     else
         echo "❌ Cluster-CI run finished with status: $conclusion"
     fi
 
-    delete_remote_branch "$branch"
+    # Final cleanup will be handled by the EXIT trap
 }
 
 # --- CLI Entry Point ---
@@ -153,13 +168,16 @@ case "$COMMAND" in
         if [ -z "$1" ]; then
             check_gh_auth
             USER=$(get_current_user)
-            RUN_ID=$(gh run list --branch "cluster-draft/$USER" --limit 1 --json databaseId -q '.[0].databaseId')
+            BRANCH="cluster-draft/$USER"
+            RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId')
              if [ -z "$RUN_ID" ]; then
                 echo "Usage: cluster-run cancel <run_id>"
                 exit 1
             fi
+            echo "🛑 Cancelling run $RUN_ID..."
             gh run cancel "$RUN_ID"
-            delete_remote_branch "cluster-draft/$USER"
+            echo "🧹 Deleting branch $BRANCH..."
+            git push origin --delete "$BRANCH" --quiet >/dev/null 2>&1 || true
         else
             gh run cancel "$@"
         fi
