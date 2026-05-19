@@ -487,14 +487,20 @@ fi
 if command -v "$TMATE_BIN" &> /dev/null; then
     log_info "🚀 Live Terminal Streaming enabled. Initializing tmate..."
     
-    # 1. Clean up socket
+    # 1. Clean up socket and keys
     TMATE_SOCKET="/tmp/tmate_${SAFE_JOB_ID}.sock"
-    rm -f "$TMATE_SOCKET"
+    TMATE_SSH_KEY="/tmp/tmate_key_${SAFE_JOB_ID}"
+    TMATE_CONF="/tmp/tmate_conf_${SAFE_JOB_ID}"
+    rm -f "$TMATE_SOCKET" "$TMATE_SSH_KEY" "$TMATE_SSH_KEY.pub" "$TMATE_CONF"
+    
+    # Generate unique single-use SSH key for this job to allow concurrent tmate sessions on tmate.io
+    ssh-keygen -t ed25519 -N "" -f "$TMATE_SSH_KEY" -q
+    echo "set -g tmate-identity-path \"$TMATE_SSH_KEY\"" > "$TMATE_CONF"
     
     # 2. Start detached session running the execute command (write logs/exit code on host runner)
     TMATE_CMD="echo '⏱️ Introducing temporary 25s debug delay...'; sleep 25; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
     
-    "$TMATE_BIN" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
+    "$TMATE_BIN" -f "$TMATE_CONF" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
     
     # 3. Wait for tmate to connect and generate URL
     log_info "Generating live terminal SSH and Web URLs..."
@@ -555,6 +561,9 @@ if command -v "$TMATE_BIN" &> /dev/null; then
         cat tmate_execution.log
         rm -f tmate_execution.log
     fi
+    
+    # 8. Clean up unique temporary tmate configuration and keys
+    rm -f "$TMATE_SSH_KEY" "$TMATE_SSH_KEY.pub" "$TMATE_CONF"
 else
     log_info "⚠️ tmate not installed on runner host. Falling back to silent execution."
     set +e
