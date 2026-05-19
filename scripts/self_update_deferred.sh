@@ -46,7 +46,15 @@ curl -s -X POST "${HEADNODE_URL}/maintenance/on" \
      -H "Authorization: Bearer ${CLUSTER_TOKEN}" || echo "⚠️ Failed to enable maintenance mode"
 
 echo "=== [2/6] Drain & Purge: Cancelling active jobs ==="
-DB_PATH="${CLUSTER_DB_PATH:-cluster_scheduler.db}"
+DB_PATH="${CLUSTER_DB_PATH:-}"
+if [ -z "$DB_PATH" ]; then
+    if [ -f "/home/henri/cluster-ci/cluster_scheduler.db" ]; then
+        DB_PATH="/home/henri/cluster-ci/cluster_scheduler.db"
+    else
+        DB_PATH="cluster_scheduler.db"
+    fi
+fi
+
 if [ -f "$DB_PATH" ]; then
     # Get all running or assigned jobs
     ACTIVE_JOBS=$(sqlite3 "$DB_PATH" "SELECT job_id FROM jobs WHERE status IN ('running', 'assigned');")
@@ -61,17 +69,36 @@ else
 fi
 
 echo "=== [3/6] Pulling latest code on Headnode robustly ==="
+# Update runner's own workspace clone
 cd "$BASE_DIR"
 git fetch origin main
 git reset --hard origin/main
-echo "✅ Code updated to: $(git rev-parse --short HEAD)"
+echo "✅ Runner workspace updated to: $(git rev-parse --short HEAD)"
+
+# ALSO update the global production infrastructure folder if it exists
+PROD_DIR="/home/henri/cluster-ci"
+if [ -d "$PROD_DIR" ] && [ "$PROD_DIR" != "$BASE_DIR" ]; then
+    echo "⚙️  Updating global production folder $PROD_DIR..."
+    cd "$PROD_DIR"
+    git fetch origin main
+    git reset --hard origin/main
+    echo "✅ Global production folder updated to: $(git rev-parse --short HEAD)"
+fi
 
 echo "=== [4/6] Syncing dependencies ==="
 UV_CMD="${HOME}/.local/bin/uv"
 [ ! -x "$UV_CMD" ] && UV_CMD=$(which uv || echo "uv")
 
 if command -v "$UV_CMD" &> /dev/null; then
-    "$UV_CMD" sync 2>&1 || echo "⚠️ uv sync had warnings (non-fatal)"
+    # Sync in runner workspace
+    cd "$BASE_DIR"
+    "$UV_CMD" sync 2>&1 || echo "⚠️ uv sync had warnings in runner workspace (non-fatal)"
+    
+    # ALSO sync in global production if it exists
+    if [ -d "$PROD_DIR" ] && [ "$PROD_DIR" != "$BASE_DIR" ]; then
+        cd "$PROD_DIR"
+        "$UV_CMD" sync 2>&1 || echo "⚠️ uv sync had warnings in production folder (non-fatal)"
+    fi
 else
     echo "⚠️ uv not found, skipping dependency sync"
 fi

@@ -81,7 +81,6 @@ stream_logs() {
     local repo_full_name
     repo_full_name=$(git config --get remote.origin.url 2>/dev/null | sed -E 's/.*github.com[:\/](.*)\.git/\1/' 2>/dev/null)
     [ -z "$repo_full_name" ] && repo_full_name="UNIL-DESI/cluster-ci"
-
     # 1. Try to fetch job_id from Headnode via SSH to stream real-time worker logs
     local job_id=""
     if command -v sshpass &> /dev/null; then
@@ -96,7 +95,7 @@ stream_logs() {
             if [ "$run_status" == "completed" ] || [ "$run_status" == "cancelled" ]; then
                 break
             fi
-
+ 
             if [ -n "$commit_sha" ]; then
                 job_id=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT job_id FROM jobs WHERE repo = '$repo_full_name' AND commit_hash = '$commit_sha' LIMIT 1;\"" 2>/dev/null || echo "")
             else
@@ -132,25 +131,45 @@ stream_logs() {
         
         while true; do
             # Fetch job status from SQLite to handle queuing animations and termination
-            local job_status
-            job_status=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT status FROM jobs WHERE job_id = '$job_id';\"" 2>/dev/null || echo "completed")
+            local raw_job_status
+            raw_job_status=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT status FROM jobs WHERE job_id = '$job_id';\"" 2>/dev/null || echo "")
             
+            # Clean up the output: keep only clean lowercase/uppercase alphanumeric characters
+            local job_status
+            job_status=$(echo "$raw_job_status" | tr -cd 'a-zA-Z')
+            
+            # Validate that the status is one of the recognized SQLite job statuses
+            if [[ "$job_status" != "pending" && "$job_status" != "assigned" && "$job_status" != "running" && "$job_status" != "completed" && "$job_status" != "failed" && "$job_status" != "cancelled" ]]; then
+                # If we got a locked database message, connection drop, or empty output, fallback to last known status or running
+                if [ -n "$last_job_status" ]; then
+                    job_status="$last_job_status"
+                else
+                    job_status="running"
+                fi
+            fi
+
             if [ "$job_status" != "$last_job_status" ]; then
                 if [ "$job_status" == "pending" ]; then
                     echo "⏳ Job is in scheduler queue (waiting for a worker slot)..."
+                elif [ "$job_status" == "assigned" ]; then
+                    echo "🔗 Job has been assigned to a worker..."
                 elif [ "$job_status" == "running" ]; then
-                    if [ "$last_job_status" == "pending" ]; then echo ""; fi
+                    if [[ "$last_job_status" == "pending" || "$last_job_status" == "assigned" ]]; then echo ""; fi
                     echo "🏃 Job has started on worker slot..."
                 fi
                 last_job_status=$job_status
                 dots=""
             fi
 
-            # Handle pending animation
-            if [ "$job_status" == "pending" ]; then
+            # Handle pending/assigned animation
+            if [[ "$job_status" == "pending" || "$job_status" == "assigned" ]]; then
                 dots="${dots}."
                 if [ ${#dots} -gt 5 ]; then dots="."; fi
-                printf "\r⏳ Waiting in queue%s     " "$dots"
+                if [ "$job_status" == "pending" ]; then
+                    printf "\r⏳ Waiting in queue%s     " "$dots"
+                else
+                    printf "\r🔗 Assigning to worker%s     " "$dots"
+                fi
                 sleep 2
                 continue
             fi
@@ -180,8 +199,8 @@ stream_logs() {
                 printf "\r⏱️  Booting job environment%s     " "$dots"
             fi
 
-            # Check for completion
-            if [[ "$job_status" != "running" && "$job_status" != "pending" ]]; then
+            # Check for completion: Exit loop ONLY on explicit terminal statuses (completed, failed, cancelled)
+            if [[ "$job_status" == "completed" || "$job_status" == "failed" || "$job_status" == "cancelled" ]]; then
                 # Perform one last logs flush
                 resp_json=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "curl -s --connect-timeout 3 http://localhost:5000/api/jobs/$job_id/logs?offset=$log_offset" 2>/dev/null || echo "")
                 if [ -n "$resp_json" ] && [[ "$resp_json" == *'"logs"'* ]]; then

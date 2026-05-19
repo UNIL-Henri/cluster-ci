@@ -175,5 +175,7 @@ cluster-ci/
 - [x] Fix Bug: Ghost Workers — Le scheduler marque automatiquement les workers offline après 120s sans heartbeat, empêchant le dashboard de mentir sur l'état réel du cluster.
 - [x] Hardening: Ajout de `timeout=10` explicite sur toutes les requêtes HTTP du worker agent pour prévenir les deadlocks TCP silencieux (firewall universitaire).
 - [x] GitOps Auto-Update (Pull & Defer): Déploiement automatique du cluster sur merge vers `main` via workflow GitHub Actions + webhook `/webhook/update_self` sur les workers + restart différé des services headnode.
+- [x] Fix Bug: Streaming des logs en direct — Résolution de la détection du `job_id` via le shadow commit hash transmis de bout en bout par GHA au scheduler dans la table `jobs` SQLite.
+- [x] Fix Bug: Auto-Update — Fiabilisation du script `self_update_deferred.sh` pour cibler également le dossier de production global `/home/henri/cluster-ci`, les dépendances via `uv sync` et sa base de données lors des déploiements.
 - [ ] [Implémenter un Global Execution Timeout pour empêcher le gel du worker sur un job bloqué](https://github.com/UNIL-DESI/cluster-ci/issues/63)
 

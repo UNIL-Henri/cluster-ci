@@ -78,7 +78,7 @@ def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None, commit_
                 pass
     # Strategy: Fetch .cluster-ci content first to parse all requirements
     content = None
-    import tempfile, subprocess, shutil, os
+    import tempfile, subprocess, shutil
     tmp_dir = tempfile.mkdtemp()
     try:
         gh_token_inner = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_PAT")
