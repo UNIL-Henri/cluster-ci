@@ -1,7 +1,7 @@
 # Cluster CI
 
 L'orchestrateur GitOps minimaliste et décentralisé pour le traitement de données et l'entraînement de modèles.
-**État actuel** : Système opérationnel. Le réseau de workers ARM64 NVIDIA Blackwell est fonctionnel avec le conteneur NGC `nvcr.io/nvidia/pytorch:26.04-py3` (Python 3.12, PyTorch 2.12, CUDA 13.2). Support natif du streaming de logs en direct en temps réel ligne par ligne sans perte.
+**État actuel** : Système opérationnel. Le réseau de workers ARM64 NVIDIA Blackwell est fonctionnel avec le conteneur NGC `nvcr.io/nvidia/pytorch:26.04-py3` (Python 3.12, PyTorch 2.12, CUDA 13.2). Support natif du streaming de logs en direct en temps réel ligne par ligne sans perte (via une attente active et un émulateur de terminal virtuel en Python 160x24 pour éliminer les bruits de TTY/tmux).
 
 Asynchronous continuous integration system for research pipelines, designed as a pull-based replacement for the legacy SlurmRay push-based architecture. This repository hosts the scripts necessary to configure a GitHub Actions Self-Hosted Runner on the target Ubuntu machine, orchestrating `uv run dvc repro` executions in local environments and managing silent authentication with Google Drive. It also provides the client script allowing any research repository to interface with this cluster.
 
@@ -91,7 +91,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
    Une fois alloué, le conteneur a accès à 100% de la RAM hôte pour éviter les limites artificielles.
 ## Main Results
 
-- **Status**: Under construction (Last updated: 17 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
+- **Status**: Under construction (Last updated: 19 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
 
 ## Documentation Index
 

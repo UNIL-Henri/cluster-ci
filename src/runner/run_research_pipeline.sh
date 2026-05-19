@@ -503,7 +503,7 @@ if command -v "$TMATE_BIN" &> /dev/null; then
     echo "set -g tmate-display-help off" > "$TMATE_CONF"
     
     # 2. Start detached session running the execute command (write logs/exit code on host runner)
-    TMATE_CMD="echo '⏱️ Introducing 2s startup delay...'; sleep 2; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | stdbuf -oL -eL tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
+    TMATE_CMD="echo '⏳ Waiting up to 15s for live terminal connection...'; for i in {1..30}; do if [ \$(\"$TMATE_BIN\" -S \"$TMATE_SOCKET\" display -p '#{session_clients}' 2>/dev/null || echo 0) -gt 0 ]; then echo '🟢 Client connected! Starting execution...'; break; fi; sleep 0.5; done; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | stdbuf -oL -eL tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
     "$TMATE_BIN" -S "$TMATE_SOCKET" -f "$TMATE_CONF" new-session -d "$TMATE_CMD"
     
     # Send 'q' key as an extra safeguard
