@@ -97,9 +97,38 @@ class RunnerManager:
 
                 # 3. Launch the runner
                 logger.info("Launching runner...")
-                # run.sh blocks until the job is finished or the runner is stopped
                 process = subprocess.Popen(["./run.sh"], cwd=slot_dir)
-                process.wait()
+                
+                # Active surveillance loop to detect and auto-kill zombie runners stuck in GHA cancellation loops
+                cancellation_spam_count = 0
+                
+                while process.poll() is None:
+                    time.sleep(10)
+                    
+                    # Scan for recent diag logs
+                    diag_dir = slot_dir / "_diag"
+                    if diag_dir.exists():
+                        log_files = sorted(list(diag_dir.glob("Runner_*.log")), key=os.path.getmtime, reverse=True)
+                        if log_files:
+                            latest_log = log_files[0]
+                            try:
+                                with open(latest_log, "r", encoding="utf-8", errors="ignore") as f:
+                                    lines = f.readlines()[-15:]
+                                    cancel_lines = [l for l in lines if "Job cancellation request" in l and "received" in l]
+                                    if len(cancel_lines) >= 8:
+                                        cancellation_spam_count += 1
+                                    else:
+                                        cancellation_spam_count = max(0, cancellation_spam_count - 1)
+                            except Exception:
+                                pass
+                    
+                    if cancellation_spam_count >= 3:
+                        logger.warning("🚨 [Zombie Detection] Runner is stuck in an infinite cancellation loop. Auto-healing runner process...")
+                        process.terminate()
+                        time.sleep(3)
+                        if process.poll() is None:
+                            process.kill()
+                        break
 
                 logger.info(f"Runner stopped with code {process.returncode}. Imminent restart...")
 
