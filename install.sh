@@ -358,6 +358,13 @@ EOF
     fi
     chmod +x "$HOME/.local/bin/cluster-run"
 
+    # Install the log filter companion script (required for real-time tmate streaming)
+    if [ -f "$(dirname "$0")/scripts/tmate_log_filter.py" ]; then
+        cp "$(dirname "$0")/scripts/tmate_log_filter.py" "$HOME/.local/bin/tmate_log_filter.py"
+    else
+        curl -sSL "$RAW_URL/scripts/tmate_log_filter.py" -o "$HOME/.local/bin/tmate_log_filter.py"
+    fi
+
     # Add ~/.local/bin to PATH if not already there
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
         SHELL_CONFIG=""
