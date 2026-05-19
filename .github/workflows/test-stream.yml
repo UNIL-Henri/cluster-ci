@@ -1,0 +1,15 @@
+name: Test Stream
+on:
+  push:
+    branches: [ test-stream ]
+
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - name: Print slowly
+        run: |
+          for i in {1..10}; do
+            echo "Line $i"
+            sleep 2
+          done
