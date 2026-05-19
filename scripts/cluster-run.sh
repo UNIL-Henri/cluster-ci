@@ -64,9 +64,50 @@ cleanup() {
 
 stream_logs() {
     local run_id=$1
+    local commit_sha=$2
     local last_line_count=0
-    local status="in_progress"
+    local tmate_connected=false
 
+    # If we have a commit SHA, let's poll for a tmate status
+    if [ -n "$commit_sha" ]; then
+        echo "🔍 Polling for live terminal connection..."
+        for attempt in {1..20}; do
+            # Check if run has already completed (no need to connect if done)
+            local run_status
+            run_status=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
+            if [ "$run_status" == "completed" ]; then
+                break
+            fi
+
+            # Fetch statuses via GitHub API
+            local status_json
+            status_json=$(gh api "repos/:owner/:repo/commits/$commit_sha/statuses" 2>/dev/null || true)
+            
+            if [ -n "$status_json" ]; then
+                # Search for a status with context: "tmate"
+                local tmate_url
+                tmate_url=$(echo "$status_json" | jq -r '.[] | select(.context == "tmate") | .target_url' 2>/dev/null | head -n 1)
+                
+                if [ -n "$tmate_url" ] && [ "$tmate_url" != "null" ] && [[ "$tmate_url" == ssh* ]]; then
+                    echo "🟢 Live terminal stream found!"
+                    echo "🔗 Connection String: $tmate_url"
+                    echo "⚡ Connecting to runner via SSH (exit SSH or let the job finish to complete)..."
+                    echo "=========================================================================="
+                    
+                    # Execute SSH directly to connect the user to the tmate session
+                    eval "$tmate_url -o StrictHostKeyChecking=no"
+                    
+                    echo "=========================================================================="
+                    echo "🔌 Disconnected from live terminal. Fetching final logs..."
+                    tmate_connected=true
+                    break
+                fi
+            fi
+            sleep 2
+        done
+    fi
+
+    # Fallback/Final Logs
     while true; do
         local logs
         logs=$(gh run view "$run_id" --log 2>/dev/null || true)
@@ -183,7 +224,7 @@ shadow_run() {
 
     echo "📺 Streaming logs for run $RUN_ID (Ctrl+C to cancel)..."
 
-    stream_logs "$RUN_ID"
+    stream_logs "$RUN_ID" "$commit_to_push"
 
     # Check final status
     local conclusion=$(gh run view "$RUN_ID" --json conclusion -q .conclusion)

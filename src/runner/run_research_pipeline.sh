@@ -440,10 +440,74 @@ else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
 
-set +e
-docker_exec "$EXEC_CMD"
-EXEC_RET=$?
-set -e
+if command -v tmate &> /dev/null; then
+    log_info "🚀 Live Terminal Streaming enabled. Initializing tmate..."
+    
+    # 1. Clean up socket
+    TMATE_SOCKET="/tmp/tmate_${SAFE_JOB_ID}.sock"
+    rm -f "$TMATE_SOCKET"
+    
+    # 2. Start detached session running the execute command
+    TMATE_CMD="docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee /workspace/tmate_execution.log; echo \${PIPESTATUS[0]} > /workspace/tmate_exit_code"
+    
+    tmate -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
+    
+    # 3. Wait for tmate to connect and generate URL
+    log_info "Generating live terminal SSH URL..."
+    TMATE_SSH=""
+    for attempt in {1..10}; do
+        sleep 1.5
+        TMATE_SSH=$(tmate -S "$TMATE_SOCKET" display -p '#{tmate_ssh}' 2>/dev/null || true)
+        if [ -n "$TMATE_SSH" ]; then
+            break
+        fi
+    done
+    
+    if [ -n "$TMATE_SSH" ]; then
+        log_success "Live terminal available! Connect via:"
+        log_success "👉 $TMATE_SSH"
+        
+        # 4. Publish the URL to the GitHub Commit Status
+        COMMIT_SHA=$(cat .cluster-ci-commit 2>/dev/null || git rev-parse HEAD || true)
+        if [ -n "$GH_TOKEN" ] && [ -n "$COMMIT_SHA" ]; then
+            log_info "Publishing tmate URL to GitHub commit status for commit $COMMIT_SHA..."
+            curl -s -X POST \
+                -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/$TARGET_REPO/statuses/$COMMIT_SHA" \
+                -d "{\"state\": \"pending\", \"target_url\": \"${TMATE_SSH}\", \"description\": \"Connect to live logs via SSH\", \"context\": \"tmate\"}" >/dev/null || true
+        fi
+    else
+        log_error "Failed to generate tmate URL. Execution will continue silently."
+    fi
+    
+    # 5. Wait for the session to finish
+    set +e
+    while tmate -S "$TMATE_SOCKET" has-session 2>/dev/null; do
+        sleep 2
+    done
+    set -e
+    
+    # 6. Retrieve the exit code
+    if [ -f "tmate_exit_code" ]; then
+        EXEC_RET=$(cat tmate_exit_code)
+        rm -f tmate_exit_code
+    else
+        EXEC_RET=1
+    fi
+    
+    # 7. Print the final log to standard stdout so GitHub Actions log has the permanent copy
+    if [ -f "tmate_execution.log" ]; then
+        cat tmate_execution.log
+        rm -f tmate_execution.log
+    fi
+else
+    log_info "⚠️ tmate not installed on runner host. Falling back to silent execution."
+    set +e
+    docker_exec "$EXEC_CMD"
+    EXEC_RET=$?
+    set -e
+fi
 
 echo "===STAGE:dvc_repro:END==="
 echo "===STAGE:sync:BEGIN==="
