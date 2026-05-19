@@ -70,8 +70,8 @@ stream_logs() {
 
     # If we have a commit SHA, let's poll for a tmate status
     if [ -n "$commit_sha" ]; then
-        echo "🔍 Polling for live terminal connection..."
-        for attempt in {1..20}; do
+        echo "🔍 Polling for live terminal connection (timeout ~2 mins)..."
+        for attempt in {1..60}; do
             # Check if run has already completed (no need to connect if done)
             local run_status
             run_status=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
@@ -80,22 +80,29 @@ stream_logs() {
             fi
 
             # Fetch statuses via GitHub API
+            local repo_full_name
+            repo_full_name=$(git config --get remote.origin.url 2>/dev/null | sed -E 's/.*github.com[:\/](.*)\.git/\1/' 2>/dev/null)
+            [ -z "$repo_full_name" ] && repo_full_name="UNIL-DESI/cluster-ci"
+
             local status_json
-            status_json=$(gh api "repos/:owner/:repo/commits/$commit_sha/statuses" 2>/dev/null || true)
+            status_json=$(gh api "repos/$repo_full_name/commits/$commit_sha/statuses" 2>/dev/null || true)
             
             if [ -n "$status_json" ]; then
-                # Search for a status with context: "tmate"
+                # Search for a status with context: "tmate" via python3 to be robust and independent of jq
                 local tmate_url
-                tmate_url=$(echo "$status_json" | jq -r '.[] | select(.context == "tmate") | .description' 2>/dev/null | sed 's/^SSH: //' | head -n 1)
+                tmate_url=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['target_url'] if item else '')" 2>/dev/null || echo "")
+                local tmate_ssh
+                tmate_ssh=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['description'].replace('SSH: ', '') if item else '')" 2>/dev/null || echo "")
                 
-                if [ -n "$tmate_url" ] && [ "$tmate_url" != "null" ] && [[ "$tmate_url" == ssh* ]]; then
+                if [ -n "$tmate_ssh" ] && [[ "$tmate_ssh" == ssh* ]]; then
                     echo "🟢 Live terminal stream found!"
-                    echo "🔗 Connection String: $tmate_url"
+                    echo "🔗 Web: $tmate_url"
+                    echo "🔌 SSH: $tmate_ssh"
                     echo "⚡ Connecting to runner via SSH (exit SSH or let the job finish to complete)..."
                     echo "=========================================================================="
                     
                     # Execute SSH directly to connect the user to the tmate session
-                    eval "$tmate_url -o StrictHostKeyChecking=no"
+                    eval "$tmate_ssh -o StrictHostKeyChecking=no"
                     
                     echo "=========================================================================="
                     echo "🔌 Disconnected from live terminal. Fetching final logs..."
@@ -190,6 +197,10 @@ shadow_run() {
         exit 1
     fi
 
+    # Get last run ID before push to prevent matching stale run
+    local last_known_run_id
+    last_known_run_id=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
+
     echo "🚀 Shadow pushing to origin/$BRANCH..."
     git push origin "$commit_to_push:refs/heads/$BRANCH" --force --quiet
 
@@ -205,16 +216,22 @@ shadow_run() {
 
     # 3. Find and watch the run
     echo "⏳ Waiting for GitHub Actions to trigger..."
-    sleep 3
+    sleep 4
     for i in {1..15}; do
-        RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId,status -q '.[0] | select(.status != "completed") | .databaseId')
-        [ -n "$RUN_ID" ] && break
+        RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId,status -q '.[0] | select(.status != "completed") | .databaseId' 2>/dev/null || true)
+        if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "$last_known_run_id" ]; then
+            break
+        fi
+        RUN_ID=""
         sleep 2
     done
 
     if [ -z "$RUN_ID" ]; then
         # Check if it already finished (very fast run?)
-        RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId')
+        RUN_ID=$(gh run list --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+        if [ "$RUN_ID" == "$last_known_run_id" ]; then
+            RUN_ID=""
+        fi
     fi
 
     if [ -z "$RUN_ID" ]; then
