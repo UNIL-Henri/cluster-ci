@@ -113,13 +113,51 @@ stream_logs() {
             sleep 2
         done
     fi
-
     # Fallback/Final Logs
+    local last_status=""
+    local dots=""
+    local is_first_progress=true
+    
     while true; do
+        # 1. Fetch current status of the GitHub Actions run
+        local info
+        info=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
+        
+        # 2. Print user-friendly queue and progress states
+        if [ "$info" != "$last_status" ]; then
+            if [ "$info" == "queued" ]; then
+                echo "⏳ Job is in GitHub queue (waiting for a runner to pick it up)..."
+            elif [ "$info" == "in_progress" ]; then
+                # Clear carriage return line if we were printing dots
+                if [ "$last_status" == "queued" ]; then
+                    echo ""
+                fi
+                echo "🏃 Job has started and is now in progress..."
+            fi
+            last_status=$info
+            dots=""
+        fi
+        
+        # 3. Handle queue animation
+        if [ "$info" == "queued" ]; then
+            dots="${dots}."
+            if [ ${#dots} -gt 5 ]; then dots="."; fi
+            printf "\r⏳ Waiting in queue%s     " "$dots"
+            sleep 2
+            continue
+        fi
+
+        # 4. Fetch logs if run is active or completed
         local logs
         logs=$(gh run view "$run_id" --log 2>/dev/null || true)
         
         if [ -n "$logs" ]; then
+            # Clear carriage return booting line if present
+            if [ "$is_first_progress" == "true" ]; then
+                echo ""
+                is_first_progress=false
+            fi
+            
             local current_line_count
             current_line_count=$(echo "$logs" | wc -l)
             
@@ -139,11 +177,14 @@ stream_logs() {
                 }'
                 last_line_count=$current_line_count
             fi
+        elif [ "$is_first_progress" == "true" ]; then
+            # Logs are still empty but job is in progress
+            dots="${dots}."
+            if [ ${#dots} -gt 5 ]; then dots="."; fi
+            printf "\r⏱️  Booting job environment%s     " "$dots"
         fi
 
-        # Check run status
-        local info
-        info=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
+        # 5. Check if run is done
         if [ "$info" == "completed" ]; then
             # Final log flush
             logs=$(gh run view "$run_id" --log 2>/dev/null || true)
@@ -160,6 +201,10 @@ stream_logs() {
                         printf "\033[90m[%s]\033[0m %s\n", step, log_line;
                     }
                 }'
+            fi
+            # Add newline if we finished on a booting status line
+            if [ "$is_first_progress" == "true" ]; then
+                echo ""
             fi
             break
         fi

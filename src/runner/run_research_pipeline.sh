@@ -52,9 +52,9 @@ COMMON_LABELS="--label cluster-ci-job=${JOB_ID} --label cluster-ci-repo=${TARGET
 if [ "$CLUSTER_CI_MODE" != "executor" ]; then
     echo "🌐 Delegation Mode enabled. Submitting job to scheduler..."
 if [ -n "$GH_TOKEN" ]; then
-        python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH" --gh-token "$GH_TOKEN"
+        python3 -u "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH" --gh-token "$GH_TOKEN"
     else
-        python3 "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
+        python3 -u "$BASE_DIR/src/scheduler/submit_job.py" "$TARGET_REPO" "$TARGET_BRANCH"
     fi
     exit $?
 fi
