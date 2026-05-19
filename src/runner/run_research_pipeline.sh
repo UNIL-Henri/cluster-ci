@@ -123,6 +123,7 @@ function cleanup_job_resources() {
     if [ -n "$SAFE_JOB_ID" ]; then
         docker stop "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
         docker rm -f "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
+        rm -f "/tmp/tmate_${SAFE_JOB_ID}.sock" "/tmp/tmate_${SAFE_JOB_ID}.conf" 2>/dev/null || true
     fi
     [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
@@ -487,17 +488,19 @@ fi
 if command -v "$TMATE_BIN" &> /dev/null; then
     log_info "🚀 Live Terminal Streaming enabled. Initializing tmate..."
     
-    # 1. Clean up socket
+    # 1. Clean up socket and create temp config to bypass tmate welcome/help screen
     TMATE_SOCKET="/tmp/tmate_${SAFE_JOB_ID}.sock"
-    rm -f "$TMATE_SOCKET"
+    TMATE_CONF="/tmp/tmate_${SAFE_JOB_ID}.conf"
+    rm -f "$TMATE_SOCKET" "$TMATE_CONF"
+    echo "set -g tmate-display-help off" > "$TMATE_CONF"
     
     # 2. Start detached session running the execute command (write logs/exit code on host runner)
-    TMATE_CMD="echo '⏱️ Introducing temporary 25s debug delay...'; sleep 25; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
+    TMATE_CMD="echo '⏱️ Introducing 2s startup delay...'; sleep 2; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
     
-    "$TMATE_BIN" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
+    "$TMATE_BIN" -S "$TMATE_SOCKET" -f "$TMATE_CONF" new-session -d "$TMATE_CMD"
     
-    # Send 'q' key to automatically close the built-in welcome panel ("Press q or ctrl-c to continue")
-    sleep 1
+    # Send 'q' key as an extra safeguard
+    sleep 0.5
     "$TMATE_BIN" -S "$TMATE_SOCKET" send-keys "q"
     
     # 3. Wait for tmate to connect and generate URL

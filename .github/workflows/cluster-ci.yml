@@ -1,5 +1,9 @@
 name: Cluster-CI Execution
 
+env:
+  PYTHONUNBUFFERED: "1"
+
+
 on:
   push:
     branches: [ main, master, cluster-draft/* ]

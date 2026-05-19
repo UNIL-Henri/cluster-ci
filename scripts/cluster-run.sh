@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Disable Python output buffering globally
+export PYTHONUNBUFFERED=1
+
+
 # Cluster-CI Run CLI
 # Helps researchers submit jobs via "Shadow Push" to a draft branch.
 
@@ -60,11 +64,11 @@ cleanup() {
         if [ -n "$RUN_ID" ] && [ "$USER_INTERRUPTED" = "true" ]; then
              local raw_status=$(gh run view "$RUN_ID" --json status -q .status < /dev/null 2>/dev/null || echo "completed"); local status=$(echo "$raw_status" | tr -cd 'a-zA-Z')
              if [[ "$status" != "completed" && "$status" != "success" && "$status" != "failure" && "$status" != "cancelled" ]]; then
-                 echo -e "\n🛑 Cancelling GitHub run $RUN_ID..."
-                 gh run cancel "$RUN_ID" < /dev/null 2>&1 || true
+                 # Cancel silently to avoid scary terminal output
+                 gh run cancel "$RUN_ID" < /dev/null >/dev/null 2>&1 || true
              fi
         fi
-        echo "🧹 Cleaning up remote branch $BRANCH..."
+        # Silence branch deletion
         git push origin --delete "$BRANCH" --quiet >/dev/null 2>&1 || true
     fi
 }
@@ -75,7 +79,7 @@ stream_logs() {
     local last_line_count=0
     local tmate_connected=false
 
-    # If we have a commit SHA, let's poll for a tmate status
+    # If we have a commit SHA, let's poll for a tmate web status for diagnostics
     if [ -n "$commit_sha" ]; then
         echo "🔍 Polling for live terminal connection (timeout ~2 mins)..."
         for attempt in {1..60}; do
@@ -95,25 +99,14 @@ stream_logs() {
             status_json=$(gh api "repos/$repo_full_name/commits/$commit_sha/statuses" 2>/dev/null || true)
             
             if [ -n "$status_json" ]; then
-                # Search for a status with context: "tmate" via python3 to be robust and independent of jq
+                # Search for a status with context: "tmate" via python3
                 local tmate_url
                 tmate_url=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['target_url'] if item else '')" 2>/dev/null || echo "")
-                local tmate_ssh
-                tmate_ssh=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['description'].replace('SSH: ', '') if item else '')" 2>/dev/null || echo "")
                 
-                if [ -n "$tmate_ssh" ] && [[ "$tmate_ssh" == ssh* ]]; then
-                    echo "🟢 Live terminal stream found!"
-                    echo "🔗 Web: $tmate_url"
-                    echo "🔌 SSH: $tmate_ssh"
-                    echo "⚡ Connecting to runner via SSH (exit SSH or let the job finish to complete)..."
+                if [ -n "$tmate_url" ]; then
+                    echo "🟢 Live web monitor available!"
+                    echo "🔗 Web UI: $tmate_url"
                     echo "=========================================================================="
-                    
-                    # Execute SSH directly to connect the user to the tmate session
-                    eval "$tmate_ssh -o StrictHostKeyChecking=no"
-                    
-                    echo "=========================================================================="
-                    echo "🔌 Disconnected from live terminal. Fetching final logs..."
-                    tmate_connected=true
                     break
                 fi
             fi
