@@ -6,10 +6,10 @@ import base64
 
 print("🚀 Starting simulated research pipeline...")
 
-print("⏳ Step 1: Processing data (simulating workload for 15 seconds)...")
+print("⏳ Step 1: Processing data (simulating workload for 30 seconds)...")
 for i in range(3):
     print(f"   ... processing batch {i+1}/3")
-    time.sleep(5)
+    time.sleep(10)
 
 os.makedirs("artifacts", exist_ok=True)
 
