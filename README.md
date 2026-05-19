@@ -33,6 +33,19 @@ Ce script injecte :
 2. Le fichier de contrôle DVC (`.cluster-ci`)
 3. **Le fichier de directives pour agents (`AGENTS.md`)** contenant les contraintes d'architecture du cluster (Python 3.12, PyTorch 2.12, CUDA 13.2) afin d'éviter les erreurs de dépendances de l'IA sur ce dépôt.
 4. **Le Scanner Pre-flight (Git Hook)** : Un hook de pre-commit interactif qui valide la compatibilité locale avec le cluster ARM64 et propose des corrections automatiques.
+5. **Le CLI `cluster-run`** : Commande locale pour soumettre et suivre des jobs directement depuis votre terminal (voir ci-dessous).
+
+#### Commande `cluster-run`
+
+Après installation, la commande `cluster-run` est disponible dans `~/.local/bin/`. Elle utilise le mécanisme de "Shadow Push" pour soumettre vos modifications locales (y compris les fichiers non commités) au cluster sans polluer votre historique git.
+
+| Commande | Description |
+|---|---|
+| `cluster-run` | Soumet un job et affiche les logs en temps réel |
+| `cluster-run --background` | Soumet un job sans bloquer le terminal |
+| `cluster-run list` | Liste les runs récents |
+| `cluster-run view [run_id]` | Affiche les logs d'un run (dernier par défaut) |
+| `cluster-run cancel [run_id]` | Annule un run et nettoie la branche |
 
 ### Cluster Deployment (Headnode & Workers)
 
