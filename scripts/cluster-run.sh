@@ -62,6 +62,63 @@ cleanup() {
     fi
 }
 
+stream_logs() {
+    local run_id=$1
+    local last_line_count=0
+    local status="in_progress"
+
+    while true; do
+        local logs
+        logs=$(gh run view "$run_id" --log 2>/dev/null || true)
+        
+        if [ -n "$logs" ]; then
+            local current_line_count
+            current_line_count=$(echo "$logs" | wc -l)
+            
+            if [ "$current_line_count" -gt "$last_line_count" ]; then
+                # Print new lines and format beautifully
+                echo "$logs" | tail -n +"$((last_line_count + 1))" | awk -F'\t' '{
+                    step=$2; 
+                    log_line=$3;
+                    gsub(/^\xEF\xBB\xBF/, "", log_line); # Strip BOM if present
+                    gsub(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+Z /, "", log_line);
+                    gsub(/##\[group\]/, "▶️  ", log_line);
+                    gsub(/##\[endgroup\]/, "", log_line);
+                    
+                    if (log_line != "") {
+                        printf "\033[90m[%s]\033[0m %s\n", step, log_line;
+                    }
+                }'
+                last_line_count=$current_line_count
+            fi
+        fi
+
+        # Check run status
+        local info
+        info=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
+        if [ "$info" == "completed" ]; then
+            # Final log flush
+            logs=$(gh run view "$run_id" --log 2>/dev/null || true)
+            current_line_count=$(echo "$logs" | wc -l)
+            if [ "$current_line_count" -gt "$last_line_count" ]; then
+                echo "$logs" | tail -n +"$((last_line_count + 1))" | awk -F'\t' '{
+                    step=$2; 
+                    log_line=$3;
+                    gsub(/^\xEF\xBB\xBF/, "", log_line);
+                    gsub(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+Z /, "", log_line);
+                    gsub(/##\[group\]/, "▶️  ", log_line);
+                    gsub(/##\[endgroup\]/, "", log_line);
+                    if (log_line != "") {
+                        printf "\033[90m[%s]\033[0m %s\n", step, log_line;
+                    }
+                }'
+            fi
+            break
+        fi
+        sleep 2
+    done
+}
+
 shadow_run() {
     local background=$1
     check_gh_auth
@@ -126,7 +183,7 @@ shadow_run() {
 
     echo "📺 Streaming logs for run $RUN_ID (Ctrl+C to cancel)..."
 
-    gh run watch "$RUN_ID"
+    stream_logs "$RUN_ID"
 
     # Check final status
     local conclusion=$(gh run view "$RUN_ID" --json conclusion -q .conclusion)
