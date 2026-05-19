@@ -86,11 +86,14 @@ stream_logs() {
     local job_id=""
     if command -v sshpass &> /dev/null; then
         echo "🔍 Connecting to Headnode scheduler to capture unbuffered worker logs..."
-        for attempt in {1..20}; do
-            # Check if run has already completed in GitHub
+        local spin_idx=0
+        local spin_chars="/-\|"
+        
+        for attempt in {1..120}; do
             local run_status
             run_status=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
-            if [ "$run_status" == "completed" ]; then
+            
+            if [ "$run_status" == "completed" ] || [ "$run_status" == "cancelled" ]; then
                 break
             fi
 
@@ -99,12 +102,25 @@ stream_logs() {
             else
                 job_id=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT job_id FROM jobs WHERE repo = '$repo_full_name' AND branch = '$BRANCH' ORDER BY created_at DESC LIMIT 1;\"" 2>/dev/null || echo "")
             fi
+
             if [ -n "$job_id" ]; then
+                printf "\r\033[K"
                 echo "🟢 Connected to job: $job_id"
                 break
             fi
+
+            local char="${spin_chars:spin_idx:1}"
+            spin_idx=$(( (spin_idx + 1) % 4 ))
+            
+            if [ "$run_status" == "queued" ]; then
+                printf "\r⏳ Waiting in GitHub Actions queue [%s] (allocation of a runner slot)..." "$char"
+            else
+                printf "\r⏱️  Booting job environment [%s] (registering with scheduler)..." "$char"
+            fi
+            
             sleep 2
         done
+        printf "\r\033[K"
     fi
 
     # 2. If job_id was found, stream logs directly and in real-time from the worker API
