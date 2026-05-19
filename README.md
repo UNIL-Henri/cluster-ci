@@ -1,7 +1,7 @@
 # Cluster CI
 
 L'orchestrateur GitOps minimaliste et décentralisé pour le traitement de données et l'entraînement de modèles.
-**État actuel** : Système opérationnel. Le réseau de workers ARM64 NVIDIA Blackwell est fonctionnel avec le conteneur NGC `nvcr.io/nvidia/pytorch:26.04-py3` (Python 3.12, PyTorch 2.12, CUDA 13.2). Support natif du streaming interactif live 1:1 via **tmate** (Reverse SSH).
+**État actuel** : Système opérationnel. Le réseau de workers ARM64 NVIDIA Blackwell est fonctionnel avec le conteneur NGC `nvcr.io/nvidia/pytorch:26.04-py3` (Python 3.12, PyTorch 2.12, CUDA 13.2). Support natif du streaming de logs en direct en temps réel ligne par ligne sans perte.
 
 Asynchronous continuous integration system for research pipelines, designed as a pull-based replacement for the legacy SlurmRay push-based architecture. This repository hosts the scripts necessary to configure a GitHub Actions Self-Hosted Runner on the target Ubuntu machine, orchestrating `uv run dvc repro` executions in local environments and managing silent authentication with Google Drive. It also provides the client script allowing any research repository to interface with this cluster.
 
@@ -41,7 +41,7 @@ Après installation, la commande `cluster-run` est disponible dans `~/.local/bin
 
 | Commande | Description |
 |---|---|
-| `cluster-run` | Soumet un job et connecte automatiquement une session terminal interactive en direct (via tmate) |
+| `cluster-run` | Soumet un job et streame en temps réel et en direct les logs d'exécution ligne par ligne dans votre terminal d'origine sans perte |
 | `cluster-run --background` | Soumet un job sans bloquer le terminal |
 | `cluster-run list` | Liste les runs récents |
 | `cluster-run view [run_id]` | Affiche les logs d'un run (dernier par défaut) |
@@ -99,6 +99,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 |--------------|-------------|
 | [Architecture Index](docs/index_architecture.md) | Architecture specifications and design notes |
 | [Pre-flight Index](docs/index_preflight.md) | Validation scanner and pre-commit logic |
+| [Security Index](docs/index_security.md) | Sécurité, analyses de risques et failles connues |
 
 ## Repository Layout
 
@@ -145,8 +146,8 @@ cluster-ci/
 - [x] GitHub OAuth support for the Dashboard (with reverse proxy and IPv4 fallback support)
 - [x] Dashboard UX improvement (date formatting, DVC path corrections under systemd, historical DVC run fixes)
 - [x] Migration to Docker Worker execution (NVIDIA/ARM support)
-- [x] Real-time Log Streaming via Headnode & Live Interactive Terminal via tmate (Reverse SSH)
-- [x] Résolution de la bufferisation GHA: Streaming temps réel unbuffered seconde par seconde via proxy REST API Headnode & SSH (Eustache)
+- [x] Real-time Log Streaming via Headnode & Live Direct Terminal Stream (sans sous-terminal interactif ni perte de logs)
+- [x] Résolution de la bufferisation GHA : Streaming direct en temps réel via watch natif GHA sans dépendance tmate/SSH
 - [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation
 - [x] Migration vers conteneur NGC moderne (Python 3.12, PyTorch 2.12, CUDA 13.2)
 - [x] [Cluster-CI Pre-flight Scanner & Pre-commit Validator](https://github.com/UNIL-DESI/cluster-ci/issues/55)
