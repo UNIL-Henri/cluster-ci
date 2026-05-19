@@ -116,6 +116,15 @@ if [ ! -d "$ADMIN_SLOT_DIR" ]; then
     cp -r "$TEMPLATE_DIR" "$ADMIN_SLOT_DIR"
 fi
 
+# 4.5. Sudoers Configuration for Auto-Update
+echo "🔐 Configuring sudoers for cluster-ci CI privileges..."
+cat <<EOF | sudo tee /etc/sudoers.d/cluster-ci > /dev/null
+Defaults:$USER !requiretty
+$USER ALL=(ALL) NOPASSWD: /bin/systemctl restart cluster-*, /usr/bin/systemctl restart cluster-*
+EOF
+sudo chmod 0440 /etc/sudoers.d/cluster-ci
+echo "✅ Sudoers configured."
+
 # 5. Systemd Installation
 if [ "$ROLE" == "headnode" ]; then
     echo "⚙️ Installing systemd service for Ephemeral Runner Manager..."

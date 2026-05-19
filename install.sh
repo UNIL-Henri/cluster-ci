@@ -212,7 +212,7 @@ concurrency:
 jobs:
   execute-on-cluster:
     name: Execute Research Pipeline
-    runs-on: self-hosted
+    runs-on: [self-hosted, cluster-worker]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
