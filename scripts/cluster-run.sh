@@ -76,82 +76,146 @@ cleanup() {
 stream_logs() {
     local run_id=$1
     local commit_sha=$2
-    local last_line_count=0
-    
-    echo "📺 Streaming logs in real-time via GitHub Actions (Ctrl+C to cancel)..."
-    echo "=========================================================================="
-    
-    local last_status=""
-    local dots=""
-    local is_first_progress=true
-    local spin_chars="/-\|"
+    local repo_full_name
+    repo_full_name=$(git config --get remote.origin.url 2>/dev/null | sed -E 's/.*github.com[:\/](.*)\.git/\1/' 2>/dev/null)
+    [ -z "$repo_full_name" ] && repo_full_name="UNIL-DESI/cluster-ci"
+
+    local tmate_connected=false
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 1. Poll for tmate reverse SSH session (published via GitHub Commit Status API)
+    # ──────────────────────────────────────────────────────────────────────
+    if [ -n "$commit_sha" ]; then
+        echo "🔍 Polling for live terminal connection (timeout ~4 mins)..."
+        local spin_idx=0
+        local spin_chars="/-\|"
+
+        for attempt in {1..120}; do
+            # Check if the run has already completed (no point connecting)
+            local run_status
+            run_status=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
+            if [ "$run_status" == "completed" ] || [ "$run_status" == "cancelled" ]; then
+                break
+            fi
+
+            local status_json
+            status_json=$(gh api "repos/$repo_full_name/commits/$commit_sha/statuses" 2>/dev/null || true)
+
+            if [ -n "$status_json" ]; then
+                local tmate_url
+                tmate_url=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['target_url'] if item else '')" 2>/dev/null || echo "")
+                local tmate_ssh
+                tmate_ssh=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['description'].replace('SSH: ', '') if item else '')" 2>/dev/null || echo "")
+
+                if [ -n "$tmate_ssh" ] && [[ "$tmate_ssh" == ssh* ]]; then
+                    printf "\r\033[K"
+                    echo "🟢 Live terminal stream found!"
+                    echo "🔗 Web: $tmate_url"
+                    echo "🔌 SSH: $tmate_ssh"
+                    echo "⚡ Capturing real-time logs from runner (streaming to your terminal)..."
+                    echo "=========================================================================="
+
+                    # ── KEY TECHNIQUE: direct SSH pipe + Python filter ──
+                    # SSH with -tt forces a pseudo-TTY so tmate/tmux works.
+                    # All output is piped through a Python filter that strips
+                    # tmux/ANSI escape sequences in real-time. Clean output
+                    # goes directly to stdout — persistent in the terminal.
+                    local filter_script
+                    filter_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tmate_log_filter.py"
+                    if [ ! -f "$filter_script" ]; then
+                        # Fallback: look next to the installed binary
+                        filter_script="$(dirname "$(command -v cluster-run 2>/dev/null || echo "$0")")/tmate_log_filter.py"
+                    fi
+                    if [ ! -f "$filter_script" ]; then
+                        # Last resort: installed location
+                        filter_script="$HOME/.local/bin/tmate_log_filter.py"
+                    fi
+
+                    $tmate_ssh -o StrictHostKeyChecking=accept-new \
+                               -o ServerAliveInterval=10 \
+                               -o ServerAliveCountMax=3 \
+                               -tt 2>&1 | python3 -u "$filter_script" || true
+
+                    echo "=========================================================================="
+
+                    tmate_connected=true
+                    break
+                fi
+            fi
+
+            local char="${spin_chars:spin_idx:1}"
+            spin_idx=$(( (spin_idx + 1) % 4 ))
+
+            if [ "$run_status" == "queued" ]; then
+                printf "\r⏳ Waiting in GitHub Actions queue [%s] (allocation of a runner slot)..." "$char"
+            else
+                printf "\r⏱️  Booting job environment [%s] (registering with scheduler)..." "$char"
+            fi
+
+            sleep 2
+        done
+        printf "\r\033[K"
+    fi
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 2. If tmate connected, wait for GHA to report final conclusion
+    # ──────────────────────────────────────────────────────────────────────
+    if [ "$tmate_connected" = true ]; then
+        # tmate session ended but GHA might still be finalizing (cleanup, sync, etc.)
+        echo "⏳ Waiting for GitHub Actions to finalize..."
+        for i in {1..30}; do
+            local final_json
+            final_json=$(gh run view "$run_id" --json status,conclusion 2>/dev/null || echo "")
+            local final_status=""
+            local final_conclusion=""
+            if [ -n "$final_json" ]; then
+                final_status=$(echo "$final_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+                final_conclusion=$(echo "$final_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('conclusion',''))" 2>/dev/null || echo "")
+            fi
+            if [ "$final_status" == "completed" ] && [ -n "$final_conclusion" ]; then
+                if [ "$final_conclusion" == "success" ]; then
+                    echo "✅ Cluster-CI run completed successfully!"
+                else
+                    echo "❌ Cluster-CI run finished with status: $final_conclusion"
+                fi
+                return 0
+            fi
+            sleep 2
+        done
+        echo "⚠️  Tmate session ended. GHA status could not be determined."
+        return 0
+    fi
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 3. Fallback: wait for GHA completion and dump logs (no real-time)
+    # ──────────────────────────────────────────────────────────────────────
+    echo "📺 Live terminal not available. Waiting for GHA completion to fetch logs..."
     local spin_idx=0
-    
+    local spin_chars="/-\|"
+
     while true; do
-        # 1. Fetch current status of the GitHub Actions run
         local run_status_json
         run_status_json=$(gh run view "$run_id" --json status,conclusion 2>/dev/null || echo "")
-        
+
         local info="queued"
         local conclusion=""
         if [ -n "$run_status_json" ]; then
             info=$(echo "$run_status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('status', 'queued'))" 2>/dev/null || echo "queued")
             conclusion=$(echo "$run_status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('conclusion', ''))" 2>/dev/null || echo "")
         fi
-        
-        # 2. Print user-friendly queue and progress states if logs are empty
-        if [ "$last_line_count" -eq 0 ]; then
-            local char="${spin_chars:spin_idx:1}"
-            spin_idx=$(( (spin_idx + 1) % 4 ))
-            
-            if [ "$info" == "queued" ]; then
-                printf "\r⏳ Waiting in GitHub Actions queue [%s] (allocation of a runner slot)..." "$char"
-            else
-                printf "\r⏱️  Booting job environment [%s] (registering with scheduler)..." "$char"
-            fi
-        fi
-        
-        # 3. Fetch logs
-        local logs
-        logs=$(gh run view "$run_id" --log 2>/dev/null || true)
-        
-        if [ -n "$logs" ]; then
-            # Clear carriage return booting line if present
-            if [ "$is_first_progress" == "true" ]; then
-                printf "\r\033[K"
-                is_first_progress=false
-            fi
-            
-            local current_line_count
-            current_line_count=$(echo "$logs" | wc -l)
-            
-            if [ "$current_line_count" -gt "$last_line_count" ]; then
-                # Print new lines and format beautifully
-                echo "$logs" | tail -n +"$((last_line_count + 1))" | awk -F'\t' '{
-                    step=$2; 
-                    log_line=$3;
-                    gsub(/^\xEF\xBB\xBF/, "", log_line); # Strip BOM if present
-                    gsub(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+Z /, "", log_line);
-                    gsub(/##\[group\]/, "▶️  ", log_line);
-                    gsub(/##\[endgroup\]/, "", log_line);
-                    
-                    if (log_line != "") {
-                        printf "\033[90m[%s]\033[0m %s\n", step, log_line;
-                    }
-                }'
-                last_line_count=$current_line_count
-            fi
-        fi
 
-        # 4. Check if run is done
+        local char="${spin_chars:spin_idx:1}"
+        spin_idx=$(( (spin_idx + 1) % 4 ))
+
         if [ "$info" == "completed" ] || [ -n "$conclusion" ]; then
-            # Final log flush
+            printf "\r\033[K"
+            echo "📥 Job completed. Fetching consolidated logs..."
+            echo "=========================================================================="
+            local logs
             logs=$(gh run view "$run_id" --log 2>/dev/null || true)
-            current_line_count=$(echo "$logs" | wc -l)
-            if [ "$current_line_count" -gt "$last_line_count" ]; then
-                printf "\r\033[K"
-                echo "$logs" | tail -n +"$((last_line_count + 1))" | awk -F'\t' '{
-                    step=$2; 
+            if [ -n "$logs" ]; then
+                echo "$logs" | awk -F'\t' '{
+                    step=$2;
                     log_line=$3;
                     gsub(/^\xEF\xBB\xBF/, "", log_line);
                     gsub(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+Z /, "", log_line);
@@ -162,12 +226,6 @@ stream_logs() {
                     }
                 }'
             fi
-            
-            # Clear booting line if we finished with empty logs
-            if [ "$is_first_progress" == "true" ]; then
-                printf "\r\033[K"
-            fi
-            
             echo "=========================================================================="
             if [ "$conclusion" == "success" ]; then
                 echo "✅ Cluster-CI run completed successfully!"
@@ -180,7 +238,12 @@ stream_logs() {
                 return 1
             fi
         fi
-        
+
+        if [ "$info" == "queued" ]; then
+            printf "\r⏳ Waiting in GitHub Actions queue [%s]..." "$char"
+        else
+            printf "\r⏱️  Job in progress [%s] (logs will appear on completion)..." "$char"
+        fi
         sleep 3
     done
 }
