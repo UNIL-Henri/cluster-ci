@@ -32,7 +32,13 @@ fi
 
 TARGET_REPO=${CLI_TARGET_REPO:-$TARGET_REPO}
 TARGET_BRANCH=${CLI_TARGET_BRANCH:-$TARGET_BRANCH}
-GH_TOKEN=${CLI_GH_TOKEN:-$GH_TOKEN}
+
+# Prioritize local GITHUB_PAT or GH_TOKEN from local environment files over the CLI token argument
+if [ -n "$GITHUB_PAT" ]; then
+    GH_TOKEN="$GITHUB_PAT"
+elif [ -z "$GH_TOKEN" ]; then
+    GH_TOKEN="$CLI_GH_TOKEN"
+fi
 JOB_ID=${JOB_ID:-"manual-$(date +%s)"}
 
 # Robust Container Naming & Labeling
