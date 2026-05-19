@@ -78,42 +78,109 @@ stream_logs() {
     local commit_sha=$2
     local last_line_count=0
     local tmate_connected=false
+    local repo_full_name
+    repo_full_name=$(git config --get remote.origin.url 2>/dev/null | sed -E 's/.*github.com[:\/](.*)\.git/\1/' 2>/dev/null)
+    [ -z "$repo_full_name" ] && repo_full_name="UNIL-DESI/cluster-ci"
 
-    # If we have a commit SHA, let's poll for a tmate web status for diagnostics
-    if [ -n "$commit_sha" ]; then
-        echo "🔍 Polling for live terminal connection (timeout ~2 mins)..."
-        for attempt in {1..60}; do
-            # Check if run has already completed (no need to connect if done)
+    # 1. Try to fetch job_id from Headnode via SSH to stream real-time worker logs
+    local job_id=""
+    if command -v sshpass &> /dev/null; then
+        echo "🔍 Connecting to Headnode scheduler to capture unbuffered worker logs..."
+        for attempt in {1..20}; do
+            # Check if run has already completed in GitHub
             local run_status
             run_status=$(gh run view "$run_id" --json status -q '.status' 2>/dev/null || echo "completed")
             if [ "$run_status" == "completed" ]; then
                 break
             fi
 
-            # Fetch statuses via GitHub API
-            local repo_full_name
-            repo_full_name=$(git config --get remote.origin.url 2>/dev/null | sed -E 's/.*github.com[:\/](.*)\.git/\1/' 2>/dev/null)
-            [ -z "$repo_full_name" ] && repo_full_name="UNIL-DESI/cluster-ci"
-
-            local status_json
-            status_json=$(gh api "repos/$repo_full_name/commits/$commit_sha/statuses" 2>/dev/null || true)
-            
-            if [ -n "$status_json" ]; then
-                # Search for a status with context: "tmate" via python3
-                local tmate_url
-                tmate_url=$(echo "$status_json" | python3 -c "import sys, json; data = json.load(sys.stdin); item = next((x for x in data if x.get('context') == 'tmate'), None); print(item['target_url'] if item else '')" 2>/dev/null || echo "")
-                
-                if [ -n "$tmate_url" ]; then
-                    echo "🟢 Live web monitor available!"
-                    echo "🔗 Web UI: $tmate_url"
-                    echo "=========================================================================="
-                    break
-                fi
+            job_id=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT job_id FROM jobs WHERE repo = '$repo_full_name' AND branch = '$BRANCH' ORDER BY created_at DESC LIMIT 1;\"" 2>/dev/null || echo "")
+            if [ -n "$job_id" ]; then
+                echo "🟢 Connected to job: $job_id"
+                break
             fi
             sleep 2
         done
     fi
-    # Fallback/Final Logs
+
+    # 2. If job_id was found, stream logs directly and in real-time from the worker API
+    if [ -n "$job_id" ]; then
+        local log_offset=0
+        local dots=""
+        local is_first_progress=true
+        local last_job_status=""
+        
+        while true; do
+            # Fetch job status from SQLite to handle queuing animations and termination
+            local job_status
+            job_status=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT status FROM jobs WHERE job_id = '$job_id';\"" 2>/dev/null || echo "completed")
+            
+            if [ "$job_status" != "$last_job_status" ]; then
+                if [ "$job_status" == "pending" ]; then
+                    echo "⏳ Job is in scheduler queue (waiting for a worker slot)..."
+                elif [ "$job_status" == "running" ]; then
+                    if [ "$last_job_status" == "pending" ]; then echo ""; fi
+                    echo "🏃 Job has started on worker slot..."
+                fi
+                last_job_status=$job_status
+                dots=""
+            fi
+
+            # Handle pending animation
+            if [ "$job_status" == "pending" ]; then
+                dots="${dots}."
+                if [ ${#dots} -gt 5 ]; then dots="."; fi
+                printf "\r⏳ Waiting in queue%s     " "$dots"
+                sleep 2
+                continue
+            fi
+
+            # Fetch unbuffered logs in real-time from Headnode REST API proxy
+            local resp_json
+            resp_json=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "curl -s --connect-timeout 3 http://localhost:5000/api/jobs/$job_id/logs?offset=$log_offset" 2>/dev/null || echo "")
+            
+            if [ -n "$resp_json" ] && [[ "$resp_json" == *'"logs"'* ]]; then
+                local new_logs
+                new_logs=$(echo "$resp_json" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('logs', ''))" 2>/dev/null || echo "")
+                if [ -n "$new_logs" ]; then
+                    # Clear carriage return booting line if present
+                    if [ "$is_first_progress" == "true" ]; then
+                        echo ""
+                        is_first_progress=false
+                    fi
+                    # Stream logs out instantly to terminal
+                    printf "%s" "$new_logs"
+                    
+                    # Update offset
+                    log_offset=$(echo "$resp_json" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('offset', '$log_offset'))" 2>/dev/null || echo "$log_offset")
+                fi
+            elif [ "$is_first_progress" == "true" ]; then
+                dots="${dots}."
+                if [ ${#dots} -gt 5 ]; then dots="."; fi
+                printf "\r⏱️  Booting job environment%s     " "$dots"
+            fi
+
+            # Check for completion
+            if [[ "$job_status" != "running" && "$job_status" != "pending" ]]; then
+                # Perform one last logs flush
+                resp_json=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "curl -s --connect-timeout 3 http://localhost:5000/api/jobs/$job_id/logs?offset=$log_offset" 2>/dev/null || echo "")
+                if [ -n "$resp_json" ] && [[ "$resp_json" == *'"logs"'* ]]; then
+                    local final_logs
+                    final_logs=$(echo "$resp_json" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('logs', ''))" 2>/dev/null || echo "")
+                    [ -n "$final_logs" ] && printf "%s" "$final_logs"
+                fi
+                if [ "$is_first_progress" == "true" ]; then
+                    echo ""
+                fi
+                break
+            fi
+            sleep 2
+        done
+        return 0
+    fi
+
+    # 3. Fallback: Classic GitHub CLI log extraction (for completed logs only, since GHA buffers running logs)
+    echo "⚠️  Worker API connection unavailable or job not found. Falling back to GitHub CLI logs..."
     local last_status=""
     local dots=""
     local is_first_progress=true
