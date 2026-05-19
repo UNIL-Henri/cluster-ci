@@ -65,6 +65,15 @@ class RunnerManager:
             try:
                 logger.info(f"Preparing a new ephemeral runner (labels: {labels})...")
 
+                # 0. Clean stale runner files to prevent "already configured" errors
+                #    This happens when a previous runner was deregistered from GitHub
+                #    but the local files were not cleaned up (e.g. after a crash).
+                for stale_file in [".runner", ".credentials", ".credentials_rsaparams"]:
+                    stale_path = slot_dir / stale_file
+                    if stale_path.exists():
+                        stale_path.unlink()
+                        logger.info(f"Removed stale file: {stale_file}")
+
                 # 1. Obtain a token
                 token = self.get_registration_token()
 
@@ -82,7 +91,9 @@ class RunnerManager:
                 ]
 
                 logger.info(f"Configuring runner {runner_name}...")
-                subprocess.run(config_cmd, cwd=slot_dir, check=True, capture_output=True)
+                result = subprocess.run(config_cmd, cwd=slot_dir, check=True, capture_output=True, text=True)
+                if result.stderr:
+                    logger.debug(f"config.sh stderr: {result.stderr.strip()}")
 
                 # 3. Launch the runner
                 logger.info("Launching runner...")
@@ -93,7 +104,10 @@ class RunnerManager:
                 logger.info(f"Runner stopped with code {process.returncode}. Imminent restart...")
 
             except (subprocess.CalledProcessError, requests.RequestException) as e:
-                logger.error(f"Transient error in runner cycle: {e}. Retrying in 10s...")
+                detail = ""
+                if isinstance(e, subprocess.CalledProcessError) and e.stderr:
+                    detail = f" | stderr: {e.stderr.strip() if isinstance(e.stderr, str) else e.stderr.decode().strip()}"
+                logger.error(f"Transient error in runner cycle: {e}{detail}. Retrying in 10s...")
                 time.sleep(10)
             except Exception as e:
                 logger.critical(f"Fatal error in runner cycle: {e}")
@@ -101,14 +115,14 @@ class RunnerManager:
 
     def start(self):
         threads = []
-        # Standard slots
+        # Standard slots (staggered start to avoid config.sh race conditions)
         for i in range(1, self.num_slots + 1):
-            t = threading.Thread(target=self.run_slot, args=(i, "self-hosted,cluster-worker"))
+            t = threading.Thread(target=self._staggered_start, args=(i, "self-hosted,cluster-worker", i * 2))
             t.daemon = True
             t.start()
             threads.append(t)
 
-        # Exclusive Admin slot
+        # Exclusive Admin slot (starts immediately)
         t_admin = threading.Thread(target=self.run_slot, args=("admin", "self-hosted,cluster-ci-admin"))
         t_admin.daemon = True
         t_admin.start()
@@ -123,6 +137,13 @@ class RunnerManager:
                 time.sleep(1)
         except KeyboardInterrupt:
             logger.info("Stopping manager...")
+
+    def _staggered_start(self, slot_id, labels, delay):
+        """Adds a delay before starting a slot to prevent concurrent config.sh collisions."""
+        logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': slot_id})
+        logger.info(f"Waiting {delay}s before starting (staggered)...")
+        time.sleep(delay)
+        self.run_slot(slot_id, labels)
 
 if __name__ == "__main__":
     target = os.environ.get("TARGET_REPO")
