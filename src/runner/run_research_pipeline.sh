@@ -61,9 +61,8 @@ fi
 
 REPO_WORK_DIR="repositories/$TARGET_REPO"
 
-# Pipe all output (stdout and stderr) to console AND to a local log file
-LOG_FILE="$BASE_DIR/cluster-ci-runs.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
+# Log files are captured directly by the worker agent at the process level.
+# Avoiding global bash tee redirection prevents any buffering delays.
 
 function log_info() {
     echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ℹ️  $1"
@@ -495,8 +494,7 @@ if command -v "$TMATE_BIN" &> /dev/null; then
     echo "set -g tmate-display-help off" > "$TMATE_CONF"
     
     # 2. Start detached session running the execute command (write logs/exit code on host runner)
-    TMATE_CMD="echo '⏱️ Introducing 2s startup delay...'; sleep 2; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
-    
+    TMATE_CMD="echo '⏱️ Introducing 2s startup delay...'; sleep 2; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | stdbuf -oL -eL tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
     "$TMATE_BIN" -S "$TMATE_SOCKET" -f "$TMATE_CONF" new-session -d "$TMATE_CMD"
     
     # Send 'q' key as an extra safeguard
