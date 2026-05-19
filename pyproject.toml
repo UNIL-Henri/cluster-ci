@@ -18,3 +18,7 @@ dependencies = [
 dev = [
     "pytest"
 ]
+
+[project.scripts]
+cluster-run = "cluster.cluster_run:main"
+

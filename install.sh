@@ -161,9 +161,17 @@ else
                 echo "❌ Homebrew not found. Please install gh manually: https://cli.github.com/"
                 exit 1
             fi
+    fi
+
+    # 0b. Dependencies check (uv)
+    if ! command -v uv &> /dev/null; then
+        echo "🔍 'uv' not found. Installing Astral uv automatically..."
+        if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+            # Source the uv env or add to PATH for current session
+            source "$HOME/.local/bin/env" 2>/dev/null || export PATH="$HOME/.local/bin:$PATH"
+            echo "✅ 'uv' installed successfully."
         else
-            echo "❌ Unsupported OS. Please install gh manually: https://cli.github.com/"
-            exit 1
+            echo "⚠️  Failed to auto-install uv. Please install it manually: https://docs.astral.sh/uv/"
         fi
     fi
 
@@ -346,24 +354,18 @@ En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes sui
 EOF
     echo "✅ AGENTS.md updated."
 
-    # 6. Install cluster-run CLI
+    # 6. Install cluster-run CLI (Python unified version)
     echo "🛠️  Installing cluster-run CLI..."
     mkdir -p "$HOME/.local/bin"
 
     # Download the script from the orchestrator repo
-    if [ -f "$(dirname "$0")/scripts/cluster-run.sh" ]; then
-        cp "$(dirname "$0")/scripts/cluster-run.sh" "$HOME/.local/bin/cluster-run"
+    if [ -f "$(dirname "$0")/src/cluster/cluster_run.py" ]; then
+        cp "$(dirname "$0")/src/cluster/cluster_run.py" "$HOME/.local/bin/cluster-run"
     else
-        curl -sSL "$RAW_URL/scripts/cluster-run.sh" -o "$HOME/.local/bin/cluster-run"
+        curl -sSL "$RAW_URL/src/cluster/cluster_run.py" -o "$HOME/.local/bin/cluster-run"
     fi
     chmod +x "$HOME/.local/bin/cluster-run"
 
-    # Install the log filter companion script (required for real-time tmate streaming)
-    if [ -f "$(dirname "$0")/scripts/tmate_log_filter.py" ]; then
-        cp "$(dirname "$0")/scripts/tmate_log_filter.py" "$HOME/.local/bin/tmate_log_filter.py"
-    else
-        curl -sSL "$RAW_URL/scripts/tmate_log_filter.py" -o "$HOME/.local/bin/tmate_log_filter.py"
-    fi
 
     # Add ~/.local/bin to PATH if not already there
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then

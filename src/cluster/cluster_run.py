@@ -1,0 +1,621 @@
+#!/usr/bin/env python3
+"""Cluster-CI Run CLI
+
+Helps researchers submit jobs via "Shadow Push" to a draft branch.
+Compatible with Windows, macOS, and Linux.
+"""
+
+import sys
+import os
+import re
+import time
+import json
+import codecs
+import tempfile
+import argparse
+import subprocess
+import threading
+
+# Global variables for cleanup
+RUN_ID = None
+BRANCH = None
+COMMIT_SHA = None
+USER_INTERRUPTED = False
+REPO_FULL_NAME = "UNIL-DESI/cluster-ci"
+
+# Screen buffer and cursor state for tmate log filter
+WIDTH = 160
+HEIGHT = 24
+grid = [[" " for _ in range(WIDTH)] for _ in range(HEIGHT)]
+x, y = 0, 0
+state = "NORMAL"
+csi_params = ""
+recent_printed = []
+MAX_RECENT = 100
+
+def scroll_up():
+    global grid
+    # Get the line that is about to scroll out of view (the top line)
+    top_line = "".join(grid[0]).rstrip()
+    # Scroll the grid
+    grid = grid[1:] + [[" " for _ in range(WIDTH)]]
+    print_line(top_line)
+
+def print_line(line):
+    if not line:
+        return
+    line = line.strip()
+    if not line:
+        return
+
+    # Skip tmux status bar lines (e.g. '0:bash*   ...')
+    if re.match(r"^\d+:.*\*\s", line) or "bash*" in line:
+        return
+    # Skip script header/footer and SSH connection status messages
+    if line.startswith("Script ") and ("started" in line or "done" in line):
+        return
+    if "Connection to" in line and "closed" in line:
+        return
+    if "[server exited]" in line or "[lost server]" in line:
+        return
+    if "size 80x23 from a smaller client" in line:
+        return
+    
+    # Skip DVC progress bar fragments and artifacts
+    if line == "!" or line.startswith("! ") or line.startswith("Checking out"):
+        return
+    if "file/s]" in line or "files/s]" in line or "B/s]" in line:
+        return
+    if re.match(r"^Checking out .+:\s+\d+%", line):
+        return
+
+    # Filter out duplicates using our sliding window
+    if line in recent_printed:
+        return
+
+    # Save to sliding window
+    recent_printed.append(line)
+    if len(recent_printed) > MAX_RECENT:
+        recent_printed.pop(0)
+
+    print(line, flush=True)
+
+def apply_csi(cmd, params):
+    global x, y, grid
+    parts = params.split(";")
+    nums = []
+    for p in parts:
+        p_clean = "".join(c for c in p if c.isdigit())
+        if p_clean:
+            nums.append(int(p_clean))
+        else:
+            nums.append(0)
+
+    if cmd in ("H", "f"):  # Cursor Position
+        ny = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
+        nx = nums[1] if len(nums) > 1 and nums[1] > 0 else 1
+        y = min(HEIGHT - 1, max(0, ny - 1))
+        x = min(WIDTH - 1, max(0, nx - 1))
+    elif cmd == "A":  # Cursor Up
+        n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
+        y = max(0, y - n)
+    elif cmd == "B":  # Cursor Down
+        n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
+        y = min(HEIGHT - 1, y + n)
+    elif cmd == "C":  # Cursor Forward
+        n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
+        x = min(WIDTH - 1, x + n)
+    elif cmd == "D":  # Cursor Backward
+        n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
+        x = max(0, x - n)
+    elif cmd == "K":  # Erase in Line
+        mode = nums[0] if len(nums) > 0 else 0
+        if mode == 0:  # Erase from cursor to end of line
+            for i in range(x, WIDTH):
+                grid[y][i] = " "
+        elif mode == 1:  # Erase from start of line to cursor
+            for i in range(0, min(x + 1, WIDTH)):
+                grid[y][i] = " "
+        elif mode == 2:  # Erase entire line
+            grid[y] = [" " for _ in range(WIDTH)]
+    elif cmd == "J":  # Erase in Display
+        mode = nums[0] if len(nums) > 0 else 0
+        if mode == 2:  # Clear entire screen
+            grid = [[" " for _ in range(WIDTH)] for _ in range(HEIGHT)]
+            x, y = 0, 0
+    elif cmd == "S":  # Scroll Up
+        n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
+        for _ in range(n):
+            scroll_up()
+
+def process_tmate_char(char):
+    global x, y, state, csi_params, grid
+    if state == "NORMAL":
+        if char == "\x1b":
+            state = "ESC"
+        elif char == "\n":
+            y += 1
+            if y >= HEIGHT:
+                scroll_up()
+                y = HEIGHT - 1
+        elif char == "\r":
+            x = 0
+        elif char == "\b":
+            x = max(0, x - 1)
+        elif char == "\t":
+            # Tab stop every 8 spaces
+            x = (x + 8) & ~7
+            if x >= WIDTH:
+                x = WIDTH - 1
+        elif ord(char) >= 32:
+            if 0 <= y < HEIGHT and 0 <= x < WIDTH:
+                grid[y][x] = char
+                x += 1
+                if x >= WIDTH:
+                    x = 0
+                    y += 1
+                    if y >= HEIGHT:
+                        scroll_up()
+                        y = HEIGHT - 1
+
+    elif state == "ESC":
+        if char == "[":
+            state = "CSI"
+            csi_params = ""
+        elif char in "()":  # Character set designators
+            state = "CHARSET"
+        else:
+            state = "NORMAL"
+
+    elif state == "CHARSET":
+        state = "NORMAL"
+
+    elif state == "CSI":
+        if "0" <= char <= "9" or char in ";?":
+            csi_params += char
+        else:
+            apply_csi(char, csi_params)
+            state = "NORMAL"
+
+def check_dependencies():
+    """Verify that gh and git are installed and accessible."""
+    try:
+        subprocess.run(["git", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("❌ Error: git is not installed or not in PATH.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        subprocess.run(["gh", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("❌ Error: github-cli (gh) is not installed.", file=sys.stderr)
+        print("Please install it: https://cli.github.com/", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if in a git repository
+    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    if res.returncode != 0 or res.stdout.strip() != "true":
+        print("❌ Error: Not in a git repository.", file=sys.stderr)
+        sys.exit(1)
+
+def check_gh_auth():
+    """Ensure user is logged in to GitHub CLI."""
+    res = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
+    if res.returncode != 0:
+        print("🔐 GitHub CLI not authenticated. Starting login...")
+        subprocess.run(["gh", "auth", "login"], check=True)
+
+def get_current_user():
+    """Retrieve GitHub username."""
+    res = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True, check=True)
+    return res.stdout.strip()
+
+def get_repo_full_name():
+    """Find the GitHub repository name from remote origin URL."""
+    global REPO_FULL_NAME
+    try:
+        res = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
+        url = res.stdout.strip()
+        # Extract owner/repo from URL (HTTPS or SSH)
+        match = re.search(r"github\.com[:/]([^/]+/[^/.]+)(?:\.git)?", url)
+        if match:
+            REPO_FULL_NAME = match.group(1)
+    except Exception:
+        # Fallback to default
+        pass
+    return REPO_FULL_NAME
+
+def cleanup():
+    """Remove draft branch and cancel active workflow run if user interrupted."""
+    global RUN_ID, BRANCH, USER_INTERRUPTED
+    if BRANCH:
+        if RUN_ID and USER_INTERRUPTED:
+            # Check status of the GHA run
+            try:
+                res = subprocess.run(["gh", "run", "view", str(RUN_ID), "--json", "status"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    status_info = json.loads(res.stdout)
+                    status = status_info.get("status")
+                    if status not in ("completed", "success", "failure", "cancelled"):
+                        print(f"\n🛑 Cancelling GitHub Actions run {RUN_ID}...")
+                        subprocess.run(["gh", "run", "cancel", str(RUN_ID)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+        
+        print(f"🧹 Deleting remote branch origin/{BRANCH}...")
+        subprocess.run(["git", "push", "origin", "--delete", BRANCH, "--quiet"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def stream_logs(run_id, commit_sha):
+    """Monitor GHA run and capture live log stream via tmate/SSH or fallback API."""
+    repo_name = get_repo_full_name()
+    tmate_connected = False
+    
+    # 1. Poll for tmate reverse SSH session
+    if commit_sha:
+        print("🔍 Polling for live terminal connection (timeout ~4 mins)...")
+        spin_chars = ["/", "-", "\\", "|"]
+        spin_idx = 0
+        
+        for attempt in range(120):
+            # Check if GHA completed in the meantime
+            try:
+                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    run_status = json.loads(res.stdout).get("status")
+                    if run_status in ("completed", "cancelled"):
+                        break
+            except Exception:
+                run_status = "queued"
+
+            # Check status API for tmate details
+            try:
+                res = subprocess.run(["gh", "api", f"repos/{repo_name}/commits/{commit_sha}/statuses"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    statuses = json.loads(res.stdout)
+                    tmate_status = next((x for x in statuses if x.get("context") == "tmate"), None)
+                    if tmate_status:
+                        tmate_url = tmate_status.get("target_url")
+                        tmate_description = tmate_status.get("description", "")
+                        # SSH command is inside the description: "SSH: ssh token@tmate.io"
+                        if "ssh " in tmate_description:
+                            ssh_cmd_str = tmate_description.replace("SSH: ", "").strip()
+                            print(f"\r\033[K🟢 Live terminal stream found!")
+                            print(f"🔗 Web: {tmate_url}")
+                            print(f"🔌 SSH: {ssh_cmd_str}")
+                            print("⚡ Capturing real-time logs from runner (streaming to your terminal)...")
+                            print("==========================================================================")
+                            
+                            # Parse connection arguments for SSH
+                            ssh_parts = ssh_cmd_str.split()
+                            # We construct: ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -tt <user@host>
+                            ssh_executable = ssh_parts[0]
+                            ssh_args = [
+                                "-o", "StrictHostKeyChecking=accept-new",
+                                "-o", "ServerAliveInterval=10",
+                                "-o", "ServerAliveCountMax=3",
+                                "-tt"
+                            ] + ssh_parts[1:]
+                            
+                            # Start SSH connection and stream logs
+                            proc = subprocess.Popen([ssh_executable] + ssh_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            
+                            # Process logs in real time
+                            # Robust decoding
+                            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                            
+                            try:
+                                while True:
+                                    chunk = proc.stdout.read(1)
+                                    if not chunk:
+                                        break
+                                    char = decoder.decode(chunk)
+                                    if char:
+                                        process_tmate_char(char)
+                            except KeyboardInterrupt:
+                                proc.terminate()
+                                raise
+                            finally:
+                                proc.wait()
+                                
+                            print("==========================================================================")
+                            tmate_connected = True
+                            break
+            except Exception as e:
+                # Silently catch exceptions during GHA/status check
+                pass
+
+            char = spin_chars[spin_idx]
+            spin_idx = (spin_idx + 1) % 4
+            
+            if run_status == "queued":
+                sys.stdout.write(f"\r⏳ Waiting in GitHub Actions queue [{char}] (allocation of a runner slot)...")
+            else:
+                sys.stdout.write(f"\r⏱️  Booting job environment [{char}] (registering with scheduler)...")
+            sys.stdout.flush()
+            time.sleep(2)
+            
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
+
+    # 2. Wait for GHA final status if we streamed via tmate
+    if tmate_connected:
+        print("⏳ Waiting for GitHub Actions to finalize...")
+        for _ in range(30):
+            try:
+                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    info = json.loads(res.stdout)
+                    status = info.get("status")
+                    conclusion = info.get("conclusion")
+                    if status == "completed" and conclusion:
+                        if conclusion == "success":
+                            print("✅ Cluster-CI run completed successfully!")
+                        else:
+                            print(f"❌ Cluster-CI run finished with status: {conclusion}")
+                        return 0
+            except Exception:
+                pass
+            time.sleep(2)
+        print("⚠️  Tmate session ended. GHA status could not be determined.")
+        return 0
+
+    # 3. Fallback: API Polling & Consolidated Logs Dump
+    print("📺 Live terminal not available. Waiting for GHA completion to fetch logs...")
+    spin_idx = 0
+    spin_chars = ["/", "-", "\\", "|"]
+    
+    while True:
+        try:
+            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True)
+            info = json.loads(res.stdout) if res.returncode == 0 else {"status": "queued", "conclusion": None}
+        except Exception:
+            info = {"status": "queued", "conclusion": None}
+            
+        status = info.get("status", "queued")
+        conclusion = info.get("conclusion")
+        
+        char = spin_chars[spin_idx]
+        spin_idx = (spin_idx + 1) % 4
+        
+        if status == "completed" or conclusion:
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+            print("📥 Job completed. Fetching consolidated logs...")
+            print("==========================================================================")
+            try:
+                log_res = subprocess.run(["gh", "run", "view", str(run_id), "--log"], capture_output=True, text=True)
+                if log_res.returncode == 0:
+                    for line in log_res.stdout.splitlines():
+                        # Parse lines that have: "timestamp \t step_name \t log_content"
+                        parts = line.split("\t")
+                        if len(parts) >= 3:
+                            step = parts[1]
+                            content = parts[2]
+                            # Clean GHA noise
+                            content = content.replace("\ufeff", "")
+                            # Strip GHA timestamp prefixes if present
+                            content = re.sub(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z ", "", content)
+                            content = content.replace("##[group]", "▶️  ").replace("##[endgroup]", "")
+                            if content.strip():
+                                print(f"\033[90m[{step}]\033[0m {content}")
+            except Exception as e:
+                print(f"Error fetching GHA logs: {e}")
+                
+            print("==========================================================================")
+            if conclusion == "success":
+                print("✅ Cluster-CI run completed successfully!")
+                return 0
+            elif conclusion == "cancelled":
+                print("⚠️  Cluster-CI run was cancelled.")
+                return 1
+            else:
+                print(f"❌ Cluster-CI run finished with status: {conclusion or 'failed'}")
+                return 1
+                
+        if status == "queued":
+            sys.stdout.write(f"\r⏳ Waiting in GitHub Actions queue [{char}]...")
+        else:
+            sys.stdout.write(f"\r⏱️  Job in progress [{char}] (logs will appear on completion)...")
+        sys.stdout.flush()
+        time.sleep(3)
+
+def shadow_run(background=False):
+    """Package current workspace changes, shadow commit, shadow push, and stream logs."""
+    global RUN_ID, BRANCH, COMMIT_SHA, USER_INTERRUPTED
+    check_gh_auth()
+    user = get_current_user()
+    BRANCH = f"cluster-draft/{user}"
+
+    print(f"🏗️  Preparing shadow push for user: {user} (including untracked files)")
+
+    # Create temporary file for Git index to prevent polluting the user's workspace index
+    fd, temp_index_path = tempfile.mkstemp()
+    os.close(fd)
+    
+    commit_sha = None
+    env = os.environ.copy()
+    env["GIT_INDEX_FILE"] = temp_index_path
+
+    try:
+        # 1. git read-tree HEAD
+        subprocess.run(["git", "read-tree", "HEAD"], env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 2. git add --all (adds tracked, modified, and untracked files)
+        subprocess.run(["git", "add", "--all"], env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 3. git write-tree
+        res_tree = subprocess.run(["git", "write-tree"], env=env, capture_output=True, text=True, check=True)
+        tree = res_tree.stdout.strip()
+        # 4. git commit-tree tree -p HEAD -m "Shadow commit..."
+        res_commit = subprocess.run(
+            ["git", "commit-tree", tree, "-p", "HEAD", "-m", f"Shadow commit for {user}"],
+            env=env, capture_output=True, text=True, check=True
+        )
+        commit_sha = res_commit.stdout.strip()
+        COMMIT_SHA = commit_sha
+    finally:
+        try:
+            os.remove(temp_index_path)
+        except Exception:
+            pass
+
+    if not commit_sha:
+        print("❌ Error: Failed to create shadow commit.", file=sys.stderr)
+        sys.exit(1)
+
+    # Detect the last active GHA run ID before pushing to avoid checking a stale run
+    last_known_run_id = None
+    try:
+        res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+        if res.returncode == 0:
+            runs = json.loads(res.stdout)
+            if runs:
+                last_known_run_id = runs[0].get("databaseId")
+    except Exception:
+        pass
+
+    print(f"🚀 Shadow pushing to origin/{BRANCH}...")
+    subprocess.run(["git", "push", "origin", f"{commit_sha}:refs/heads/{BRANCH}", "--force", "--quiet"], check=True)
+
+    if background:
+        print(f"✅ Run submitted in background. You can watch it with: cluster-run list")
+        return
+
+    # Find the triggered GHA run
+    print("⏳ Waiting for GitHub Actions to trigger...")
+    time.sleep(4)
+    run_id = None
+    
+    for attempt in range(15):
+        try:
+            res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId,status"], capture_output=True, text=True)
+            if res.returncode == 0:
+                runs = json.loads(res.stdout)
+                if runs:
+                    curr_id = runs[0].get("databaseId")
+                    curr_status = runs[0].get("status")
+                    if curr_id != last_known_run_id and curr_status != "completed":
+                        run_id = curr_id
+                        break
+        except Exception:
+            pass
+        time.sleep(2)
+
+    # Fallback to the latest run on the branch if we couldn't find a freshly triggered one
+    if not run_id:
+        try:
+            res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+            if res.returncode == 0:
+                runs = json.loads(res.stdout)
+                if runs and runs[0].get("databaseId") != last_known_run_id:
+                    run_id = runs[0].get("databaseId")
+        except Exception:
+            pass
+
+    if not run_id:
+        print("❌ Error: Could not find the triggered workflow run.", file=sys.stderr)
+        sys.exit(1)
+
+    RUN_ID = run_id
+    print(f"📺 Streaming logs for run {run_id} (Ctrl+C to cancel)...")
+    
+    try:
+        stream_logs(run_id, commit_sha)
+    except KeyboardInterrupt:
+        USER_INTERRUPTED = True
+        print("\n🛑 Execution interrupted by user.")
+        # cleanup is called via sys.exit trigger
+        sys.exit(130)
+
+    # Check final status
+    conclusion = "unknown"
+    for _ in range(5):
+        try:
+            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "conclusion"], capture_output=True, text=True)
+            if res.returncode == 0:
+                conclusion = json.loads(res.stdout).get("conclusion", "unknown")
+                if conclusion and conclusion != "null":
+                    break
+        except Exception:
+            pass
+        time.sleep(1)
+
+    if conclusion == "success":
+        print("✅ Cluster-CI run completed successfully.")
+    else:
+        print(f"❌ Cluster-CI run finished with status: {conclusion or 'unknown'}")
+
+def main():
+    # Force standard output streams to use UTF-8 to prevent UnicodeEncodeError under Windows CMD/PowerShell
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+    parser = argparse.ArgumentParser(description="Cluster-CI Command Line Interface")
+    parser.add_argument("command", nargs="?", default=None, choices=["list", "view", "cancel"],
+                        help="Action to perform (default: submit a new shadow run)")
+    parser.add_argument("run_id", nargs="?", default=None,
+                        help="Target GHA run ID for 'view' or 'cancel'")
+    parser.add_argument("-b", "--background", action="store_true",
+                        help="Submit the run and exit without watching logs")
+
+    args = parser.parse_args()
+
+    check_dependencies()
+
+    if args.command == "list":
+        subprocess.run(["gh", "run", "list", "--workflow", "Cluster-CI Execution"])
+    
+    elif args.command == "view":
+        run_id = args.run_id
+        if not run_id:
+            check_gh_auth()
+            user = get_current_user()
+            branch = f"cluster-draft/{user}"
+            try:
+                res = subprocess.run(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+                runs = json.loads(res.stdout) if res.returncode == 0 else []
+                if runs:
+                    run_id = str(runs[0].get("databaseId"))
+            except Exception:
+                pass
+            
+            if not run_id:
+                print("Usage: cluster-run view <run_id>", file=sys.stderr)
+                sys.exit(1)
+        
+        subprocess.run(["gh", "run", "view", run_id, "--log"])
+
+    elif args.command == "cancel":
+        run_id = args.run_id
+        check_gh_auth()
+        user = get_current_user()
+        branch = f"cluster-draft/{user}"
+        
+        if not run_id:
+            try:
+                res = subprocess.run(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+                runs = json.loads(res.stdout) if res.returncode == 0 else []
+                if runs:
+                    run_id = str(runs[0].get("databaseId"))
+            except Exception:
+                pass
+                
+            if not run_id:
+                print("Usage: cluster-run cancel <run_id>", file=sys.stderr)
+                sys.exit(1)
+
+        print(f"🛑 Cancelling run {run_id}...")
+        subprocess.run(["gh", "run", "cancel", run_id])
+        print(f"🧹 Deleting branch {branch}...")
+        subprocess.run(["git", "push", "origin", "--delete", branch, "--quiet"])
+
+    else:
+        # Submit shadow run
+        try:
+            shadow_run(background=args.background)
+        finally:
+            if not args.background:
+                cleanup()
+
+if __name__ == "__main__":
+    main()

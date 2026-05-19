@@ -37,7 +37,10 @@ Ce script injecte :
 
 #### Commande `cluster-run`
 
-Après installation, la commande `cluster-run` est disponible dans `~/.local/bin/`. Elle utilise le mécanisme de "Shadow Push" pour soumettre vos modifications locales (y compris les fichiers non commités) au cluster sans polluer votre historique git.
+La commande `cluster-run` est **100% compatible avec Windows (PowerShell/CMD), Linux et macOS**. Elle utilise le mécanisme de "Shadow Push" pour soumettre vos modifications locales (y compris les fichiers non commités et fichiers untracked) au cluster distant sans polluer votre historique git.
+
+- **Sur Linux / macOS** : Après exécution du script `install.sh` ci-dessus, le binaire est disponible dans `~/.local/bin/cluster-run`.
+- **Sur Windows (Natif)** : Clonez ce dépôt localement, puis installez le package en mode éditable via `pip install -e .` ou `uv pip install -e .` pour enregistrer automatiquement `cluster-run` dans votre environnement Windows global. Une fois le package installé, la commande `cluster-run` est disponible directement dans n'importe quel terminal Windows.
 
 | Commande | Description |
 |---|---|

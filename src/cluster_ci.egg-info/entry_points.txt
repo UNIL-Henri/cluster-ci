@@ -1,0 +1,2 @@
+[console_scripts]
+cluster-run = cluster.cluster_run:main

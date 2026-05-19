@@ -1,8 +1,11 @@
 README.md
 pyproject.toml
+src/cluster/__init__.py
+src/cluster/cluster_run.py
 src/cluster_ci.egg-info/PKG-INFO
 src/cluster_ci.egg-info/SOURCES.txt
 src/cluster_ci.egg-info/dependency_links.txt
+src/cluster_ci.egg-info/entry_points.txt
 src/cluster_ci.egg-info/requires.txt
 src/cluster_ci.egg-info/top_level.txt
 src/runner/gc_orchestrator.py
@@ -17,6 +20,7 @@ src/scheduler/submit_job.py
 src/scheduler/worker_agent.py
 src/scheduler/tests/test_commit_hash.py
 src/scheduler/tests/test_data_router.py
+src/scheduler/tests/test_derived_ram.py
 src/scheduler/tests/test_flow.py
 src/scheduler/tests/test_history_api.py
 src/scheduler/tests/test_locality.py
