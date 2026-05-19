@@ -69,7 +69,7 @@ def get_config_value(pattern, content, default=None, is_float=False):
 def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None, commit_hash=None):
     """Submits a research job to the headnode scheduler."""
     if not commit_hash:
-        commit_hash = os.environ.get("GITHUB_SHA")
+        commit_hash = os.environ.get("CALLER_COMMIT_SHA") or os.environ.get("GITHUB_SHA")
         if not commit_hash:
             try:
                 import subprocess

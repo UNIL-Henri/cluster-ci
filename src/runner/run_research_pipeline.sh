@@ -11,6 +11,15 @@ CLI_TARGET_REPO=$1
 CLI_TARGET_BRANCH=$2
 CLI_GH_TOKEN="${3:-$GH_TOKEN}"
 
+# Capture the caller's commit hash before changing directory
+CALLER_COMMIT_SHA=""
+if [ -n "$GITHUB_SHA" ]; then
+    CALLER_COMMIT_SHA="$GITHUB_SHA"
+elif git rev-parse HEAD &>/dev/null; then
+    CALLER_COMMIT_SHA=$(git rev-parse HEAD)
+fi
+export CALLER_COMMIT_SHA
+
 # Go to cluster-ci project root
 SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
 BASE_DIR="$( cd "$( dirname "$SCRIPT_PATH" )/../.." >/dev/null 2>&1 && pwd )"
