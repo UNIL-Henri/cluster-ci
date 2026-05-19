@@ -172,9 +172,27 @@ def execute_job(job):
             except Exception as e:
                 logger.warning(f"Could not remove stale port file {port_file}: {e}")
 
-        process = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         with job_lock:
             current_process = process
+
+        # Launch an unbuffered line-by-line real-time log streamer thread
+        import threading
+        def log_streamer():
+            try:
+                for line in process.stdout:
+                    log_file.write(line)
+                    log_file.flush()
+                    try:
+                        os.fsync(log_file.fileno())
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.error(f"Error in log streamer: {e}")
+
+        streamer_thread = threading.Thread(target=log_streamer, daemon=True)
+        streamer_thread.start()
+
         port_reported = False
         start_time = time.time()
         timeout_seconds = (max_runtime_hours * 3600) if max_runtime_hours else (24 * 3600)
@@ -212,6 +230,7 @@ def execute_job(job):
             time.sleep(2)
 
         exit_code = process.wait()
+        streamer_thread.join(timeout=10)
 
         # Try to extract the commit hash from the job's directory
         commit_hash = None
