@@ -146,6 +146,7 @@ cluster-ci/
 - [x] Dashboard UX improvement (date formatting, DVC path corrections under systemd, historical DVC run fixes)
 - [x] Migration to Docker Worker execution (NVIDIA/ARM support)
 - [x] Real-time Log Streaming via Headnode & Live Interactive Terminal via tmate (Reverse SSH)
+- [x] Résolution de la bufferisation GHA: Streaming temps réel unbuffered seconde par seconde via proxy REST API Headnode & SSH (Eustache)
 - [x] Propagation du jeton d'authentification (GH_TOKEN) de bout en bout en mode Délégation
 - [x] Migration vers conteneur NGC moderne (Python 3.12, PyTorch 2.12, CUDA 13.2)
 - [x] [Cluster-CI Pre-flight Scanner & Pre-commit Validator](https://github.com/UNIL-DESI/cluster-ci/issues/55)
