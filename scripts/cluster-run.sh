@@ -7,6 +7,13 @@ set -e
 # Global variables for cleanup
 RUN_ID=""
 BRANCH=""
+USER_INTERRUPTED="false"
+
+trap_ctrl_c() {
+    USER_INTERRUPTED="true"
+    exit 130
+}
+trap trap_ctrl_c SIGINT
 
 show_help() {
     echo "Usage: cluster-run [COMMAND] [OPTIONS]"
@@ -49,8 +56,8 @@ get_current_user() {
 cleanup() {
     # If we have a branch, try to delete it
     if [ -n "$BRANCH" ]; then
-        # If we have a run_id, try to cancel it if it's not completed
-        if [ -n "$RUN_ID" ]; then
+        # If we have a run_id, try to cancel it ONLY if the user manually interrupted (Ctrl+C)
+        if [ -n "$RUN_ID" ] && [ "$USER_INTERRUPTED" = "true" ]; then
              local raw_status=$(gh run view "$RUN_ID" --json status -q .status < /dev/null 2>/dev/null || echo "completed"); local status=$(echo "$raw_status" | tr -cd 'a-zA-Z')
              if [[ "$status" != "completed" && "$status" != "success" && "$status" != "failure" && "$status" != "cancelled" ]]; then
                  echo -e "\n🛑 Cancelling GitHub run $RUN_ID..."
