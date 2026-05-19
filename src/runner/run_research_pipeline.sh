@@ -492,24 +492,27 @@ if command -v "$TMATE_BIN" &> /dev/null; then
     rm -f "$TMATE_SOCKET"
     
     # 2. Start detached session running the execute command (write logs/exit code on host runner)
-    TMATE_CMD="docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
+    TMATE_CMD="echo '⏱️ Introducing temporary 25s debug delay...'; sleep 25; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
     
     "$TMATE_BIN" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
     
     # 3. Wait for tmate to connect and generate URL
-    log_info "Generating live terminal SSH URL..."
+    log_info "Generating live terminal SSH and Web URLs..."
     TMATE_SSH=""
+    TMATE_WEB=""
     for attempt in {1..10}; do
         sleep 1.5
         TMATE_SSH=$("$TMATE_BIN" -S "$TMATE_SOCKET" display -p '#{tmate_ssh}' 2>/dev/null || true)
-        if [ -n "$TMATE_SSH" ]; then
+        TMATE_WEB=$("$TMATE_BIN" -S "$TMATE_SOCKET" display -p '#{tmate_web}' 2>/dev/null || true)
+        if [ -n "$TMATE_SSH" ] && [ -n "$TMATE_WEB" ]; then
             break
         fi
     done
     
-    if [ -n "$TMATE_SSH" ]; then
+    if [ -n "$TMATE_SSH" ] && [ -n "$TMATE_WEB" ]; then
         log_success "Live terminal available! Connect via:"
-        log_success "👉 $TMATE_SSH"
+        log_success "👉 Web: $TMATE_WEB"
+        log_success "👉 SSH: $TMATE_SSH"
         
         # 4. Publish the URL to the GitHub Commit Status
         COMMIT_SHA=$(cat .cluster-ci-commit 2>/dev/null || git rev-parse HEAD || true)
@@ -519,7 +522,7 @@ if command -v "$TMATE_BIN" &> /dev/null; then
                 -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/$TARGET_REPO/statuses/$COMMIT_SHA" \
-                -d "{\"state\": \"pending\", \"target_url\": \"${TMATE_SSH}\", \"description\": \"Connect to live logs via SSH\", \"context\": \"tmate\"}")
+                -d "{\"state\": \"pending\", \"target_url\": \"${TMATE_WEB}\", \"description\": \"SSH: ${TMATE_SSH}\", \"context\": \"tmate\"}")
             status_code=$(echo "$resp" | grep "HTTP_STATUS" | cut -d: -f2)
             body=$(echo "$resp" | grep -v "HTTP_STATUS")
             if [ "$status_code" -ne 201 ]; then

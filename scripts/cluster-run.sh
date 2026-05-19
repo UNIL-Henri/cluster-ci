@@ -86,7 +86,7 @@ stream_logs() {
             if [ -n "$status_json" ]; then
                 # Search for a status with context: "tmate"
                 local tmate_url
-                tmate_url=$(echo "$status_json" | jq -r '.[] | select(.context == "tmate") | .target_url' 2>/dev/null | head -n 1)
+                tmate_url=$(echo "$status_json" | jq -r '.[] | select(.context == "tmate") | .description' 2>/dev/null | sed 's/^SSH: //' | head -n 1)
                 
                 if [ -n "$tmate_url" ] && [ "$tmate_url" != "null" ] && [[ "$tmate_url" == ssh* ]]; then
                     echo "🟢 Live terminal stream found!"
