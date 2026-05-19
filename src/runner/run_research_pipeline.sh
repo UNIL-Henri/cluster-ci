@@ -515,11 +515,21 @@ if command -v "$TMATE_BIN" &> /dev/null; then
         COMMIT_SHA=$(cat .cluster-ci-commit 2>/dev/null || git rev-parse HEAD || true)
         if [ -n "$GH_TOKEN" ] && [ -n "$COMMIT_SHA" ]; then
             log_info "Publishing tmate URL to GitHub commit status for commit $COMMIT_SHA..."
-            curl -s -X POST \
+            local resp
+            resp=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
                 -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/$TARGET_REPO/statuses/$COMMIT_SHA" \
-                -d "{\"state\": \"pending\", \"target_url\": \"${TMATE_SSH}\", \"description\": \"Connect to live logs via SSH\", \"context\": \"tmate\"}" >/dev/null || true
+                -d "{\"state\": \"pending\", \"target_url\": \"${TMATE_SSH}\", \"description\": \"Connect to live logs via SSH\", \"context\": \"tmate\"}")
+            local status_code
+            status_code=$(echo "$resp" | grep "HTTP_STATUS" | cut -d: -f2)
+            local body
+            body=$(echo "$resp" | grep -v "HTTP_STATUS")
+            if [ "$status_code" -ne 201 ]; then
+                log_error "Failed to publish commit status (HTTP $status_code): $body"
+            else
+                log_success "GitHub commit status published successfully."
+            fi
         fi
     else
         log_error "Failed to generate tmate URL. Execution will continue silently."
