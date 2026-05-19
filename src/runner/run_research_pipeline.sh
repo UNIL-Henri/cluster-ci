@@ -535,11 +535,25 @@ if command -v "$TMATE_BIN" &> /dev/null; then
         log_error "Failed to generate tmate URL. Execution will continue silently."
     fi
     
-    # 5. Wait for the session to finish
+    # 5. Wait for the session to finish and stream the log file in real-time
     set +e
+    LAST_LINE=1
     while "$TMATE_BIN" -S "$TMATE_SOCKET" has-session 2>/dev/null; do
+        if [ -f "tmate_execution.log" ]; then
+            while read -r line || [ -n "$line" ]; do
+                echo "$line"
+                LAST_LINE=$((LAST_LINE + 1))
+            done < <(tail -n +$LAST_LINE "tmate_execution.log" 2>/dev/null)
+        fi
         sleep 2
     done
+    
+    # Print any remaining lines
+    if [ -f "tmate_execution.log" ]; then
+        while read -r line || [ -n "$line" ]; do
+            echo "$line"
+        done < <(tail -n +$LAST_LINE "tmate_execution.log" 2>/dev/null)
+    fi
     set -e
     
     # 6. Retrieve the exit code
@@ -552,7 +566,6 @@ if command -v "$TMATE_BIN" &> /dev/null; then
     
     # 7. Print the final log to standard stdout so GitHub Actions log has the permanent copy
     if [ -f "tmate_execution.log" ]; then
-        cat tmate_execution.log
         rm -f tmate_execution.log
     fi
     
