@@ -440,7 +440,32 @@ else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
 
-if command -v tmate &> /dev/null; then
+# 0. Detect or install tmate static binary dynamically
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TMATE_BIN="tmate"
+
+if ! command -v tmate &> /dev/null; then
+    if [ -f "$REPO_DIR/bin/tmate" ]; then
+        TMATE_BIN="$REPO_DIR/bin/tmate"
+        log_info "Found local tmate static binary: $TMATE_BIN"
+    else
+        log_info "tmate not found. Attempting to download static binary..."
+        mkdir -p "$REPO_DIR/bin"
+        # Download and extract the official static tarball
+        if wget -q -O "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-amd64.tar.xz" || curl -s -L -o "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-amd64.tar.xz"; then
+            tar -xf "$REPO_DIR/bin/tmate.tar.xz" -C "$REPO_DIR/bin" --strip-components=1
+            rm -f "$REPO_DIR/bin/tmate.tar.xz"
+            chmod +x "$REPO_DIR/bin/tmate"
+            TMATE_BIN="$REPO_DIR/bin/tmate"
+            log_success "tmate static binary installed successfully!"
+        else
+            log_error "Failed to download tmate static binary."
+        fi
+    fi
+fi
+
+if command -v "$TMATE_BIN" &> /dev/null; then
     log_info "🚀 Live Terminal Streaming enabled. Initializing tmate..."
     
     # 1. Clean up socket
@@ -450,14 +475,14 @@ if command -v tmate &> /dev/null; then
     # 2. Start detached session running the execute command
     TMATE_CMD="docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee /workspace/tmate_execution.log; echo \${PIPESTATUS[0]} > /workspace/tmate_exit_code"
     
-    tmate -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
+    "$TMATE_BIN" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
     
     # 3. Wait for tmate to connect and generate URL
     log_info "Generating live terminal SSH URL..."
     TMATE_SSH=""
     for attempt in {1..10}; do
         sleep 1.5
-        TMATE_SSH=$(tmate -S "$TMATE_SOCKET" display -p '#{tmate_ssh}' 2>/dev/null || true)
+        TMATE_SSH=$("$TMATE_BIN" -S "$TMATE_SOCKET" display -p '#{tmate_ssh}' 2>/dev/null || true)
         if [ -n "$TMATE_SSH" ]; then
             break
         fi
@@ -483,7 +508,7 @@ if command -v tmate &> /dev/null; then
     
     # 5. Wait for the session to finish
     set +e
-    while tmate -S "$TMATE_SOCKET" has-session 2>/dev/null; do
+    while "$TMATE_BIN" -S "$TMATE_SOCKET" has-session 2>/dev/null; do
         sleep 2
     done
     set -e
