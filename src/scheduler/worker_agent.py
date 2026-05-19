@@ -553,14 +553,15 @@ def update_self():
 
     def _do_update():
         try:
-            # 1. Pull latest code
+            # 1. Pull latest code robustly using fetch + hard reset to bypass any local changes or merge conflicts
+            subprocess.run(["git", "fetch", "origin", "main"], cwd=BASE_DIR, capture_output=True, timeout=60)
             res = subprocess.run(
-                ["git", "pull", "origin", "main"],
+                ["git", "reset", "--hard", "origin/main"],
                 cwd=BASE_DIR, capture_output=True, text=True, timeout=60
             )
-            logger.info(f"git pull: {res.stdout.strip()}")
+            logger.info(f"git reset --hard: {res.stdout.strip()}")
             if res.returncode != 0:
-                logger.error(f"git pull failed: {res.stderr}")
+                logger.error(f"git reset failed: {res.stderr}")
                 return
 
             # 2. Sync dependencies (non-blocking if uv is available)

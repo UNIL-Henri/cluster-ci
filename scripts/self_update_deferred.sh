@@ -60,9 +60,10 @@ else
     echo "⚠️ Database not found at $DB_PATH, skipping purge."
 fi
 
-echo "=== [3/6] Pulling latest code on Headnode ==="
+echo "=== [3/6] Pulling latest code on Headnode robustly ==="
 cd "$BASE_DIR"
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 echo "✅ Code updated to: $(git rev-parse --short HEAD)"
 
 echo "=== [4/6] Syncing dependencies ==="
