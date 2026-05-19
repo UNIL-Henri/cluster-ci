@@ -66,8 +66,16 @@ def get_config_value(pattern, content, default=None, is_float=False):
         return float(val) if is_float else val
     return default
 
-def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
+def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None, commit_hash=None):
     """Submits a research job to the headnode scheduler."""
+    if not commit_hash:
+        commit_hash = os.environ.get("GITHUB_SHA")
+        if not commit_hash:
+            try:
+                import subprocess
+                commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+            except Exception:
+                pass
     # Strategy: Fetch .cluster-ci content first to parse all requirements
     content = None
     import tempfile, subprocess, shutil, os
@@ -143,6 +151,7 @@ def submit_job(headnode_url, repo, branch, gh_token=None, env_vars=None):
         resp = requests.post(f"{headnode_url}/submit_job", json={
             "repo": repo,
             "branch": branch,
+            "commit_hash": commit_hash,
             "ram_required_gb": ram_req,
             "max_runtime_hours": max_runtime,
             "exposed_port": exposed_port,
