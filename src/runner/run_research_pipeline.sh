@@ -450,15 +450,22 @@ if ! command -v tmate &> /dev/null; then
         TMATE_BIN="$REPO_DIR/bin/tmate"
         log_info "Found local tmate static binary: $TMATE_BIN"
     else
-        log_info "tmate not found. Attempting to download static binary..."
+        # Dynamically detect architecture (arm64v8 for aarch64/arm64, amd64 for others)
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            TMATE_ARCH="arm64v8"
+        else
+            TMATE_ARCH="amd64"
+        fi
+        log_info "tmate not found. Attempting to download static binary for $TMATE_ARCH ($ARCH)..."
         mkdir -p "$REPO_DIR/bin"
-        # Download and extract the official static tarball
-        if wget -q -O "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-amd64.tar.xz" || curl -s -L -o "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-amd64.tar.xz"; then
+        # Download and extract the official static tarball for detected architecture
+        if wget -q -O "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-${TMATE_ARCH}.tar.xz" || curl -s -L -o "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-${TMATE_ARCH}.tar.xz"; then
             tar -xf "$REPO_DIR/bin/tmate.tar.xz" -C "$REPO_DIR/bin" --strip-components=1
             rm -f "$REPO_DIR/bin/tmate.tar.xz"
             chmod +x "$REPO_DIR/bin/tmate"
             TMATE_BIN="$REPO_DIR/bin/tmate"
-            log_success "tmate static binary installed successfully!"
+            log_success "tmate static binary ($TMATE_ARCH) installed successfully!"
         else
             log_error "Failed to download tmate static binary."
         fi
