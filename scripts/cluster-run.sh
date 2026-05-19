@@ -51,10 +51,10 @@ cleanup() {
     if [ -n "$BRANCH" ]; then
         # If we have a run_id, try to cancel it if it's not completed
         if [ -n "$RUN_ID" ]; then
-             local status=$(gh run view "$RUN_ID" --json status -q .status 2>/dev/null || echo "completed")
+             local raw_status=$(gh run view "$RUN_ID" --json status -q .status < /dev/null 2>/dev/null || echo "completed"); local status=$(echo "$raw_status" | tr -cd 'a-zA-Z')
              if [[ "$status" != "completed" && "$status" != "success" && "$status" != "failure" && "$status" != "cancelled" ]]; then
                  echo -e "\n🛑 Cancelling GitHub run $RUN_ID..."
-                 gh run cancel "$RUN_ID"
+                 gh run cancel "$RUN_ID" < /dev/null 2>&1 || true
              fi
         fi
         echo "🧹 Cleaning up remote branch $BRANCH..."
@@ -243,12 +243,18 @@ shadow_run() {
 
     stream_logs "$RUN_ID" "$commit_to_push"
 
-    # Check final status
-    local conclusion=$(gh run view "$RUN_ID" --json conclusion -q .conclusion)
+    # Check final status with robust retry to handle GitHub API latency
+    local conclusion=""
+    for i in {1..5}; do
+        conclusion=$(gh run view "$RUN_ID" --json conclusion -q .conclusion < /dev/null 2>/dev/null || echo "")
+        [ -n "$conclusion" ] && [ "$conclusion" != "null" ] && break
+        sleep 1
+    done
+
     if [ "$conclusion" == "success" ]; then
         echo "✅ Cluster-CI run completed successfully."
     else
-        echo "❌ Cluster-CI run finished with status: $conclusion"
+        echo "❌ Cluster-CI run finished with status: ${conclusion:-unknown}"
     fi
 
     # Final cleanup will be handled by the EXIT trap
