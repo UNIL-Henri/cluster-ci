@@ -5,6 +5,7 @@ import requests
 import logging
 import threading
 import sys
+import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -52,6 +53,14 @@ class RunnerManager:
             slot_dir = self.runners_dir / f"slot{slot_id}"
         logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': slot_id})
 
+        # Auto-Healing: Provision slot_dir if missing
+        template_dir = self.runners_dir / "template"
+        if not slot_dir.exists():
+            logger.info(f"Slot directory {slot_dir} is missing. Provisioning from template...")
+            if not template_dir.exists():
+                raise FileNotFoundError(f"Template directory {template_dir} is missing. Cannot provision slot {slot_id}.")
+            shutil.copytree(template_dir, slot_dir)
+
         while True:
             try:
                 logger.info(f"Preparing a new ephemeral runner (labels: {labels})...")
@@ -83,15 +92,18 @@ class RunnerManager:
 
                 logger.info(f"Runner stopped with code {process.returncode}. Imminent restart...")
 
+            except (subprocess.CalledProcessError, requests.RequestException) as e:
+                logger.error(f"Transient error in runner cycle: {e}. Retrying in 10s...")
+                time.sleep(10)
             except Exception as e:
-                logger.error(f"Error in runner cycle: {e}")
-                time.sleep(10) # Wait a bit before retrying in case of fatal error
+                logger.critical(f"Fatal error in runner cycle: {e}")
+                raise  # Fail-fast instead of looping on a fatal error
 
     def start(self):
         threads = []
         # Standard slots
         for i in range(1, self.num_slots + 1):
-            t = threading.Thread(target=self.run_slot, args=(i,))
+            t = threading.Thread(target=self.run_slot, args=(i, "self-hosted,cluster-worker"))
             t.daemon = True
             t.start()
             threads.append(t)
