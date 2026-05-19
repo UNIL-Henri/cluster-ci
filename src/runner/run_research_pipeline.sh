@@ -496,6 +496,10 @@ if command -v "$TMATE_BIN" &> /dev/null; then
     
     "$TMATE_BIN" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
     
+    # Send 'q' key to automatically close the built-in welcome panel ("Press q or ctrl-c to continue")
+    sleep 1
+    "$TMATE_BIN" -S "$TMATE_SOCKET" send-keys "q"
+    
     # 3. Wait for tmate to connect and generate URL
     log_info "Generating live terminal SSH and Web URLs..."
     TMATE_SSH=""
