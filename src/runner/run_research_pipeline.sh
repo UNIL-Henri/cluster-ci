@@ -485,8 +485,8 @@ if command -v "$TMATE_BIN" &> /dev/null; then
     TMATE_SOCKET="/tmp/tmate_${SAFE_JOB_ID}.sock"
     rm -f "$TMATE_SOCKET"
     
-    # 2. Start detached session running the execute command
-    TMATE_CMD="docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee /workspace/tmate_execution.log; echo \${PIPESTATUS[0]} > /workspace/tmate_exit_code"
+    # 2. Start detached session running the execute command (write logs/exit code on host runner)
+    TMATE_CMD="docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
     
     "$TMATE_BIN" -S "$TMATE_SOCKET" new-session -d "$TMATE_CMD"
     
