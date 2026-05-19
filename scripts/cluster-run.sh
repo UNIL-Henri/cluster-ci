@@ -94,7 +94,11 @@ stream_logs() {
                 break
             fi
 
-            job_id=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT job_id FROM jobs WHERE repo = '$repo_full_name' AND branch = '$BRANCH' ORDER BY created_at DESC LIMIT 1;\"" 2>/dev/null || echo "")
+            if [ -n "$commit_sha" ]; then
+                job_id=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT job_id FROM jobs WHERE repo = '$repo_full_name' AND commit_hash = '$commit_sha' LIMIT 1;\"" 2>/dev/null || echo "")
+            else
+                job_id=$(SSHPASS='9wE1Ry^6JUK*1zxX5Aa3' sshpass -e ssh -q -o ConnectTimeout=3 -o StrictHostKeyChecking=no henri@130.223.73.209 "sqlite3 /home/henri/cluster-ci/cluster_scheduler.db \"SELECT job_id FROM jobs WHERE repo = '$repo_full_name' AND branch = '$BRANCH' ORDER BY created_at DESC LIMIT 1;\"" 2>/dev/null || echo "")
+            fi
             if [ -n "$job_id" ]; then
                 echo "🟢 Connected to job: $job_id"
                 break
