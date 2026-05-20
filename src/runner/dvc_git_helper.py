@@ -7,8 +7,8 @@ from pathlib import Path
 try:
     from ruamel.yaml import YAML
 except ImportError:
-    # We expect this to be run via uv run --with ruamel.yaml
-    pass
+    print("❌ Error: 'ruamel.yaml' is missing. Please run this script using 'uv run --with ruamel.yaml'.")
+    sys.exit(1)
 
 def log_info(msg):
     print(f"ℹ️  [DVC-Git-Helper] {msg}")
@@ -148,9 +148,23 @@ def sync_metrics():
             subprocess.run(['git', 'config', 'user.name', 'cluster-ci-bot'], check=True)
             subprocess.run(['git', 'config', 'user.email', 'bot@cluster-ci.io'], check=True)
             subprocess.run(['git', 'commit', '-m', 'chore(ci): auto-sync metrics [skip ci]'], check=True)
-            # Try to push to current branch
-            subprocess.run(['git', 'push', 'origin', 'HEAD'], check=True)
-            log_success("Metrics synced successfully.")
+            # Try to push to current branch with reconciliation mechanism
+            try:
+                subprocess.run(['git', 'push', 'origin', 'HEAD'], check=True, capture_output=True, text=True)
+                log_success("Metrics synced successfully.")
+            except subprocess.CalledProcessError as e:
+                log_warn(f"Initial push failed, attempting reconciliation (rebase): {e.stderr.strip()}")
+                try:
+                    # Attempt to pull with rebase to handle remote changes
+                    subprocess.run(['git', 'pull', '--rebase', 'origin', 'HEAD'], check=True, capture_output=True, text=True)
+                    log_info("Rebase successful, retrying push...")
+                    subprocess.run(['git', 'push', 'origin', 'HEAD'], check=True, capture_output=True, text=True)
+                    log_success("Metrics synced successfully after reconciliation.")
+                except subprocess.CalledProcessError as rebase_err:
+                    log_warn(f"Reconciliation failed: {rebase_err.stderr.strip()}")
+                    # Abort rebase if it's still in progress to leave the repo in a clean state
+                    subprocess.run(['git', 'rebase', '--abort'], check=False, capture_output=True)
+                    log_warn("Push abandoned. The pipeline will continue, but metrics were not synced to Git.")
         else:
             log_info("No changes to commit.")
     else:
