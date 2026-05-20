@@ -627,7 +627,10 @@ def main_loop():
     # Wait for the first heartbeat to be processed before polling for jobs
     # This prevents a race condition where a job is fetched before the headnode
     # knows the worker has restarted (which would kill the job with exit code -98).
-    startup_heartbeat_event.wait()
+    # We add a 5-minute timeout to avoid infinite deadlocks if the headnode is completely unreachable.
+    if not startup_heartbeat_event.wait(timeout=300):
+        logger.error("Timeout: Failed to synchronize initial heartbeat with headnode after 5 minutes. Shutting down worker.")
+        sys.exit(1)
 
     while True:
         job = poll_for_job()

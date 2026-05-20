@@ -26,8 +26,21 @@ class TestScheduler(unittest.TestCase):
                 os.remove("test_cluster.db")
             init_db()
 
-            # Start Headnode API in a thread
-            cls.api_thread = threading.Thread(target=lambda: app.run(port=5001, debug=False, use_reloader=False))
+            # Start Headnode API in a thread using werkzeug.serving for clean shutdown
+            from werkzeug.serving import make_server
+            import socket
+            def get_free_port():
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.bind(('', 0))
+                port = s.getsockname()[1]
+                s.close()
+                return port
+
+            cls.test_port = get_free_port()
+            cls.headnode_url = f"http://localhost:{cls.test_port}"
+
+            cls.server = make_server('0.0.0.0', cls.test_port, app)
+            cls.api_thread = threading.Thread(target=cls.server.serve_forever)
             cls.api_thread.daemon = True
             cls.api_thread.start()
 
@@ -140,6 +153,8 @@ class TestScheduler(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         if not cls.is_e2e:
+            cls.server.shutdown()
+            cls.api_thread.join(timeout=5)
             try:
                 if os.path.exists("test_cluster.db"):
                     os.remove("test_cluster.db")
