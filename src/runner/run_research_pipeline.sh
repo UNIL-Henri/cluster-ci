@@ -388,7 +388,7 @@ function docker_exec_bootstrap() {
     docker exec \
         "${MAIN_CONTAINER_NAME}" bash -c "export PATH=\$PATH:/home/user/.local/bin && $1"
 }
-docker_exec_bootstrap "uv --version >/dev/null 2>&1 || python3 -m pip install uv --user >/dev/null 2>&1"
+docker_exec_bootstrap "uv --version >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1"
 docker_exec_bootstrap "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/null 2>&1"
 docker_exec_bootstrap "uv tool upgrade dvc-viewer >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
 
@@ -462,160 +462,11 @@ else
     EXEC_CMD="dvc repro --force $DVC_ARGS"
 fi
 
-# 0. Detect or install tmate static binary dynamically
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TMATE_BIN="tmate"
-
-# Check if system tmate works, or if local tmate works, otherwise download the correct architecture
-if command -v tmate &> /dev/null && tmate -V &>/dev/null; then
-    TMATE_BIN="tmate"
-    log_info "Using working system tmate: $(which tmate)"
-elif [ -f "$REPO_DIR/bin/tmate" ] && "$REPO_DIR/bin/tmate" -V &>/dev/null; then
-    TMATE_BIN="$REPO_DIR/bin/tmate"
-    log_info "Found working local tmate static binary: $TMATE_BIN"
-else
-    log_info "tmate not found or not executable. Attempting to download correct static binary..."
-    # Dynamically detect architecture (arm64v8 for aarch64/arm64, amd64 for others)
-    ARCH=$(uname -m)
-    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        TMATE_ARCH="arm64v8"
-    else
-        TMATE_ARCH="amd64"
-    fi
-    log_info "Downloading static binary for $TMATE_ARCH ($ARCH)..."
-    mkdir -p "$REPO_DIR/bin"
-    # Remove any broken/incompatible local binary first to avoid format conflicts
-    rm -f "$REPO_DIR/bin/tmate"
-    
-    # Download and extract the official static tarball for detected architecture
-    if wget -q -O "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-${TMATE_ARCH}.tar.xz" || curl -s -L -o "$REPO_DIR/bin/tmate.tar.xz" "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-${TMATE_ARCH}.tar.xz"; then
-        tar -xf "$REPO_DIR/bin/tmate.tar.xz" -C "$REPO_DIR/bin" --strip-components=1
-        rm -f "$REPO_DIR/bin/tmate.tar.xz"
-        chmod +x "$REPO_DIR/bin/tmate"
-        TMATE_BIN="$REPO_DIR/bin/tmate"
-        log_success "tmate static binary ($TMATE_ARCH) installed successfully!"
-    else
-        log_error "Failed to download tmate static binary."
-    fi
-fi
-
-if command -v "$TMATE_BIN" &> /dev/null; then
-    log_info "🚀 Live Terminal Streaming enabled. Initializing tmate..."
-    
-    # Ensure current runner user has a valid SSH key (required by tmate to connect to backend)
-    if [ ! -f "$HOME/.ssh/id_rsa" ] && [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-        log_info "No SSH private key found for current runner user. Generating default id_rsa..."
-        mkdir -p "$HOME/.ssh"
-        chmod 700 "$HOME/.ssh"
-        ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -N ""
-        chmod 600 "$HOME/.ssh/id_rsa"
-        log_success "SSH private key generated successfully at $HOME/.ssh/id_rsa"
-    fi
-    
-    # 1. Clean up socket and create temp config to bypass tmate welcome/help screen
-    # We configure official modern ssh.tmate.io on port 443 with official fingerprints to bypass campus DNS filters
-    TMATE_SOCKET="/tmp/tmate_${SAFE_JOB_ID}.sock"
-    TMATE_CONF="/tmp/tmate_${SAFE_JOB_ID}.conf"
-    rm -f "$TMATE_SOCKET" "$TMATE_CONF"
-    
-    cat > "$TMATE_CONF" << 'CONFEOF'
-set -g tmate-display-help off
-set -g tmate-server-host "ssh.tmate.io"
-set -g tmate-server-port 443
-set -g tmate-server-rsa-fingerprint "SHA256:Hthk2T/M/Ivqfk1YYUn5ijC2Att3+UPzD7Rn72P5VWs"
-set -g tmate-server-ed25519-fingerprint "SHA256:jfttvoypkHiQYUqUCwKeqd9d1fJj/ZiQlFOHVl6E9sI"
-CONFEOF
-    
-    # 2. Start detached session running the execute command (write logs/exit code on host runner)
-    TMATE_CMD="echo '⏳ Waiting up to 15s for live terminal connection...'; for i in {1..30}; do if [ \$(\"$TMATE_BIN\" -S \"$TMATE_SOCKET\" display -p '#{session_clients}' 2>/dev/null || echo 0) -gt 0 ]; then echo '🟢 Client connected! Starting execution...'; break; fi; sleep 0.5; done; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | stdbuf -oL -eL tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"
-    "$TMATE_BIN" -S "$TMATE_SOCKET" -f "$TMATE_CONF" new-session -d "$TMATE_CMD"
-    
-    # Send 'q' key as an extra safeguard
-    sleep 0.5
-    "$TMATE_BIN" -S "$TMATE_SOCKET" send-keys "q"
-    
-    # 3. Wait for tmate to connect and generate URL
-    log_info "Generating live terminal SSH and Web URLs..."
-    TMATE_SSH=""
-    TMATE_WEB=""
-    for attempt in {1..10}; do
-        sleep 1.5
-        TMATE_SSH=$("$TMATE_BIN" -S "$TMATE_SOCKET" display -p '#{tmate_ssh}' 2>/dev/null || true)
-        TMATE_WEB=$("$TMATE_BIN" -S "$TMATE_SOCKET" display -p '#{tmate_web}' 2>/dev/null || true)
-        if [ -n "$TMATE_SSH" ] && [ -n "$TMATE_WEB" ]; then
-            break
-        fi
-    done
-    
-    if [ -n "$TMATE_SSH" ] && [ -n "$TMATE_WEB" ]; then
-        log_success "Live terminal available! Connect via:"
-        log_success "👉 Web: $TMATE_WEB"
-        log_success "👉 SSH: $TMATE_SSH"
-        
-        # 4. Publish the URL to the GitHub Commit Status
-        COMMIT_SHA=$(cat .cluster-ci-commit 2>/dev/null || git rev-parse HEAD || true)
-        if [ -n "$GH_TOKEN" ] && [ -n "$COMMIT_SHA" ]; then
-            log_info "Publishing tmate URL to GitHub commit status for commit $COMMIT_SHA..."
-            resp=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
-                -H "Authorization: token $GH_TOKEN" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/$TARGET_REPO/statuses/$COMMIT_SHA" \
-                -d "{\"state\": \"pending\", \"target_url\": \"${TMATE_WEB}\", \"description\": \"SSH: ${TMATE_SSH}\", \"context\": \"tmate\"}")
-            status_code=$(echo "$resp" | grep "HTTP_STATUS" | cut -d: -f2)
-            body=$(echo "$resp" | grep -v "HTTP_STATUS")
-            if [ "$status_code" -ne 201 ]; then
-                log_error "Failed to publish commit status (HTTP $status_code): $body"
-            else
-                log_success "GitHub commit status published successfully."
-            fi
-        fi
-    else
-        log_error "Failed to generate tmate URL. Execution will continue silently."
-    fi
-    
-    # 5. Wait for the session to finish and stream the log file in real-time
-    set +e
-    LAST_LINE=1
-    while "$TMATE_BIN" -S "$TMATE_SOCKET" has-session 2>/dev/null; do
-        if [ -f "tmate_execution.log" ]; then
-            while read -r line || [ -n "$line" ]; do
-                echo "$line"
-                LAST_LINE=$((LAST_LINE + 1))
-            done < <(tail -n +$LAST_LINE "tmate_execution.log" 2>/dev/null)
-        fi
-        sleep 2
-    done
-    
-    # Print any remaining lines
-    if [ -f "tmate_execution.log" ]; then
-        while read -r line || [ -n "$line" ]; do
-            echo "$line"
-        done < <(tail -n +$LAST_LINE "tmate_execution.log" 2>/dev/null)
-    fi
-    set -e
-    
-    # 6. Retrieve the exit code
-    if [ -f "tmate_exit_code" ]; then
-        EXEC_RET=$(cat tmate_exit_code)
-        rm -f tmate_exit_code
-    else
-        EXEC_RET=1
-    fi
-    
-    # 7. Print the final log to standard stdout so GitHub Actions log has the permanent copy
-    if [ -f "tmate_execution.log" ]; then
-        rm -f tmate_execution.log
-    fi
-    
-    # 8. Clean up temporary files
-else
-    log_info "⚠️ tmate not installed on runner host. Falling back to silent execution."
-    set +e
-    docker_exec "$EXEC_CMD"
-    EXEC_RET=$?
-    set -e
-fi
+log_info "🚀 Live Terminal Streaming enabled. Piping logs to server..."
+set +e
+docker_exec "${EXEC_CMD}" 2>&1 | stdbuf -oL -eL tee tmate_execution.log | curl -s -X POST -H "Content-Type: text/plain" -T - -N "https://piping.nwtgck.org/cluster-ci-log-${CALLER_COMMIT_SHA}" || true
+EXEC_RET=${PIPESTATUS[0]}
+set -e
 
 echo "===STAGE:dvc_repro:END==="
 echo "===STAGE:sync:BEGIN==="
@@ -639,6 +490,17 @@ echo "===STAGE:sync:END==="
 if [ -f "$LOG_FILE" ]; then
     tail -n 2000 "$LOG_FILE" > "${LOG_FILE}.tmp"
     mv "${LOG_FILE}.tmp" "$LOG_FILE"
+fi
+
+if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+    log_info "Generating GitHub Step Summary (Markdown Report)..."
+    echo "# 🧪 Cluster-CI Run Report" >> "$GITHUB_STEP_SUMMARY"
+    echo "## 📊 DVC Metrics" >> "$GITHUB_STEP_SUMMARY"
+    docker_exec "dvc metrics diff --md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No metric changes or error." >> "$GITHUB_STEP_SUMMARY"
+    
+    echo "## 📈 DVC Plots" >> "$GITHUB_STEP_SUMMARY"
+    docker_exec "dvc plots diff" > /dev/null 2>&1 || true
+    echo "Plots have been generated in the workspace." >> "$GITHUB_STEP_SUMMARY"
 fi
 
 if [ $EXEC_RET -ne 0 ]; then
