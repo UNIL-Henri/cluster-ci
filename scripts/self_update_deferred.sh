@@ -140,11 +140,11 @@ nohup bash -c "
     curl -s -X POST \"${HEADNODE_URL}/maintenance/off\" -H \"Authorization: Bearer ${CLUSTER_TOKEN}\" || true
 
     echo \"[DEFERRED] Restarting cluster-scheduler...\"
-    sudo systemctl restart cluster-scheduler 2>/dev/null || true
+    sudo systemctl restart cluster-scheduler 2>/dev/null || pkill -f headnode_service.py || true
     echo \"[DEFERRED] Restarting cluster-scheduler-loop...\"
-    sudo systemctl restart cluster-scheduler-loop 2>/dev/null || true
+    sudo systemctl restart cluster-scheduler-loop 2>/dev/null || pkill -f scheduler_loop.py || true
     echo \"[DEFERRED] Restarting cluster-runner-manager...\"
-    sudo systemctl restart cluster-runner-manager 2>/dev/null || true
+    sudo systemctl restart cluster-runner-manager 2>/dev/null || pkill -f runner_manager.py || true
 
     echo \"[DEFERRED] Restart complete at \$(date)\"
 " > /tmp/cluster-ci-deferred-restart.log 2>&1 &
