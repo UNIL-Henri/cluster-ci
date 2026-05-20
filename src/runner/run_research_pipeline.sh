@@ -174,7 +174,13 @@ git remote set-url origin "$REPO_URL"
 # Force fetching latest references (explicitly specify branch mapping to origin/branch
 # as GitHub Actions conditional fetch sometimes omits it)
 log_info "Synchronizing remote reference origin/$TARGET_BRANCH..."
-git fetch origin "+refs/heads/$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+for i in {1..5}; do
+    if git fetch origin "+refs/heads/$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"; then
+        break
+    fi
+    log_warn "Failed to fetch origin/$TARGET_BRANCH (attempt $i/5). Retrying in 5 seconds..."
+    sleep 5
+done
 
 # Security validation: does the branch exist on remote?
 if ! git rev-parse --verify "origin/$TARGET_BRANCH" >/dev/null 2>&1; then
