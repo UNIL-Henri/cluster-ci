@@ -499,8 +499,7 @@ if [ -n "$GITHUB_STEP_SUMMARY" ]; then
     docker_exec "dvc metrics diff --md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No metric changes or error." >> "$GITHUB_STEP_SUMMARY"
     
     echo "## 📈 DVC Plots" >> "$GITHUB_STEP_SUMMARY"
-    docker_exec "dvc plots diff" > /dev/null 2>&1 || true
-    echo "Plots have been generated in the workspace." >> "$GITHUB_STEP_SUMMARY"
+    docker_exec "dvc plots diff --md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No plot changes or error." >> "$GITHUB_STEP_SUMMARY"
 fi
 
 if [ $EXEC_RET -ne 0 ]; then
