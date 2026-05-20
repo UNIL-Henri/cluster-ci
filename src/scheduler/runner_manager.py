@@ -26,6 +26,7 @@ class RunnerManager:
         self.runners_dir = self.base_dir / "runners"
         self.num_slots = num_slots
         self.runner_name_prefix = f"cluster-local-{target_repo.replace('/', '-')}"
+        self.stop_event = threading.Event()
 
     def get_registration_token(self):
         """Retrieves a new registration token via the GitHub API."""
@@ -59,7 +60,18 @@ class RunnerManager:
             logger.info(f"Slot directory {slot_dir} is missing. Provisioning from template...")
             if not template_dir.exists():
                 raise FileNotFoundError(f"Template directory {template_dir} is missing. Cannot provision slot {slot_id}.")
-            shutil.copytree(template_dir, slot_dir)
+
+            # Atomic provisioning: copy to tmp then rename
+            tmp_slot_dir = slot_dir.with_suffix(f".tmp_{os.getpid()}")
+            try:
+                if tmp_slot_dir.exists():
+                    shutil.rmtree(tmp_slot_dir)
+                shutil.copytree(template_dir, tmp_slot_dir)
+                os.rename(tmp_slot_dir, slot_dir)
+                logger.info(f"Slot directory {slot_id} provisioned atomically.")
+            finally:
+                if tmp_slot_dir.exists():
+                    shutil.rmtree(tmp_slot_dir)
 
         while True:
             try:
@@ -140,6 +152,7 @@ class RunnerManager:
                 time.sleep(10)
             except Exception as e:
                 logger.critical(f"Fatal error in runner cycle: {e}")
+                self.stop_event.set()
                 raise  # Fail-fast instead of looping on a fatal error
 
     def start(self):
@@ -160,10 +173,14 @@ class RunnerManager:
         logger = logging.LoggerAdapter(logging.getLogger(__name__), {'slot': 'MANAGER'})
         logger.info(f"Runner manager started with {self.num_slots} slots + 1 admin slot for {self.target_repo}")
 
-        # Keep main thread alive
+        # Keep main thread alive and monitor for fatal errors
         try:
-            while True:
+            while not self.stop_event.is_set():
                 time.sleep(1)
+
+            if self.stop_event.is_set():
+                logger.critical("Fatal error detected in a runner thread. Shutting down manager...")
+                sys.exit(1)
         except KeyboardInterrupt:
             logger.info("Stopping manager...")
 
