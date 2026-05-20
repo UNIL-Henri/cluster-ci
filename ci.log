@@ -98,14 +98,14 @@
 2026-05-20T11:48:44.1980854Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
 2026-05-20T11:48:44.2013674Z Warning: you are leaving 1 commit behind, not connected to
 2026-05-20T11:48:44.2015212Z any of your branches:
-2026-05-20T11:48:44.2015897Z 
+2026-05-20T11:48:44.2015897Z
 2026-05-20T11:48:44.2016335Z   5190600 Shadow commit for hjamet
-2026-05-20T11:48:44.2017146Z 
+2026-05-20T11:48:44.2017146Z
 2026-05-20T11:48:44.2017994Z If you want to keep it by creating a new branch, this may be a good time
 2026-05-20T11:48:44.2019679Z to do so with:
-2026-05-20T11:48:44.2020222Z 
+2026-05-20T11:48:44.2020222Z
 2026-05-20T11:48:44.2020719Z  git branch <new-branch-name> 5190600
-2026-05-20T11:48:44.2021600Z 
+2026-05-20T11:48:44.2021600Z
 2026-05-20T11:48:44.2022065Z Switched to a new branch 'main'
 2026-05-20T11:48:44.2023610Z Branch 'main' set up to track remote branch 'main' from 'origin'.
 2026-05-20T11:48:44.2027199Z ##[endgroup]
@@ -123,10 +123,10 @@
 2026-05-20T11:48:44.8233047Z 🚀 Submitting job for UNIL-DESI/cluster-ci@main (RAM: 2.0GB, Timeout: 24.0h, Custom App: False)
 2026-05-20T11:48:45.3422006Z ✅ Job submitted successfully! ID: 0acf873f-06d7-4c8d-a875-06137077b7fd
 2026-05-20T11:48:45.3423008Z ⏳ Waiting for job 0acf873f-06d7-4c8d-a875-06137077b7fd to complete...
-2026-05-20T11:48:45.3457592Z 
-2026-05-20T11:48:47.3520096Z Status: pending... 
-2026-05-20T11:48:49.3645840Z Status: pending... 
-2026-05-20T11:48:49.3646254Z 
+2026-05-20T11:48:45.3457592Z
+2026-05-20T11:48:47.3520096Z Status: pending...
+2026-05-20T11:48:49.3645840Z Status: pending...
+2026-05-20T11:48:49.3646254Z
 2026-05-20T11:48:49.3646813Z [Streaming logs from http://130.223.169.200:6000]
 2026-05-20T11:48:49.3647610Z ==========================================================================
 2026-05-20T11:48:49.3648856Z [2026-05-20 13:48:48] ℹ️  CLUSTER-CI: GitOps Runner Orchestration Start
@@ -139,7 +139,7 @@
 2026-05-20T11:48:49.3655770Z [2026-05-20 13:48:48] ℹ️  [Step 1.5/3] JIT Garbage Collection (GC) Management...
 2026-05-20T11:48:49.3657206Z [2026-05-20 13:48:48] ℹ️  Preventive purge of containers for job 0acf873f-06d7-4c8d-a875-06137077b7fd...
 2026-05-20T11:48:49.3658517Z [2026-05-20 13:48:48] ℹ️  Scanning for zombie containers (JIT Zombie GC)...
-2026-05-20T11:48:51.3762563Z 
+2026-05-20T11:48:51.3762563Z
 2026-05-20T11:48:51.3763853Z ❌ Job 0acf873f-06d7-4c8d-a875-06137077b7fd failed: Worker restarted while the job was running/assigned.
 2026-05-20T11:48:51.3935960Z ##[error]Process completed with exit code 158.
 2026-05-20T11:48:51.4071877Z Post job cleanup.

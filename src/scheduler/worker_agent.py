@@ -46,6 +46,7 @@ SERVICE_URL = os.environ.get("SERVICE_URL", f"http://{HOSTNAME}:{AGENT_PORT}")
 current_job_id = None
 current_process = None
 job_lock = threading.Lock()
+startup_heartbeat_event = threading.Event()
 
 def get_ram_info():
     mem = psutil.virtual_memory()
@@ -83,6 +84,7 @@ def heartbeat_loop():
             }, headers=get_headers(), timeout=10)
             resp.raise_for_status()
             is_startup = False
+            startup_heartbeat_event.set()
         except Exception as e:
             logger.error(f"Failed to send heartbeat: {e}")
         time.sleep(10)
@@ -621,6 +623,14 @@ def main_loop():
     
     # Start heartbeat in background thread
     threading.Thread(target=heartbeat_loop, daemon=True).start()
+
+    # Wait for the first heartbeat to be processed before polling for jobs
+    # This prevents a race condition where a job is fetched before the headnode
+    # knows the worker has restarted (which would kill the job with exit code -98).
+    # We add a 5-minute timeout to avoid infinite deadlocks if the headnode is completely unreachable.
+    if not startup_heartbeat_event.wait(timeout=300):
+        logger.error("Timeout: Failed to synchronize initial heartbeat with headnode after 5 minutes. Shutting down worker.")
+        sys.exit(1)
 
     while True:
         job = poll_for_job()
