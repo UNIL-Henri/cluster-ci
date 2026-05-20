@@ -1,5 +1,6 @@
 import unittest
 import os
+os.environ["CLUSTER_TOKEN"] = ""
 import json
 import shutil
 import time
@@ -41,7 +42,12 @@ class TestDataRouter(unittest.TestCase):
         self.repo_dir.mkdir(exist_ok=True)
         self.registry_path = self.repo_dir / "registry.json"
         if self.registry_path.exists():
-            os.remove(self.registry_path)
+            try:
+                os.remove(self.registry_path)
+            except PermissionError:
+                # If the file is locked under Windows by running threads, truncate its content instead
+                with open(self.registry_path, 'w') as f:
+                    json.dump({}, f)
 
     def test_check_space(self):
         resp = requests.get(f"{self.headnode_url}/check_space")

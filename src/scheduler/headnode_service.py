@@ -986,6 +986,184 @@ def proxy_request(target_url, base_href=None):
     except Exception as e:
         return f"Proxy Error: {str(e)}", 502
 
+@app.route('/api/projects/<path:repo>/artifacts/latest', methods=['GET'])
+def api_latest_artifacts(repo):
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT commit_hash, branch, job_id, created_at 
+            FROM jobs 
+            WHERE repo = ? AND status = 'completed' AND commit_hash IS NOT NULL
+            ORDER BY created_at DESC LIMIT 1
+        ''', (repo,))
+        last_run = cursor.fetchone()
+
+    if not last_run:
+        return jsonify([])
+
+    commit_hash = last_run['commit_hash']
+    local_repo_path = find_local_repo(repo)
+    pat = os.environ.get("GITHUB_PAT")
+    repo_url = f"https://x-access-token:{pat}@github.com/{repo}.git" if pat else f"https://github.com/{repo}.git"
+    source = local_repo_path if local_repo_path else repo_url
+
+    cmd = [DVC_CMD, "list", source, "--rev", commit_hash, "--dvc-only", "--recursive", "--json"]
+    try:
+        env = os.environ.copy()
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        if result.returncode == 0:
+            return Response(result.stdout, mimetype='application/json')
+        else:
+            # Try fetching if unknown Git revision
+            if local_repo_path and "unknown Git revision" in result.stderr:
+                subprocess.run(["git", "fetch", "--all", "--prune"], cwd=local_repo_path, capture_output=True, timeout=30)
+                result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                if result.returncode == 0:
+                    return Response(result.stdout, mimetype='application/json')
+            return jsonify({"error": "Failed to list DVC files", "details": result.stderr}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/projects/<path:repo>/artifact/history', methods=['GET'])
+def api_artifact_history(repo):
+    if 'user' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({"error": "Missing 'path' parameter"}), 400
+
+    local_repo_path = find_local_repo(repo)
+    if not local_repo_path:
+        return jsonify({"error": "Repository not cloned on headnode"}), 404
+
+    # Fetch completed runs
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT job_id, branch, commit_hash, created_at, status 
+            FROM jobs 
+            WHERE repo = ? AND status = 'completed' AND commit_hash IS NOT NULL
+            ORDER BY created_at DESC
+        ''', (repo,))
+        runs = [dict(row) for row in cursor.fetchall()]
+
+    if not runs:
+        return jsonify([])
+
+    # Map commit titles
+    hashes = [run['commit_hash'] for run in runs if run.get('commit_hash')]
+    title_map = {}
+    if hashes:
+        try:
+            res = subprocess.run(
+                ["git", "--no-pager", "show", "-s", "--format=%H|%s"] + hashes,
+                cwd=local_repo_path,
+                capture_output=True,
+                text=True
+            )
+            for line in res.stdout.strip().split('\n'):
+                if '|' in line:
+                    h, t = line.split('|', 1)
+                    title_map[h] = t
+        except Exception:
+            pass
+
+    history = []
+    
+    # Resilient line-by-line YAML parser
+    def parse_dvc_metadata(yaml_content, target_path):
+        try:
+            import yaml
+            data = yaml.safe_load(yaml_content)
+            if data:
+                if 'outs' in data:
+                    for out in data['outs']:
+                        if out.get('path') == os.path.basename(target_path) or out.get('path') == target_path:
+                            return {'md5': out.get('md5'), 'size': out.get('size')}
+                if 'stages' in data:
+                    for stage in data['stages'].values():
+                        if 'outs' in stage:
+                            for out in stage['outs']:
+                                if out.get('path') == target_path or out.get('path') == os.path.basename(target_path):
+                                    return {'md5': out.get('md5'), 'size': out.get('size')}
+        except Exception:
+            pass
+
+        # Regex/line fallback
+        blocks = []
+        current_block = {}
+        in_outs = False
+        for line in yaml_content.splitlines():
+            line_strip = line.strip()
+            if not line_strip:
+                continue
+            if line_strip.startswith('outs:'):
+                in_outs = True
+                continue
+            elif in_outs and len(line) - len(line.lstrip()) == 0:
+                in_outs = False
+            if in_outs or 'outs' in line_strip:
+                if line_strip.startswith('-') or line_strip.startswith('path:'):
+                    if current_block and 'path' in current_block:
+                        blocks.append(current_block)
+                        current_block = {}
+                if ':' in line_strip:
+                    parts = line_strip.split(':', 1)
+                    key = parts[0].strip().replace('-', '').strip()
+                    val = parts[1].strip().strip('"').strip("'")
+                    if key in ['path', 'md5', 'size']:
+                        current_block[key] = val
+        if current_block and 'path' in current_block:
+            blocks.append(current_block)
+            
+        for b in blocks:
+            p = b.get('path', '')
+            if p == target_path or p == os.path.basename(target_path) or target_path.endswith('/' + p):
+                return {
+                    'md5': b.get('md5'),
+                    'size': int(b['size']) if b.get('size') and b['size'].isdigit() else None
+                }
+        return None
+
+    for run in runs:
+        commit = run['commit_hash']
+        metadata = None
+        
+        # Try direct .dvc file
+        dvc_file_path = file_path + ".dvc"
+        try:
+            res = subprocess.run(["git", "show", f"{commit}:{dvc_file_path}"], cwd=local_repo_path, capture_output=True, text=True)
+            if res.returncode == 0:
+                metadata = parse_dvc_metadata(res.stdout, file_path)
+        except Exception:
+            pass
+
+        # Try dvc.lock
+        if not metadata:
+            try:
+                res = subprocess.run(["git", "show", f"{commit}:dvc.lock"], cwd=local_repo_path, capture_output=True, text=True)
+                if res.returncode == 0:
+                    metadata = parse_dvc_metadata(res.stdout, file_path)
+            except Exception:
+                pass
+
+        if metadata and metadata.get('md5'):
+            history.append({
+                'job_id': run['job_id'],
+                'branch': run['branch'],
+                'commit_hash': commit,
+                'commit_title': title_map.get(commit, commit[:8]),
+                'created_at': run['created_at'],
+                'md5': metadata['md5'],
+                'size': metadata['size']
+            })
+
+    return jsonify(history)
+
 if __name__ == '__main__':
     init_db()
     # Start cleanup thread

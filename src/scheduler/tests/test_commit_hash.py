@@ -1,5 +1,6 @@
 import unittest
 import os
+os.environ["CLUSTER_TOKEN"] = ""
 import sys
 import time
 import threading

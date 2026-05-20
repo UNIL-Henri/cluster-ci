@@ -6,15 +6,20 @@ decoding and exception handling, alongside a sliding window history filter
 to guarantee flawless real-time extraction of clean, non-duplicated log lines.
 """
 import sys
+import os
 import re
 import codecs
+import tempfile
 import traceback
+
+debug_log_path = os.path.join(tempfile.gettempdir(), "tmate_filter_debug.log")
 
 WIDTH = 160
 HEIGHT = 24
 
 # Screen buffer and cursor state
 grid = [[" " for _ in range(WIDTH)] for _ in range(HEIGHT)]
+last_printed_content = ["" for _ in range(HEIGHT)]
 x, y = 0, 0
 
 state = "NORMAL"
@@ -25,14 +30,17 @@ recent_printed = []
 MAX_RECENT = 100
 
 def scroll_up():
-    global grid
+    global grid, last_printed_content
     # Get the line that is about to scroll out of view (the top line)
     top_line = "".join(grid[0]).rstrip()
     # Scroll the grid
     grid = grid[1:] + [[" " for _ in range(WIDTH)]]
-    print_line(top_line)
+    # Shift last printed content to stay in sync
+    last_printed_content = last_printed_content[1:] + [""]
+    # Force print the line leaving the screen so it is never lost
+    print_line(top_line, force=True)
 
-def print_line(line):
+def print_line(line, force=False):
     if not line:
         return
     line = line.strip()
@@ -60,19 +68,32 @@ def print_line(line):
     if re.match(r"^Checking out .+:\s+\d+%", line):
         return
 
-    # Filter out duplicates using our sliding window
-    if line in recent_printed:
-        return
+    # Filter out duplicates using our sliding window only when not forcing output
+    if not force:
+        if line in recent_printed:
+            return
 
-    # Save to sliding window
-    recent_printed.append(line)
-    if len(recent_printed) > MAX_RECENT:
-        recent_printed.pop(0)
+        # Save to sliding window
+        recent_printed.append(line)
+        if len(recent_printed) > MAX_RECENT:
+            recent_printed.pop(0)
 
     print(line, flush=True)
 
+def flush_completed_lines():
+    global grid, y, last_printed_content
+    # Print all completed lines above the current cursor position
+    for r in range(min(y, HEIGHT)):
+        line = "".join(grid[r]).rstrip()
+        if line:
+            # Only print if this specific line in the grid has updated
+            if line != last_printed_content[r]:
+                print_line(line, force=False)
+                last_printed_content[r] = line
+
 def apply_csi(cmd, params):
-    global x, y, grid
+    global x, y, grid, last_printed_content
+    old_y = y
     parts = params.split(";")
     nums = []
     for p in parts:
@@ -109,15 +130,20 @@ def apply_csi(cmd, params):
                 grid[y][i] = " "
         elif mode == 2:  # Erase entire line
             grid[y] = [" " for _ in range(WIDTH)]
+            last_printed_content[y] = ""
     elif cmd == "J":  # Erase in Display
         mode = nums[0] if len(nums) > 0 else 0
         if mode == 2:  # Clear entire screen
             grid = [[" " for _ in range(WIDTH)] for _ in range(HEIGHT)]
+            last_printed_content = ["" for _ in range(HEIGHT)]
             x, y = 0, 0
     elif cmd == "S":  # Scroll Up
         n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
         for _ in range(n):
             scroll_up()
+
+    if y != old_y:
+        flush_completed_lines()
 
 def main():
     global x, y, state, csi_params
@@ -126,7 +152,7 @@ def main():
     try:
         reader = codecs.getreader("utf-8")(sys.stdin.buffer, errors="replace")
     except Exception as e:
-        with open("/tmp/tmate_filter_debug.log", "w") as f:
+        with open(debug_log_path, "w") as f:
             f.write(f"Failed to initialize reader: {e}\n")
             traceback.print_exc(file=f)
         return
@@ -145,6 +171,7 @@ def main():
                     if y >= HEIGHT:
                         scroll_up()
                         y = HEIGHT - 1
+                    flush_completed_lines()
                 elif char == "\r":
                     x = 0
                 elif char == "\b":
@@ -164,6 +191,7 @@ def main():
                             if y >= HEIGHT:
                                 scroll_up()
                                 y = HEIGHT - 1
+                            flush_completed_lines()
 
             elif state == "ESC":
                 if char == "[":
@@ -184,7 +212,7 @@ def main():
                     apply_csi(char, csi_params)
                     state = "NORMAL"
     except Exception as e:
-        with open("/tmp/tmate_filter_debug.log", "w") as f:
+        with open(debug_log_path, "w") as f:
             f.write(f"Exception during character loop: {e}\n")
             traceback.print_exc(file=f)
 
@@ -192,9 +220,9 @@ def main():
     try:
         for r in range(HEIGHT):
             line = "".join(grid[r]).rstrip()
-            print_line(line)
+            print_line(line, force=True)
     except Exception as e:
-        with open("/tmp/tmate_filter_debug.log", "a") as f:
+        with open(debug_log_path, "a") as f:
             f.write(f"Exception during final dump: {e}\n")
             traceback.print_exc(file=f)
 

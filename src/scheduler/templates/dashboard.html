@@ -2,61 +2,247 @@
 <html>
 <head>
     <title>Cluster-CI Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
+        :root {
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'Fira Code', 'Courier New', Courier, monospace;
+            --bg-page: #f8fafc;
+            --bg-card: #ffffff;
+            --border-color: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #eff6ff;
+            --success: #10b981;
+            --success-light: #ecfdf5;
+            --danger: #ef4444;
+            --danger-light: #fef2f2;
+            --warning: #f59e0b;
+            --warning-light: #fffbeb;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+            --shadow-premium: 0 20px 25px -5px rgba(0, 0, 0, 0.03), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
+            --radius-md: 10px;
+            --radius-lg: 14px;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-page);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .navbar-premium {
+            background-color: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+        .navbar-premium .navbar-brand {
+            font-weight: 700;
+            color: var(--primary) !important;
+            letter-spacing: -0.025em;
+        }
+
+        .breadcrumb-premium {
+            background-color: var(--bg-card) !important;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px 18px !important;
+            box-shadow: var(--shadow-sm);
+        }
+        .breadcrumb-item {
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            color: var(--primary);
+            transition: color 0.15s ease;
+        }
+        .breadcrumb-item:hover {
+            color: var(--primary-hover);
+        }
+        .breadcrumb-item.active {
+            cursor: default;
+            color: var(--text-secondary);
+        }
+
+        /* Tabs styling */
+        .premium-tabs {
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 25px;
+        }
+        .premium-tab-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.95rem;
+            padding: 10px 20px;
+            position: relative;
+            transition: color 0.2s;
+            outline: none;
+        }
+        .premium-tab-btn:hover {
+            color: var(--primary);
+        }
+        .premium-tab-btn.active {
+            color: var(--primary);
+        }
+        .premium-tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: var(--primary);
+            border-radius: 2px;
+        }
+
+        /* Cards and interactive components */
+        .card-premium {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-premium:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary);
+        }
+
         .explorer-item {
             cursor: pointer;
-            transition: background-color 0.2s;
-            border-radius: 8px;
-            padding: 15px;
             text-align: center;
+            padding: 24px 16px;
             height: 100%;
         }
-        .explorer-item:hover {
-            background-color: #e9ecef;
-        }
+
         .explorer-icon {
-            font-size: 3rem;
+            font-size: 2.75rem;
             display: block;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            transition: transform 0.2s ease;
         }
-        .folder-icon { color: #ffca28; }
-        .file-icon { color: #90a4ae; }
-        .breadcrumb-item { cursor: pointer; color: #0d6efd; }
-        .breadcrumb-item.active { cursor: default; color: #6c757d; }
-        .status-badge {
-            font-size: 0.8rem;
-            padding: 0.3em 0.6em;
-            border-radius: 10px;
+        .explorer-item:hover .explorer-icon {
+            transform: scale(1.08);
         }
-        #preview-content img {
-            max-width: 100%;
-            height: auto;
+        .folder-icon { color: #f59e0b; }
+        .file-icon { color: #64748b; }
+
+        .search-container-premium {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 4px 12px;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            align-items: center;
+            transition: border-color 0.2s;
         }
-        #preview-content pre {
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 4px;
-            max-height: 500px;
-            overflow-y: auto;
+        .search-container-premium:focus-within {
+            border-color: var(--primary);
         }
-        .table-preview {
-            font-size: 0.85rem;
+        .search-input-premium {
+            border: none;
+            outline: none;
+            padding: 8px;
+            width: 100%;
+            font-size: 0.9rem;
+            color: var(--text-primary);
         }
-        /* Override row-cols for full-width elements */
+
         .full-width {
             flex: 0 0 100% !important;
             max-width: 100% !important;
         }
+
+        /* Artifact tree view */
+        .artifact-tree-node {
+            border-left: 1px dashed var(--border-color);
+            margin-left: 15px;
+            padding-left: 15px;
+        }
+        .artifact-tree-header {
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            padding: 6px 10px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.15s;
+        }
+        .artifact-tree-header:hover {
+            background-color: var(--primary-light);
+            color: var(--primary);
+        }
+
+        /* Statuses */
+        .badge-premium {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .badge-success-premium { background-color: var(--success-light); color: var(--success); }
+        .badge-danger-premium { background-color: var(--danger-light); color: var(--danger); }
+        .badge-warning-premium { background-color: var(--warning-light); color: var(--warning); }
+        .badge-primary-premium { background-color: var(--primary-light); color: var(--primary); }
+
+        /* Preview styles */
+        #preview-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+        }
+        #preview-content pre {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            padding: 1.25rem;
+            border-radius: var(--radius-md);
+            max-height: 550px;
+            overflow-y: auto;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            border: 1px solid #1e293b;
+        }
+        .table-preview {
+            font-size: 0.82rem;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .table-preview th {
+            background-color: #f1f5f9;
+            color: var(--text-secondary);
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+        }
+
         /* Log modal segmented view */
         .log-stage-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
             gap: 8px;
             padding: 12px;
-            background: #161616;
-            border-bottom: 1px solid #333;
+            background: #0f172a;
+            border-bottom: 1px solid #1e293b;
         }
         .log-stage-btn {
             display: flex;
@@ -76,49 +262,142 @@
         .log-stage-btn i { font-size: 1rem; flex-shrink: 0; }
         .log-stage-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
         .log-stage-btn.active { box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(255,255,255,0.3); transform: translateY(-1px); }
-        /* Status colors */
-        .log-stage-btn.status-success { background: #198754; color: #fff; border-color: #198754; }
-        .log-stage-btn.status-warning { background: #ffc107; color: #212529; border-color: #ffc107; }
-        .log-stage-btn.status-error { background: #dc3545; color: #fff; border-color: #dc3545; }
-        .log-stage-btn.status-neutral { background: #2a2a2a; color: #adb5bd; border-color: #444; }
-        .log-stage-btn.status-running { background: #0d6efd; color: #fff; border-color: #0d6efd; animation: pulse-glow 2s infinite; }
+        .log-stage-btn.status-success { background: var(--success); color: #fff; border-color: var(--success); }
+        .log-stage-btn.status-warning { background: var(--warning); color: #212529; border-color: var(--warning); }
+        .log-stage-btn.status-error { background: var(--danger); color: #fff; border-color: var(--danger); }
+        .log-stage-btn.status-neutral { background: #1e293b; color: #94a3b8; border-color: #334155; }
+        .log-stage-btn.status-running { background: var(--primary); color: #fff; border-color: var(--primary); animation: pulse-glow 2s infinite; }
+        
         @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 4px rgba(13,110,253,0.4); }
-            50% { box-shadow: 0 0 12px rgba(13,110,253,0.8); }
+            0%, 100% { box-shadow: 0 0 4px rgba(37,99,235,0.4); }
+            50% { box-shadow: 0 0 12px rgba(37,99,235,0.8); }
         }
+
         .log-section-content {
             white-space: pre-wrap;
-            font-family: 'Courier New', Courier, monospace;
-            color: #d4d4d4;
-            font-size: 0.9rem;
-            padding: 16px;
+            font-family: var(--font-mono);
+            color: #e2e8f0;
+            font-size: 0.85rem;
+            padding: 18px;
             margin: 0;
             min-height: 300px;
         }
-        .btn-copy-logs {
+
+        /* Additional artifacts and tabs styles */
+        .custom-pills .nav-link {
+            border-radius: var(--radius-md) !important;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding: 10px 20px;
             transition: all 0.2s ease;
+            border: 1px solid transparent;
         }
-        .btn-copy-logs.copied {
-            background-color: #198754 !important;
-            border-color: #198754 !important;
+        .custom-pills .nav-link.active {
+            background-color: var(--primary-light) !important;
+            color: var(--primary) !important;
+            border-color: rgba(37, 99, 235, 0.15) !important;
+        }
+        .custom-pills .nav-link:hover:not(.active) {
+            background-color: #f1f5f9;
+            color: var(--text-primary);
+        }
+        
+        .artifact-tree-item {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.4);
+        }
+        .artifact-tree-item:hover {
+            background-color: var(--primary-light) !important;
+            transform: translateX(4px);
+        }
+        .file-node:hover .file-name {
+            color: var(--primary);
+        }
+        .folder-header:hover .folder-name {
+            color: var(--primary);
+        }
+        
+        .folder-children {
+            transition: all 0.2s ease-out;
+        }
+        .chevron-icon {
+            transition: transform 0.2s ease;
+        }
+        .text-amber-500 {
+            color: #f59e0b !important;
+        }
+        .text-slate-800 {
+            color: #1e293b !important;
+        }
+        .text-slate-700 {
+            color: #334155 !important;
+        }
+        .text-slate-500 {
+            color: #64748b !important;
+        }
+        .text-slate-400 {
+            color: #94a3b8 !important;
+        }
+        .bg-slate-100 {
+            background-color: #f1f5f9 !important;
+        }
+        .font-medium {
+            font-weight: 500;
+        }
+        .font-bold {
+            font-weight: 600;
+        }
+        .font-normal {
+            font-weight: 400;
+        }
+        .rounded-xl {
+            border-radius: 12px !important;
+        }
+        .rounded-lg {
+            border-radius: 8px !important;
+        }
+        .shadow-sm-subtle {
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.04);
+        }
+        
+        /* Interactive animations and shadow improvements */
+        .card-premium {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.03);
+            border: 1px solid var(--border-color);
+        }
+        .card-premium:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        /* Version nav dropdown custom styles */
+        #preview-version-select {
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+        }
+        #preview-version-select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
         }
     </style>
 </head>
 <body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-premium">
         <div class="container">
-            <a class="navbar-brand" href="/">Cluster-CI</a>
-            <div class="navbar-text text-light">
-                Logged in as <strong>{{ user.login }}</strong>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm ms-3">Logout</a>
+            <a class="navbar-brand" href="/"><i class="bi bi-cpu-fill me-2"></i>Cluster-CI</a>
+            <div class="navbar-text text-secondary">
+                <i class="bi bi-person-circle me-1"></i> Logged in as <strong>{{ user.login }}</strong>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm ms-3"><i class="bi bi-box-arrow-right"></i> Logout</a>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
         <nav aria-label="breadcrumb">
-            <ol class="breadcrumb bg-white p-3 rounded shadow-sm" id="breadcrumb">
-                <li class="breadcrumb-item active" id="breadcrumb-home" onclick="navigateToRoot()">Home</li>
+            <ol class="breadcrumb breadcrumb-premium" id="breadcrumb">
+                <li class="breadcrumb-item active" id="breadcrumb-home" onclick="navigateToRoot()"><i class="bi bi-house-door-fill me-1"></i>Home</li>
             </ol>
         </nav>
 
@@ -194,105 +473,100 @@
 
         const MAX_PREVIEW_SIZE = 10 * 1024 * 1024; // 10MB
 
-        function navigateToVersion(jobId, path) {
-            const run = window.allRuns.find(r => r.job_id === jobId);
-            if (!run) return;
-            
-            currentState.jobId = run.job_id;
-            currentState.branch = run.branch;
-            currentState.commitHash = run.commit_hash;
-            currentState.createdAt = run.created_at;
-            updateBreadcrumb();
-            
-            const [owner, name] = currentState.repo.split('/');
-            const rev = run.commit_hash || run.branch || 'main';
-            const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(path)}`;
-            previewFile(downloadUrl, path, 0);
-        }
+        // Global variables to track history navigation inside the modal
+        let modalUniqueVersions = [];
+        let modalCurrentVersionIndex = -1;
+        let modalFilePath = '';
 
         async function previewFile(url, path, size) {
-            previewLabel.textContent = `Preview: ${path}`;
+            previewLabel.textContent = `Aperçu: ${path}`;
             previewDownloadBtn.href = url;
             previewContent.innerHTML = '';
-            const navContainer = document.getElementById('preview-version-nav');
+            modalFilePath = path;
             
-            if (window.allRuns && window.allRuns.length > 0) {
-                const currentIndex = window.allRuns.findIndex(r => r.job_id === currentState.jobId);
-                if (currentIndex >= 0) {
-                    const currentRun = window.allRuns[currentIndex];
-                    let prevHtml = '';
-                    if (currentIndex < window.allRuns.length - 1) {
-                        const prevRun = window.allRuns[currentIndex + 1];
-                        const prevDate = new Date(prevRun.created_at).toLocaleString('en-US', {
-                            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-                        }).replace(',', '');
-                        const prevTitle = prevRun.commit_title ? escapeHtml(prevRun.commit_title) : prevRun.job_id.substring(0,8);
-                        prevHtml = `<button class="btn btn-outline-secondary btn-sm" onclick="navigateToVersion('${prevRun.job_id}', '${escapeHtml(path).replace(/'/g, "\\'")}')" title="${prevTitle}">
-                            <i class="bi bi-chevron-left"></i> Version from ${prevDate}
-                        </button>`;
-                    } else {
-                        prevHtml = `<button class="btn btn-outline-secondary btn-sm disabled"><i class="bi bi-chevron-left"></i> Older</button>`;
-                    }
+            const navContainer = document.getElementById('preview-version-nav');
+            navContainer.classList.remove('d-none');
+            navContainer.innerHTML = `
+                <div class="d-flex align-items-center justify-content-center w-100 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                    <span class="text-slate-500 small font-medium">Récupération de l'historique des versions physiques...</span>
+                </div>
+            `;
 
-                    let nextHtml = '';
-                    if (currentIndex > 0) {
-                        const nextRun = window.allRuns[currentIndex - 1];
-                        const nextDate = new Date(nextRun.created_at).toLocaleString('en-US', {
-                            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-                        }).replace(',', '');
-                        const nextTitle = nextRun.commit_title ? escapeHtml(nextRun.commit_title) : nextRun.job_id.substring(0,8);
-                        nextHtml = `<button class="btn btn-outline-secondary btn-sm" onclick="navigateToVersion('${nextRun.job_id}', '${escapeHtml(path).replace(/'/g, "\\'")}')" title="${nextTitle}">
-                            Version from ${nextDate} <i class="bi bi-chevron-right"></i>
-                        </button>`;
-                    } else {
-                        nextHtml = `<button class="btn btn-outline-secondary btn-sm disabled">Newer <i class="bi bi-chevron-right"></i></button>`;
-                    }
-
-                    const currentTitle = currentRun.commit_title ? escapeHtml(currentRun.commit_title) : currentRun.job_id.substring(0,8);
-                    
-                    navContainer.innerHTML = `
-                        <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border w-100">
-                            ${prevHtml}
-                            <div class="text-center mx-2 text-truncate" style="max-width: 45%;" title="${currentTitle}">
-                                <small class="text-muted d-block" style="font-size: 0.75rem;">Associated Commit</small>
-                                <strong>${currentTitle}</strong>
-                            </div>
-                            ${nextHtml}
-                        </div>
-                    `;
-
-                    navContainer.classList.remove('d-none');
-                } else {
-                    navContainer.classList.add('d-none');
-                }
-            } else {
-                navContainer.classList.add('d-none');
-            }
-
-            const ext = path.split('.').pop().toLowerCase();
-            const isImage = ['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext);
-            const isCSV = ext === 'csv';
-            const isText = ['json', 'yaml', 'yml', 'txt', 'log', 'md'].includes(ext);
-
-            if (!isImage && !isCSV && !isText) {
-                previewContent.innerHTML = `<div class="alert alert-warning">Preview not supported for this file type (.${ext}). Please download the file to view it.</div>`;
-                previewModal.show();
-                return;
-            }
-
-            if (size > MAX_PREVIEW_SIZE) {
-                previewContent.innerHTML = `<div class="alert alert-warning">File is too large to preview (${(size / (1024 * 1024)).toFixed(1)} MB). Please download the file to view it.</div>`;
-                previewModal.show();
-                return;
-            }
+            // Reset navigation variables
+            modalUniqueVersions = [];
+            modalCurrentVersionIndex = -1;
 
             previewLoading.classList.remove('d-none');
             previewModal.show();
 
+            // Load file content (the latest or initially targeted version)
+            await loadPreviewContent(url, path, size);
+
+            // Fetch the physical version history of the artifact
+            try {
+                const historyUrl = `/api/projects/${currentState.repo}/artifact/history?path=${encodeURIComponent(path)}`;
+                const resp = await fetch(historyUrl);
+                if (!resp.ok) throw new Error('Impossible de charger l\'historique');
+                const history = await resp.json();
+
+                if (history && history.length > 0) {
+                    // Group history by MD5
+                    const seenMd5s = new Set();
+                    modalUniqueVersions = [];
+                    for (const entry of history) {
+                        if (!seenMd5s.has(entry.md5)) {
+                            seenMd5s.add(entry.md5);
+                            modalUniqueVersions.push({
+                                md5: entry.md5,
+                                size: entry.size,
+                                firstRun: entry,
+                                allRuns: [entry]
+                            });
+                        } else {
+                            const group = modalUniqueVersions.find(v => v.md5 === entry.md5);
+                            if (group) group.allRuns.push(entry);
+                        }
+                    }
+
+                    // Sort unique versions chronologically (newest first)
+                    if (modalUniqueVersions.length > 0) {
+                        modalCurrentVersionIndex = 0;
+                        renderVersionNavigation();
+                    } else {
+                        navContainer.innerHTML = `<div class="alert alert-info py-2 px-3 m-0 small w-100">Aucun historique de versions physiques trouvé.</div>`;
+                    }
+                } else {
+                    navContainer.innerHTML = `<div class="alert alert-info py-2 px-3 m-0 small w-100">Aucune autre version physique trouvée pour cet artefact.</div>`;
+                }
+            } catch (err) {
+                console.error("Error loading version history:", err);
+                navContainer.innerHTML = `<div class="alert alert-warning py-2 px-3 m-0 small w-100"><i class="bi bi-exclamation-circle me-1"></i>Historique non disponible pour cet artefact (${err.message}).</div>`;
+            }
+        }
+
+        async function loadPreviewContent(url, path, size) {
+            const ext = path.split('.').pop().toLowerCase();
+            const isImage = ['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext);
+            const isCSV = ext === 'csv';
+            const isText = ['json', 'yaml', 'yml', 'txt', 'log', 'md', 'py', 'sh', 'txt'].includes(ext);
+
+            if (!isImage && !isCSV && !isText) {
+                previewContent.innerHTML = `<div class="alert alert-warning">L'aperçu n'est pas supporté pour le type de fichier (.${ext}). Veuillez le télécharger pour le consulter.</div>`;
+                return;
+            }
+
+            const MAX_PREVIEW_SIZE = 10 * 1024 * 1024; // 10MB
+            if (size > MAX_PREVIEW_SIZE) {
+                previewContent.innerHTML = `<div class="alert alert-warning">Le fichier est trop volumineux pour être prévisualisé (${formatBytes(size)}). Veuillez le télécharger.</div>`;
+                return;
+            }
+
+            previewLoading.classList.remove('d-none');
             try {
                 if (isImage) {
                     const viewUrl = url + (url.includes('?') ? '&' : '?') + 'inline=true';
-                    previewContent.innerHTML = `<div class="text-center"><img src="${viewUrl}" alt="${escapeHtml(path)}"></div>`;
+                    previewContent.innerHTML = `<div class="text-center py-3"><img src="${viewUrl}" alt="${escapeHtml(path)}" style="max-height: 500px; object-fit: contain;"></div>`;
                 } else if (isCSV) {
                     const resp = await fetch(url);
                     const text = await resp.text();
@@ -305,15 +579,113 @@
                     let truncationNotice = '';
                     if (lines.length > 100) {
                         displayText = lines.slice(0, 100).join('\n');
-                        truncationNotice = '<div class="text-muted small mt-2 text-center">Showing first 100 lines. Download the file for full content.</div>';
+                        truncationNotice = `<div class="text-muted small mt-2 text-center">Affichage des 100 premières lignes. Téléchargez le fichier complet.</div>`;
                     }
-                    previewContent.innerHTML = `<pre><code>${escapeHtml(displayText)}</code></pre>${truncationNotice}`;
+                    previewContent.innerHTML = `<pre class="bg-dark text-slate-100 p-3 rounded-lg border border-secondary" style="max-height: 500px; overflow-y: auto;"><code style="font-family: var(--font-mono); font-size: 0.85rem;">${escapeHtml(displayText)}</code></pre>${truncationNotice}`;
                 }
             } catch (err) {
-                previewContent.innerHTML = `<div class="alert alert-danger">Error loading preview: ${err.message}</div>`;
+                previewContent.innerHTML = `<div class="alert alert-danger">Erreur de chargement de l'aperçu: ${err.message}</div>`;
             } finally {
                 previewLoading.classList.add('d-none');
             }
+        }
+
+        function renderVersionNavigation() {
+            const navContainer = document.getElementById('preview-version-nav');
+            if (modalUniqueVersions.length === 0) {
+                navContainer.classList.add('d-none');
+                return;
+            }
+
+            const currentVersion = modalUniqueVersions[modalCurrentVersionIndex];
+            const hasPrev = modalCurrentVersionIndex < modalUniqueVersions.length - 1;
+            const hasNext = modalCurrentVersionIndex > 0;
+
+            let selectOptionsHtml = '';
+            modalUniqueVersions.forEach((v, idx) => {
+                const dateStr = new Date(v.firstRun.created_at).toLocaleString('fr-FR', {
+                    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+                });
+                const commitTitle = v.firstRun.commit_title || v.firstRun.job_id.substring(0, 8);
+                const sizeStr = v.size ? formatBytes(v.size) : 'Taille inconnue';
+                const isSelected = idx === modalCurrentVersionIndex ? 'selected' : '';
+                selectOptionsHtml += `<option value="${idx}" ${isSelected}>Version ${modalUniqueVersions.length - idx} (du ${dateStr}) - ${escapeHtml(commitTitle)} [${sizeStr}]</option>`;
+            });
+
+            navContainer.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 w-100 p-3 bg-slate-50 rounded-xl border border-slate-200 shadow-sm-subtle">
+                    <!-- Prev button -->
+                    <button id="preview-prev-btn" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 font-medium px-3" ${!hasPrev ? 'disabled' : ''}>
+                        <i class="bi bi-chevron-left"></i> Plus ancienne
+                    </button>
+                    
+                    <!-- Centered Version Select and Details -->
+                    <div class="d-flex align-items-center gap-3 flex-grow-1 justify-content-center" style="max-width: 65%; min-width: 250px;">
+                        <div class="d-flex flex-column w-100">
+                            <label class="small text-slate-500 font-bold mb-1"><i class="bi bi-clock-history me-1"></i>Historique des versions physiques (MD5 unique)</label>
+                            <select id="preview-version-select" class="form-select form-select-sm border-slate-200 rounded-lg text-slate-800 font-medium bg-white">
+                                ${selectOptionsHtml}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2 align-items-center">
+                        <!-- Go to run button -->
+                        <button id="preview-goto-run-btn" class="btn btn-primary btn-sm d-flex align-items-center gap-1 font-medium px-3 text-white">
+                            <i class="bi bi-terminal"></i> Consulter le Run
+                        </button>
+                        <!-- Next button -->
+                        <button id="preview-next-btn" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 font-medium px-3" ${!hasNext ? 'disabled' : ''}>
+                            Plus récente <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Bind select change event
+            const selectEl = document.getElementById('preview-version-select');
+            selectEl.addEventListener('change', (e) => {
+                changeVersion(parseInt(e.target.value));
+            });
+
+            // Bind Prev / Next button events
+            document.getElementById('preview-prev-btn').addEventListener('click', () => {
+                if (hasPrev) changeVersion(modalCurrentVersionIndex + 1);
+            });
+            document.getElementById('preview-next-btn').addEventListener('click', () => {
+                if (hasNext) changeVersion(modalCurrentVersionIndex - 1);
+            });
+
+            // Bind Go to Run button event
+            document.getElementById('preview-goto-run-btn').addEventListener('click', () => {
+                const runId = currentVersion.firstRun.job_id;
+                // Close preview modal
+                const modalElement = document.getElementById('previewModal');
+                const modalInstance = bootstrap.Modal.getInstance(modalElement);
+                if (modalInstance) {
+                    modalInstance.hide();
+                }
+                // Show logs
+                showLogs(runId);
+            });
+        }
+
+        async function changeVersion(newIndex) {
+            if (newIndex < 0 || newIndex >= modalUniqueVersions.length) return;
+            modalCurrentVersionIndex = newIndex;
+            
+            const version = modalUniqueVersions[modalCurrentVersionIndex];
+            const [owner, name] = currentState.repo.split('/');
+            const selectUrl = `/artifacts/${owner}/${name}/${version.firstRun.commit_hash}/${encodeURIComponent(modalFilePath)}`;
+            
+            // Update preview visual download link
+            previewDownloadBtn.href = selectUrl;
+            
+            // Re-render the navigation interface
+            renderVersionNavigation();
+            
+            // Load and display the content of the selected version
+            await loadPreviewContent(selectUrl, modalFilePath, version.size || 0);
         }
 
         function escapeHtml(text) {
@@ -612,8 +984,80 @@
         async function loadRuns(repo) {
             currentState = { view: 'project', repo: repo, jobId: null };
             updateBreadcrumb();
-            container.innerHTML = '<div class="col-12 text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+            
+            // Set up the tab layout in the main explorer container!
+            container.innerHTML = `
+                <div class="col-12 full-width mb-3">
+                    <ul class="nav nav-pills custom-pills" id="project-tabs" role="tablist" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; gap: 8px;">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active premium-tab-btn active" id="runs-tab" data-bs-toggle="pill" data-bs-target="#runs-pane" type="button" role="tab" aria-controls="runs-pane" aria-selected="true">
+                                <i class="bi bi-clock-history me-2"></i>Runs & Logs
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link premium-tab-btn" id="artifacts-tab" data-bs-toggle="pill" data-bs-target="#artifacts-pane" type="button" role="tab" aria-controls="artifacts-pane" aria-selected="false">
+                                <i class="bi bi-box-seam me-2"></i>Artefacts Actuels
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-12 full-width">
+                    <div class="tab-content" id="project-tabs-content">
+                        <!-- Runs and Logs pane -->
+                        <div class="tab-pane fade show active" id="runs-pane" role="tabpanel" aria-labelledby="runs-tab">
+                            <div id="runs-list" class="row row-cols-1 row-cols-md-3 row-cols-lg-4 g-4 mt-2">
+                                <div class="col-12 text-center py-5">
+                                    <div class="spinner-border text-primary" role="status"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Current artifacts pane -->
+                        <div class="tab-pane fade" id="artifacts-pane" role="tabpanel" aria-labelledby="artifacts-tab">
+                            <div class="card shadow-sm border-0 mb-4 bg-white rounded-xl mt-3">
+                                <div class="card-body p-4">
+                                    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                                        <h5 class="card-title text-slate-800 mb-0 font-bold d-flex align-items-center gap-2">
+                                            <i class="bi bi-folder2-open text-primary"></i> Explorateur d'Artefacts Actuels
+                                        </h5>
+                                        <div class="search-box position-relative" style="width: 320px;">
+                                            <span class="position-absolute top-50 translate-middle-y ms-3 text-slate-400">
+                                                <i class="bi bi-search"></i>
+                                            </span>
+                                            <input type="text" id="artifact-search" class="form-control ps-5 rounded-pill border-slate-200" placeholder="Rechercher par nom ou dossier..." style="font-size: 0.9rem; font-weight: 500; height: 42px;">
+                                        </div>
+                                    </div>
+                                    <div id="artifacts-tree-container" class="py-2">
+                                        <div class="text-center py-5">
+                                            <div class="spinner-border text-primary" role="status"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
             document.getElementById('cluster-stats-container').innerHTML = '';
+
+            // Set up search event listener
+            setTimeout(() => {
+                const searchInput = document.getElementById('artifact-search');
+                if (searchInput) {
+                    searchInput.addEventListener('input', (e) => filterArtifacts(e.target.value));
+                }
+            }, 100);
+
+            // Set up click tab listener to load artifacts
+            const artifactsTabBtn = document.getElementById('artifacts-tab');
+            if (artifactsTabBtn) {
+                artifactsTabBtn.addEventListener('click', () => {
+                    loadProjectArtifacts(repo);
+                });
+            }
+
+            const runsList = document.getElementById('runs-list');
 
             try {
                 const resp = await fetch(`/api/projects/${repo}/runs`);
@@ -626,11 +1070,11 @@
                 window.allRuns = runs;
 
                 if (runs.length === 0) {
-                    container.innerHTML = '<div class="col-12"><div class="alert alert-info">No runs found for this project.</div></div>';
+                    runsList.innerHTML = '<div class="col-12"><div class="alert alert-info">No runs found for this project.</div></div>';
                     return;
                 }
 
-                container.innerHTML = '';
+                runsList.innerHTML = '';
 
                 const runningRuns = runs.filter(r => r.status === 'running');
                 const otherRuns = runs.filter(r => r.status !== 'running');
@@ -639,7 +1083,7 @@
                     const runningHeader = document.createElement('div');
                     runningHeader.className = 'col-12 full-width mb-3';
                     runningHeader.innerHTML = '<h4 class="text-primary"><i class="bi bi-activity"></i> Currently Running</h4>';
-                    container.appendChild(runningHeader);
+                    runsList.appendChild(runningHeader);
 
                     runningRuns.forEach(run => {
                         const col = document.createElement('div');
@@ -678,14 +1122,14 @@
                                 </div>
                             </div>
                         `;
-                        container.appendChild(col);
+                        runsList.appendChild(col);
                     });
 
                     if (otherRuns.length > 0) {
                         const divider = document.createElement('div');
                         divider.className = 'col-12 full-width mt-4 mb-3';
                         divider.innerHTML = '<h4 class="text-secondary"><i class="bi bi-clock-history"></i> Run History</h4><hr>';
-                        container.appendChild(divider);
+                        runsList.appendChild(divider);
                     }
                 }
 
@@ -733,11 +1177,234 @@
                     card.appendChild(date);
                     col.appendChild(card);
 
-                    container.appendChild(col);
+                    runsList.appendChild(col);
                 });
             } catch (err) {
-                container.innerHTML = `<div class="col-12"><div class="alert alert-danger">Error loading runs: ${err.message}</div></div>`;
+                runsList.innerHTML = `<div class="col-12"><div class="alert alert-danger">Error loading runs: ${err.message}</div></div>`;
             }
+        }
+
+        async function loadProjectArtifacts(repo) {
+            const container = document.getElementById('artifacts-tree-container');
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="text-muted small mt-2">Chargement des artefacts récents...</div>
+                </div>
+            `;
+
+            try {
+                const resp = await fetch(`/api/projects/${repo}/artifacts/latest`);
+                if (!resp.ok) {
+                    throw new Error('Impossible de charger les fichiers DVC les plus récents.');
+                }
+                const files = await resp.json();
+                
+                if (!files || files.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-5">
+                            <i class="bi bi-info-circle text-muted fs-2 mb-2 d-block"></i>
+                            <div class="text-slate-500">Aucun artefact (DVC) n'a été trouvé pour le dernier run complété de ce projet.</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let latestCommitHash = 'main';
+                if (window.allRuns && window.allRuns.length > 0) {
+                    const completedRun = window.allRuns.find(r => r.status === 'completed' && r.commit_hash);
+                    if (completedRun) {
+                        latestCommitHash = completedRun.commit_hash;
+                    }
+                }
+                window.latestCommitHash = latestCommitHash;
+
+                const treeRoot = buildTreeFromPaths(files);
+                const htmlContent = renderTreeNode(treeRoot);
+                container.innerHTML = htmlContent;
+
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="alert alert-danger d-flex align-items-center gap-2">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <div>Erreur: ${err.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        function buildTreeFromPaths(files) {
+            const root = { name: 'Root', isDir: true, children: {}, path: '' };
+
+            files.forEach(file => {
+                const parts = file.path.split('/');
+                let current = root;
+                let cumulativePath = '';
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    cumulativePath = cumulativePath ? cumulativePath + '/' + part : part;
+                    const isLast = (i === parts.length - 1);
+
+                    if (isLast) {
+                        current.children[part] = {
+                            name: part,
+                            isDir: false,
+                            path: file.path,
+                            size: file.size,
+                            isout: file.isout
+                        };
+                    } else {
+                        if (!current.children[part]) {
+                            current.children[part] = {
+                                name: part,
+                                isDir: true,
+                                children: {},
+                                path: cumulativePath
+                            };
+                        }
+                        current = current.children[part];
+                    }
+                }
+            });
+
+            return root;
+        }
+
+        function renderTreeNode(node, depth = 0) {
+            if (!node.isDir) {
+                const ext = node.name.split('.').pop().toLowerCase();
+                let icon = 'bi-file-earmark-text';
+                if (['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext)) icon = 'bi-file-earmark-image';
+                else if (ext === 'csv') icon = 'bi-file-earmark-spreadsheet';
+                else if (['json', 'yaml', 'yml'].includes(ext)) icon = 'bi-file-earmark-code';
+
+                const sizeStr = node.size ? formatBytes(node.size) : 'Fichier DVC';
+                const [owner, name] = currentState.repo.split('/');
+                const rev = window.latestCommitHash || 'main';
+                const downloadUrl = `/artifacts/${owner}/${name}/${rev}/${encodeURIComponent(node.path)}`;
+
+                return `
+                    <div class="artifact-tree-item file-node d-flex align-items-center justify-content-between py-2 px-3 my-1 rounded" 
+                         style="margin-left: ${depth * 15}px; cursor: pointer; background: #fff;" 
+                         onclick="previewFile('${downloadUrl}', '${escapeHtml(node.path).replace(/'/g, "\\'")}', ${node.size || 0})"
+                         data-path="${escapeHtml(node.path).toLowerCase()}">
+                        <div class="d-flex align-items-center text-truncate">
+                            <i class="bi ${icon} text-primary me-2 fs-5"></i>
+                            <span class="file-name text-slate-700 font-medium text-truncate">${escapeHtml(node.name)}</span>
+                        </div>
+                        <span class="badge bg-slate-100 text-slate-500 rounded-pill font-normal small">${sizeStr}</span>
+                    </div>
+                `;
+            }
+
+            const childrenHtml = Object.values(node.children)
+                .sort((a, b) => {
+                    if (a.isDir && !b.isDir) return -1;
+                    if (!a.isDir && b.isDir) return 1;
+                    return a.name.localeCompare(b.name);
+                })
+                .map(child => renderTreeNode(child, depth + 1))
+                .join('');
+
+            if (node.name === 'Root') {
+                return childrenHtml;
+            }
+
+            const folderId = `folder-${node.path.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+            return `
+                <div class="artifact-folder-node" data-path="${escapeHtml(node.path).toLowerCase()}">
+                    <div class="artifact-tree-item folder-header d-flex align-items-center py-2 px-3 my-1 rounded" 
+                         style="margin-left: ${depth * 15}px; cursor: pointer; background: rgba(248, 250, 252, 0.7);" 
+                         onclick="toggleFolder('${folderId}')">
+                        <i class="bi bi-chevron-down chevron-icon me-2 text-slate-400" id="${folderId}-chevron"></i>
+                        <i class="bi bi-folder-fill text-amber-500 me-2 fs-5" id="${folderId}-icon"></i>
+                        <span class="folder-name text-slate-800 font-bold text-truncate">${escapeHtml(node.name)}</span>
+                    </div>
+                    <div id="${folderId}-children" class="folder-children show">
+                        ${childrenHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleFolder(folderId) {
+            const childrenDiv = document.getElementById(`${folderId}-children`);
+            const chevron = document.getElementById(`${folderId}-chevron`);
+            const icon = document.getElementById(`${folderId}-icon`);
+
+            if (childrenDiv.classList.contains('show')) {
+                childrenDiv.classList.remove('show');
+                childrenDiv.style.display = 'none';
+                chevron.classList.replace('bi-chevron-down', 'bi-chevron-right');
+                icon.classList.replace('bi-folder-fill', 'bi-folder');
+            } else {
+                childrenDiv.classList.add('show');
+                childrenDiv.style.display = 'block';
+                chevron.classList.replace('bi-chevron-right', 'bi-chevron-down');
+                icon.classList.replace('bi-folder', 'bi-folder-fill');
+            }
+        }
+
+        function filterArtifacts(query) {
+            const q = query.toLowerCase().trim();
+            
+            const fileNodes = document.querySelectorAll('.file-node');
+            fileNodes.forEach(node => {
+                const path = node.getAttribute('data-path');
+                if (!q || path.includes(q)) {
+                    node.style.setProperty('display', 'flex', 'important');
+                } else {
+                    node.style.setProperty('display', 'none', 'important');
+                }
+            });
+
+            const folderNodes = Array.from(document.querySelectorAll('.artifact-folder-node'));
+            folderNodes.sort((a, b) => {
+                const aDepth = (a.getAttribute('data-path').match(/\//g) || []).length;
+                const bDepth = (b.getAttribute('data-path').match(/\//g) || []).length;
+                return bDepth - aDepth;
+            });
+
+            folderNodes.forEach(folder => {
+                const childrenContainer = folder.querySelector('.folder-children');
+                if (childrenContainer) {
+                    const hasVisibleFiles = Array.from(childrenContainer.children).some(child => {
+                        if (child.classList.contains('file-node')) {
+                            return child.style.display !== 'none';
+                        }
+                        if (child.classList.contains('artifact-folder-node')) {
+                            return child.style.display !== 'none';
+                        }
+                        return false;
+                    });
+
+                    if (hasVisibleFiles) {
+                        folder.style.setProperty('display', 'block', 'important');
+                        if (q) {
+                            const folderId = childrenContainer.id.replace('-children', '');
+                            const chevron = document.getElementById(`${folderId}-chevron`);
+                            const icon = document.getElementById(`${folderId}-icon`);
+                            childrenContainer.classList.add('show');
+                            childrenContainer.style.display = 'block';
+                            if (chevron) chevron.classList.replace('bi-chevron-right', 'bi-chevron-down');
+                            if (icon) icon.classList.replace('bi-folder', 'bi-folder-fill');
+                        }
+                    } else {
+                        folder.style.setProperty('display', 'none', 'important');
+                    }
+                }
+            });
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0 || !bytes) return '0 Octets';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Octets', 'Ko', 'Mo', 'Go', 'To', 'Po', 'Eo', 'Zo', 'Yo'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
         function navigateToRoot() {

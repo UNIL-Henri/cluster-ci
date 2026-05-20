@@ -496,11 +496,29 @@ fi
 if command -v "$TMATE_BIN" &> /dev/null; then
     log_info "🚀 Live Terminal Streaming enabled. Initializing tmate..."
     
+    # Ensure current runner user has a valid SSH key (required by tmate to connect to backend)
+    if [ ! -f "$HOME/.ssh/id_rsa" ] && [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+        log_info "No SSH private key found for current runner user. Generating default id_rsa..."
+        mkdir -p "$HOME/.ssh"
+        chmod 700 "$HOME/.ssh"
+        ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -N ""
+        chmod 600 "$HOME/.ssh/id_rsa"
+        log_success "SSH private key generated successfully at $HOME/.ssh/id_rsa"
+    fi
+    
     # 1. Clean up socket and create temp config to bypass tmate welcome/help screen
+    # We configure official modern ssh.tmate.io on port 443 with official fingerprints to bypass campus DNS filters
     TMATE_SOCKET="/tmp/tmate_${SAFE_JOB_ID}.sock"
     TMATE_CONF="/tmp/tmate_${SAFE_JOB_ID}.conf"
     rm -f "$TMATE_SOCKET" "$TMATE_CONF"
-    echo "set -g tmate-display-help off" > "$TMATE_CONF"
+    
+    cat > "$TMATE_CONF" << 'CONFEOF'
+set -g tmate-display-help off
+set -g tmate-server-host "ssh.tmate.io"
+set -g tmate-server-port 443
+set -g tmate-server-rsa-fingerprint "SHA256:Hthk2T/M/Ivqfk1YYUn5ijC2Att3+UPzD7Rn72P5VWs"
+set -g tmate-server-ed25519-fingerprint "SHA256:jfttvoypkHiQYUqUCwKeqd9d1fJj/ZiQlFOHVl6E9sI"
+CONFEOF
     
     # 2. Start detached session running the execute command (write logs/exit code on host runner)
     TMATE_CMD="echo '⏳ Waiting up to 15s for live terminal connection...'; for i in {1..30}; do if [ \$(\"$TMATE_BIN\" -S \"$TMATE_SOCKET\" display -p '#{session_clients}' 2>/dev/null || echo 0) -gt 0 ]; then echo '🟢 Client connected! Starting execution...'; break; fi; sleep 0.5; done; docker exec -it ${MAIN_CONTAINER_NAME} bash -c \"export PATH=/home/user/shims:\\\$PATH:/home/user/.local/bin && ${EXEC_CMD}\" 2>&1 | stdbuf -oL -eL tee tmate_execution.log; echo \${PIPESTATUS[0]} > tmate_exit_code"

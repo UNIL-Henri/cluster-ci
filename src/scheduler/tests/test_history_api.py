@@ -1,5 +1,6 @@
 import pytest
 import os
+os.environ["CLUSTER_TOKEN"] = ""
 import json
 import sqlite3
 from unittest.mock import patch, MagicMock

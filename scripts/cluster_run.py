@@ -27,6 +27,7 @@ REPO_FULL_NAME = "UNIL-DESI/cluster-ci"
 WIDTH = 160
 HEIGHT = 24
 grid = [[" " for _ in range(WIDTH)] for _ in range(HEIGHT)]
+last_printed_content = ["" for _ in range(HEIGHT)]
 x, y = 0, 0
 state = "NORMAL"
 csi_params = ""
@@ -34,14 +35,36 @@ recent_printed = []
 MAX_RECENT = 100
 
 def scroll_up():
-    global grid
+    global grid, last_printed_content
     # Get the line that is about to scroll out of view (the top line)
     top_line = "".join(grid[0]).rstrip()
     # Scroll the grid
     grid = grid[1:] + [[" " for _ in range(WIDTH)]]
-    print_line(top_line)
+    # Shift last printed content as well to stay in sync with the grid
+    last_printed_content = last_printed_content[1:] + [""]
+    # Force print the line leaving the screen so it is never lost
+    print_line(top_line, force=True)
 
-def print_line(line):
+def flush_completed_lines():
+    global grid, y, last_printed_content
+    # Print all completed lines above the current cursor position
+    for r in range(min(y, HEIGHT)):
+        line = "".join(grid[r]).rstrip()
+        if line:
+            # Only print if this specific line in the grid has updated
+            if line != last_printed_content[r]:
+                print_line(line, force=False)
+                last_printed_content[r] = line
+
+def dump_all_remaining():
+    global grid
+    # Dump all remaining lines containing text without filtering duplicates, to ensure final logs are shown
+    for r in range(HEIGHT):
+        line = "".join(grid[r]).rstrip()
+        if line:
+            print_line(line, force=True)
+
+def print_line(line, force=False):
     if not line:
         return
     line = line.strip()
@@ -69,19 +92,21 @@ def print_line(line):
     if re.match(r"^Checking out .+:\s+\d+%", line):
         return
 
-    # Filter out duplicates using our sliding window
-    if line in recent_printed:
-        return
+    # Filter out duplicates using our sliding window only when not forcing output
+    if not force:
+        if line in recent_printed:
+            return
 
-    # Save to sliding window
-    recent_printed.append(line)
-    if len(recent_printed) > MAX_RECENT:
-        recent_printed.pop(0)
+        # Save to sliding window
+        recent_printed.append(line)
+        if len(recent_printed) > MAX_RECENT:
+            recent_printed.pop(0)
 
     print(line, flush=True)
 
 def apply_csi(cmd, params):
-    global x, y, grid
+    global x, y, grid, last_printed_content
+    old_y = y
     parts = params.split(";")
     nums = []
     for p in parts:
@@ -118,15 +143,20 @@ def apply_csi(cmd, params):
                 grid[y][i] = " "
         elif mode == 2:  # Erase entire line
             grid[y] = [" " for _ in range(WIDTH)]
+            last_printed_content[y] = ""
     elif cmd == "J":  # Erase in Display
         mode = nums[0] if len(nums) > 0 else 0
         if mode == 2:  # Clear entire screen
             grid = [[" " for _ in range(WIDTH)] for _ in range(HEIGHT)]
+            last_printed_content = ["" for _ in range(HEIGHT)]
             x, y = 0, 0
     elif cmd == "S":  # Scroll Up
         n = nums[0] if len(nums) > 0 and nums[0] > 0 else 1
         for _ in range(n):
             scroll_up()
+
+    if y != old_y:
+        flush_completed_lines()
 
 def process_tmate_char(char):
     global x, y, state, csi_params, grid
@@ -138,6 +168,7 @@ def process_tmate_char(char):
             if y >= HEIGHT:
                 scroll_up()
                 y = HEIGHT - 1
+            flush_completed_lines()
         elif char == "\r":
             x = 0
         elif char == "\b":
@@ -157,6 +188,7 @@ def process_tmate_char(char):
                     if y >= HEIGHT:
                         scroll_up()
                         y = HEIGHT - 1
+                    flush_completed_lines()
 
     elif state == "ESC":
         if char == "[":
@@ -179,6 +211,14 @@ def process_tmate_char(char):
 
 def check_dependencies():
     """Verify that gh and git are installed and accessible."""
+    # Robust PATH check for Windows: add standard GitHub CLI path if not present but exists
+    if sys.platform == "win32":
+        standard_path = r"C:\Program Files\GitHub CLI"
+        if os.path.exists(os.path.join(standard_path, "gh.exe")):
+            paths = os.environ.get("PATH", "").split(os.pathsep)
+            if standard_path not in paths:
+                os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + standard_path
+
     try:
         subprocess.run(["git", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -193,28 +233,28 @@ def check_dependencies():
         sys.exit(1)
 
     # Check if in a git repository
-    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
+    res = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if res.returncode != 0 or res.stdout.strip() != "true":
         print("❌ Error: Not in a git repository.", file=sys.stderr)
         sys.exit(1)
 
 def check_gh_auth():
     """Ensure user is logged in to GitHub CLI."""
-    res = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
+    res = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         print("🔐 GitHub CLI not authenticated. Starting login...")
         subprocess.run(["gh", "auth", "login"], check=True)
 
 def get_current_user():
     """Retrieve GitHub username."""
-    res = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True, check=True)
+    res = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
     return res.stdout.strip()
 
 def get_repo_full_name():
     """Find the GitHub repository name from remote origin URL."""
     global REPO_FULL_NAME
     try:
-        res = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
+        res = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
         url = res.stdout.strip()
         # Extract owner/repo from URL (HTTPS or SSH)
         match = re.search(r"github\.com[:/]([^/]+/[^/.]+)(?:\.git)?", url)
@@ -232,7 +272,7 @@ def cleanup():
         if RUN_ID and USER_INTERRUPTED:
             # Check status of the GHA run
             try:
-                res = subprocess.run(["gh", "run", "view", str(RUN_ID), "--json", "status"], capture_output=True, text=True)
+                res = subprocess.run(["gh", "run", "view", str(RUN_ID), "--json", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if res.returncode == 0:
                     status_info = json.loads(res.stdout)
                     status = status_info.get("status")
@@ -259,7 +299,7 @@ def stream_logs(run_id, commit_sha):
         for attempt in range(120):
             # Check if GHA completed in the meantime
             try:
-                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status"], capture_output=True, text=True)
+                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if res.returncode == 0:
                     run_status = json.loads(res.stdout).get("status")
                     if run_status in ("completed", "cancelled"):
@@ -269,7 +309,7 @@ def stream_logs(run_id, commit_sha):
 
             # Check status API for tmate details
             try:
-                res = subprocess.run(["gh", "api", f"repos/{repo_name}/commits/{commit_sha}/statuses"], capture_output=True, text=True)
+                res = subprocess.run(["gh", "api", f"repos/{repo_name}/commits/{commit_sha}/statuses"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if res.returncode == 0:
                     statuses = json.loads(res.stdout)
                     tmate_status = next((x for x in statuses if x.get("context") == "tmate"), None)
@@ -311,6 +351,8 @@ def stream_logs(run_id, commit_sha):
                                     char = decoder.decode(chunk)
                                     if char:
                                         process_tmate_char(char)
+                                # Ensure all remaining lines in virtual terminal grid are dumped
+                                dump_all_remaining()
                             except KeyboardInterrupt:
                                 proc.terminate()
                                 raise
@@ -342,7 +384,7 @@ def stream_logs(run_id, commit_sha):
         print("⏳ Waiting for GitHub Actions to finalize...")
         for _ in range(30):
             try:
-                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True)
+                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if res.returncode == 0:
                     info = json.loads(res.stdout)
                     status = info.get("status")
@@ -366,7 +408,7 @@ def stream_logs(run_id, commit_sha):
     
     while True:
         try:
-            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True)
+            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
             info = json.loads(res.stdout) if res.returncode == 0 else {"status": "queued", "conclusion": None}
         except Exception:
             info = {"status": "queued", "conclusion": None}
@@ -383,7 +425,7 @@ def stream_logs(run_id, commit_sha):
             print("📥 Job completed. Fetching consolidated logs...")
             print("==========================================================================")
             try:
-                log_res = subprocess.run(["gh", "run", "view", str(run_id), "--log"], capture_output=True, text=True)
+                log_res = subprocess.run(["gh", "run", "view", str(run_id), "--log"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if log_res.returncode == 0:
                     for line in log_res.stdout.splitlines():
                         # Parse lines that have: "timestamp \t step_name \t log_content"
@@ -442,12 +484,12 @@ def shadow_run(background=False):
         # 2. git add --all (adds tracked, modified, and untracked files)
         subprocess.run(["git", "add", "--all"], env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # 3. git write-tree
-        res_tree = subprocess.run(["git", "write-tree"], env=env, capture_output=True, text=True, check=True)
+        res_tree = subprocess.run(["git", "write-tree"], env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
         tree = res_tree.stdout.strip()
         # 4. git commit-tree tree -p HEAD -m "Shadow commit..."
         res_commit = subprocess.run(
             ["git", "commit-tree", tree, "-p", "HEAD", "-m", f"Shadow commit for {user}"],
-            env=env, capture_output=True, text=True, check=True
+            env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True
         )
         commit_sha = res_commit.stdout.strip()
         COMMIT_SHA = commit_sha
@@ -464,7 +506,7 @@ def shadow_run(background=False):
     # Detect the last active GHA run ID before pushing to avoid checking a stale run
     last_known_run_id = None
     try:
-        res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+        res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         if res.returncode == 0:
             runs = json.loads(res.stdout)
             if runs:
@@ -486,7 +528,7 @@ def shadow_run(background=False):
     
     for attempt in range(15):
         try:
-            res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId,status"], capture_output=True, text=True)
+            res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId,status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
             if res.returncode == 0:
                 runs = json.loads(res.stdout)
                 if runs:
@@ -502,7 +544,7 @@ def shadow_run(background=False):
     # Fallback to the latest run on the branch if we couldn't find a freshly triggered one
     if not run_id:
         try:
-            res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+            res = subprocess.run(["gh", "run", "list", "--branch", BRANCH, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True, encoding="utf-8", errors="replace")
             if res.returncode == 0:
                 runs = json.loads(res.stdout)
                 if runs and runs[0].get("databaseId") != last_known_run_id:
@@ -529,7 +571,7 @@ def shadow_run(background=False):
     conclusion = "unknown"
     for _ in range(5):
         try:
-            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "conclusion"], capture_output=True, text=True)
+            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
             if res.returncode == 0:
                 conclusion = json.loads(res.stdout).get("conclusion", "unknown")
                 if conclusion and conclusion != "null":
@@ -572,7 +614,7 @@ def main():
             user = get_current_user()
             branch = f"cluster-draft/{user}"
             try:
-                res = subprocess.run(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+                res = subprocess.run(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 runs = json.loads(res.stdout) if res.returncode == 0 else []
                 if runs:
                     run_id = str(runs[0].get("databaseId"))
@@ -593,7 +635,7 @@ def main():
         
         if not run_id:
             try:
-                res = subprocess.run(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True)
+                res = subprocess.run(["gh", "run", "list", "--branch", branch, "--limit", "1", "--json", "databaseId"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 runs = json.loads(res.stdout) if res.returncode == 0 else []
                 if runs:
                     run_id = str(runs[0].get("databaseId"))

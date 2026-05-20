@@ -1,5 +1,6 @@
 import unittest
 import os
+os.environ["CLUSTER_TOKEN"] = ""
 import sys
 import time
 import threading
@@ -87,8 +88,11 @@ class TestDerivedRAM(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if os.path.exists("test_derived_ram.db"):
-            os.remove("test_derived_ram.db")
+        try:
+            if os.path.exists("test_derived_ram.db"):
+                os.remove("test_derived_ram.db")
+        except PermissionError:
+            pass
 
 if __name__ == '__main__':
     unittest.main()

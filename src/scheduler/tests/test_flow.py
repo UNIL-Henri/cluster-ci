@@ -1,5 +1,6 @@
 import unittest
 import os
+os.environ["CLUSTER_TOKEN"] = ""
 import sys
 import time
 import threading
@@ -139,8 +140,11 @@ class TestScheduler(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         if not cls.is_e2e:
-            if os.path.exists("test_cluster.db"):
-                os.remove("test_cluster.db")
+            try:
+                if os.path.exists("test_cluster.db"):
+                    os.remove("test_cluster.db")
+            except PermissionError:
+                pass
 
 if __name__ == '__main__':
     unittest.main()

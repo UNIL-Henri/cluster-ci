@@ -40,7 +40,7 @@ Ce script injecte :
 La commande `cluster-run` est **100% compatible avec Windows (PowerShell/CMD), Linux et macOS**. Elle utilise le mécanisme de "Shadow Push" pour soumettre vos modifications locales (y compris les fichiers non commités et fichiers untracked) au cluster distant sans polluer votre historique git.
 
 - **Sur Linux / macOS** : Après exécution du script `install.sh` ci-dessus, le binaire est disponible dans `~/.local/bin/cluster-run`.
-- **Sur Windows (Natif)** : Clonez ce dépôt localement, puis installez le package en mode éditable via `pip install -e .` ou `uv pip install -e .` pour enregistrer automatiquement `cluster-run` dans votre environnement Windows global. Une fois le package installé, la commande `cluster-run` est disponible directement dans n'importe quel terminal Windows.
+- **Sur Windows (Natif)** : Les scripts wrappers `cluster-run.bat` et `cluster-run.ps1` sont directement disponibles à la racine de votre dépôt de recherche. Vous pouvez exécuter `.\cluster-run` sous PowerShell ou `cluster-run` sous CMD en toute transparence. Pour y accéder globalement, ajoutez simplement le dossier de votre dépôt à votre `PATH` Windows.
 
 | Commande | Description |
 |---|---|
@@ -101,6 +101,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
 | Title (Link) | Description |
 |--------------|-------------|
 | [Architecture Index](docs/index_architecture.md) | Architecture specifications and design notes |
+| [Dashboard Index](docs/index_dashboard.md) | Spécifications du dashboard de monitoring premium et de l'explorateur d'artefacts bidirectionnel |
 | [Pre-flight Index](docs/index_preflight.md) | Validation scanner and pre-commit logic |
 | [Security Index](docs/index_security.md) | Sécurité, analyses de risques et failles connues |
 
@@ -133,6 +134,7 @@ cluster-ci/
 | `src/scheduler/runner_manager.py` | Manages the lifecycle of ephemeral GitHub Actions runners (slot1, slot2) |
 | `scripts/self_update_deferred.sh` | GitOps auto-update script (Pull & Defer pattern): pulls code, signals workers, schedules deferred headnode restart |
 | `update_cluster.sh` | Updates the Headnode and Workers via SSH, uses an `.env` file to store credentials |
+| `scripts/get_worker_details.py` | Audit et collecte des caractéristiques matérielles et logicielles des workers distants via SSH |
 
 ## Roadmap
 
@@ -181,5 +183,6 @@ cluster-ci/
 - [x] GitOps Auto-Update (Pull & Defer): Déploiement automatique du cluster sur merge vers `main` via workflow GitHub Actions + webhook `/webhook/update_self` sur les workers + restart différé des services headnode.
 - [x] Fix Bug: Streaming des logs en direct — Résolution de la détection du `job_id` via le shadow commit hash transmis de bout en bout par GHA au scheduler dans la table `jobs` SQLite.
 - [x] Fix Bug: Auto-Update — Fiabilisation du script `self_update_deferred.sh` pour cibler également le dossier de production global `/home/henri/cluster-ci`, les dépendances via `uv sync` et sa base de données lors des déploiements.
+- [x] Support Windows (PowerShell/CMD) : Ajout de wrappers natifs (`cluster-run.bat` et `cluster-run.ps1`) et résolution définitive du bug de figeage de l'émulateur de terminal en temps réel (latence réduite à 0 ligne).
 - [ ] [Implémenter un Global Execution Timeout pour empêcher le gel du worker sur un job bloqué](https://github.com/UNIL-DESI/cluster-ci/issues/63)
 
