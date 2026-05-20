@@ -442,6 +442,9 @@ log_info "Pre-flight Validation..."
 # Run the validation script using uv to ensure dependencies (tomlkit) are present
 docker_exec "uv run --with tomlkit python3 /cluster-ci/src/runner/validate_pyproject.py --ci"
 
+log_info "DVC-Git-Helper: Injecting cache: false for metrics and plots..."
+docker_exec "uv run --with ruamel.yaml python3 /cluster-ci/src/runner/dvc_git_helper.py inject"
+
 echo "===STAGE:setup:END==="
 echo "===STAGE:dvc_repro:BEGIN==="
 
@@ -616,6 +619,9 @@ echo "===STAGE:sync:BEGIN==="
 if [ $EXEC_RET -ne 0 ]; then
     log_error "Execution interrupted or failed (Exit code: $EXEC_RET). Forcing DVC sync before exiting..."
 fi
+
+log_info "DVC-Git-Helper: Syncing metrics and plots to Git..."
+uv run --with ruamel.yaml python3 "$BASE_DIR/src/runner/dvc_git_helper.py" sync || log_warn "DVC-Git-Helper sync failed."
 
 # Step 4 (Data Router) removed in favor of Post-Flight Lazy Transfer GC.
 
