@@ -92,23 +92,26 @@ def get_cache_false_paths(dvc_yaml_path):
     if not data:
         return []
 
-    def extract_from_entries(entries):
+    def extract_from_entries(entries, wdir='.'):
         if isinstance(entries, list):
             for entry in entries:
                 if isinstance(entry, dict):
                     for path, config in entry.items():
                         if isinstance(config, dict) and config.get('cache') is False:
-                            paths.add(path)
+                            full_path = os.path.join(wdir, path) if wdir != '.' else path
+                            paths.add(full_path)
         elif isinstance(entries, dict):
             for path, config in entries.items():
                 if isinstance(config, dict) and config.get('cache') is False:
-                    paths.add(path)
+                    full_path = os.path.join(wdir, path) if wdir != '.' else path
+                    paths.add(full_path)
 
     if 'stages' in data:
         for stage in data['stages'].values():
+            wdir = stage.get('wdir', '.')
             for key in ['metrics', 'plots']:
                 if key in stage:
-                    extract_from_entries(stage[key])
+                    extract_from_entries(stage[key], wdir)
 
     for key in ['metrics', 'plots']:
         if key in data:

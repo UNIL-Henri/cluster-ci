@@ -78,5 +78,20 @@ class TestDVCGitHelper(unittest.TestCase):
         self.assertIn('p1.csv', paths)
         self.assertNotIn('m2.json', paths)
 
+    def test_get_paths_with_wdir(self):
+        content = {
+            'stages': {
+                'train': {
+                    'wdir': 'results',
+                    'metrics': [{'m1.json': {'cache': False}}]
+                }
+            }
+        }
+        with open(self.dvc_yaml, 'w') as f:
+            self.yaml.dump(content, f)
+
+        paths = get_cache_false_paths(self.dvc_yaml)
+        self.assertIn('results/m1.json', paths)
+
 if __name__ == '__main__':
     unittest.main()
