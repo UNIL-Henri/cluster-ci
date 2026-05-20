@@ -123,13 +123,20 @@ def register_worker():
         ''', (worker_id, hostname, service_url, total_ram_gb, total_ram_gb, total_storage_gb, available_storage_gb, hostname, service_url, total_ram_gb, total_storage_gb, available_storage_gb))
         
         # If a worker re-registers (is_startup=True), it means it restarted and lost any running jobs.
-        # We must mark any 'running' or 'assigned' jobs for this worker as 'failed'.
+        # We only fail 'running' jobs. Jobs that were merely 'assigned' are safely reverted to 'pending'
+        # so they can be rescheduled without falsely reporting a worker crash during assignment.
         is_startup = data.get('is_startup', False)
         if is_startup:
             cursor.execute('''
                 UPDATE jobs
                 SET status = 'failed', exit_code = COALESCE(exit_code, -98)
-                WHERE worker_id = ? AND status IN ('running', 'assigned')
+                WHERE worker_id = ? AND status = 'running'
+            ''', (worker_id,))
+
+            cursor.execute('''
+                UPDATE jobs
+                SET status = 'pending', worker_id = NULL
+                WHERE worker_id = ? AND status = 'assigned'
             ''', (worker_id,))
         
         conn.commit()
