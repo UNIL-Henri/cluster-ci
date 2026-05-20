@@ -77,6 +77,10 @@ function log_info() {
     echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ℹ️  $1"
 }
 
+function log_warn() {
+    echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ⚠️  $1"
+}
+
 function log_success() {
     echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ✅ $1"
 }
@@ -621,7 +625,7 @@ if [ $EXEC_RET -ne 0 ]; then
 fi
 
 log_info "DVC-Git-Helper: Syncing metrics and plots to Git..."
-uv run --with ruamel.yaml python3 "$BASE_DIR/src/runner/dvc_git_helper.py" sync || log_warn "DVC-Git-Helper sync failed."
+docker_exec "uv run --with ruamel.yaml python3 /cluster-ci/src/runner/dvc_git_helper.py sync" || log_warn "DVC-Git-Helper sync failed."
 
 # Step 4 (Data Router) removed in favor of Post-Flight Lazy Transfer GC.
 
