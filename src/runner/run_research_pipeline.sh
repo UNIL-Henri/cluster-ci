@@ -293,8 +293,8 @@ docker run -d \
     -e CLUSTER_CI_GPU_REQUIRED="$CLUSTER_CI_GPU_REQUIRED" \
     "$DOCKER_IMAGE" -f /dev/null
 
-# Ensure the volume is owned by the current user (must be run as root)
-docker exec --user root "${MAIN_CONTAINER_NAME}" bash -c "chown -R $(id -u):$(id -g) /home/user"
+# Ensure the volume and workspace are owned by the current user (must be run as root)
+docker exec --user root "${MAIN_CONTAINER_NAME}" bash -c "chown -R $(id -u):$(id -g) /home/user && chown -R $(id -u):$(id -g) /workspace"
 
 # Detect Docker image change: if the cached image marker differs from the
 # current image, purge stale tool binaries to force a clean reinstall.
