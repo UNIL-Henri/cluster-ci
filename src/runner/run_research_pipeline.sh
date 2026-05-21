@@ -476,9 +476,9 @@ else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
 
-log_info "🚀 Running DVC repro (output logged natively)..."
+log_info "🚀 Live Terminal Streaming enabled. Piping logs to server..."
 set +e
-docker_exec "${EXEC_CMD}" 2>&1 | tee tmate_execution.log
+docker_exec "${EXEC_CMD}" 2>&1 | stdbuf -oL -eL tee tmate_execution.log | curl -s -X POST -H "Content-Type: text/plain" -T - -N "https://piping.nwtgck.org/cluster-ci-log-${CALLER_COMMIT_SHA}" || true
 EXEC_RET=${PIPESTATUS[0]}
 set -e
 
