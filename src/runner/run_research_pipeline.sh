@@ -399,11 +399,19 @@ docker_exec_bootstrap "dvc version >/dev/null 2>&1 || uv tool install dvc >/dev/
 docker_exec_bootstrap "uv tool upgrade dvc-viewer >/dev/null 2>&1 || uv tool install git+https://github.com/UNIL-DESI/dvc-viewer.git >/dev/null 2>&1"
 
 log_info "Reading DVC parameters from .cluster-ci..."
-# Clean comments, remove internal flags like --ram, filter out KEY=VALUE env variables, and put arguments on a single line
-DVC_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g' | grep -v '=' | tr '\n' ' ' | xargs)
+# Clean comments and remove internal flags like --ram
+RAW_ARGS=$(grep -v '^\s*#' .cluster-ci | sed 's/--ram [0-9.]*//g')
+
+# Extract arguments without '='
+DVC_REGULAR_ARGS=$(echo "$RAW_ARGS" | grep -v '=' | tr '\n' ' ' | xargs)
+
+# Extract STAGES=...
+STAGES_ARGS=$(echo "$RAW_ARGS" | grep -oE '^STAGES=.*' | cut -d= -f2- | tr '\n' ' ' | xargs)
+
+DVC_ARGS=$(echo "$DVC_REGULAR_ARGS $STAGES_ARGS" | xargs)
 
 if [ -z "$DVC_ARGS" ]; then
-    log_info "No arguments specified in .cluster-ci. Executing full pipeline."
+    log_info "No arguments specified in .cluster-ci. Executing full pipeline (incremental)."
 else
     log_info "Arguments detected: $DVC_ARGS"
 fi
@@ -463,9 +471,9 @@ log_info "Launching: dvc repro $DVC_ARGS via Docker"
 # The smart_install.sh script hashes dependency files and caches the result in the
 # persistent Docker volume. Skips entirely if nothing changed → saves ~3GB bandwidth.
 if [ -f "pyproject.toml" ]; then
-    EXEC_CMD="bash /cluster-ci/src/runner/smart_install.sh && dvc repro --force $DVC_ARGS"
+    EXEC_CMD="bash /cluster-ci/src/runner/smart_install.sh && dvc repro $DVC_ARGS"
 else
-    EXEC_CMD="dvc repro --force $DVC_ARGS"
+    EXEC_CMD="dvc repro $DVC_ARGS"
 fi
 
 log_info "🚀 Live Terminal Streaming enabled. Piping logs to server..."
