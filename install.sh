@@ -161,6 +161,7 @@ else
                 echo "❌ Homebrew not found. Please install gh manually: https://cli.github.com/"
                 exit 1
             fi
+        fi
     fi
 
     # 0b. Dependencies check (uv)
