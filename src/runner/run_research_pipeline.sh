@@ -279,6 +279,7 @@ docker run -d \
     --gpus all \
     -v "$(pwd):/workspace" \
     -v "$HOME_CACHE_VOLUME:/home/user" \
+    -v /home/henri/ollama_poc:/home/user/.ollama \
     -v "$BASE_DIR:/cluster-ci:ro" \
     -v /etc/passwd:/etc/passwd:ro \
     -v /etc/group:/etc/group:ro \
