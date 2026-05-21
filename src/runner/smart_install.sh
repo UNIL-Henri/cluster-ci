@@ -29,7 +29,14 @@ echo "📦 [Cluster-CI] Dependencies changed (hash: ${CACHED_HASH:0:8}… → ${
 command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1
 
 # Install project with system packages, allowing pre-releases for NGC PyTorch
-uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local -e .
+EXCLUDE_ARGS="--exclude torch --exclude torchvision --exclude torchaudio"
+if python3 -c "import vllm" 2>/dev/null; then
+    echo "ℹ️  [Cluster-CI] vLLM is pre-installed/compiled. Excluding it from pip install to prevent overwrite."
+    EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude vllm"
+fi
+
+uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local $EXCLUDE_ARGS -e .
+
 
 # Post-install: purge any PyPI-downloaded NVIDIA/PyTorch packages that would
 # shadow the highly-optimized NGC system libraries in /usr/local/lib/python3.*/
