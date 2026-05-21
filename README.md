@@ -182,7 +182,8 @@ cluster-ci/
 - [x] Hardening: Ajout de `timeout=10` explicite sur toutes les requêtes HTTP du worker agent pour prévenir les deadlocks TCP silencieux (firewall universitaire).
 - [x] GitOps Auto-Update (Pull & Defer): Déploiement automatique du cluster sur merge vers `main` via workflow GitHub Actions + webhook `/webhook/update_self` sur les workers + restart différé des services headnode.
 - [x] Fix Bug: Streaming des logs en direct — Résolution de la détection du `job_id` via le shadow commit hash transmis de bout en bout par GHA au scheduler dans la table `jobs` SQLite.
-- [x] Fix Bug: Auto-Update — Fiabilisation du script `self_update_deferred.sh` pour cibler également le dossier de production global `/home/henri/cluster-ci`, les dépendances via `uv sync` et sa base de données lors des déploiements.
-- [x] Support Windows (PowerShell/CMD) : Ajout de wrappers natifs (`cluster-run.bat` et `cluster-run.ps1`) et résolution définitive du bug de figeage de l'émulateur de terminal en temps réel (latence réduite à 0 ligne).
+- [x] Fix Bug: Auto-Update — Fiabilisation du script `self_update_deferred.sh` pour cibler également le dossier de production global `/home/henri/cluster-ci`, les dépendances via `uv sync` et sa base de données lors des déploiements (ainsi que la normalisation universelle des fins de lignes en format LF).
+- [x] Support Windows Universel & PATH Automatique (PowerShell/CMD) : Détection et enregistrement automatique de `~/.local/bin` dans le PATH Windows User via PowerShell, wrappers natifs, résolution définitive du bug de figeage du terminal et fin de tâche instantanée dès la complétion du run.
 - [ ] [Implémenter un Global Execution Timeout pour empêcher le gel du worker sur un job bloqué](https://github.com/UNIL-DESI/cluster-ci/issues/63)
+
 
