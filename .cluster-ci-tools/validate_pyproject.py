@@ -14,6 +14,14 @@ except ImportError:
 import urllib.request
 import tempfile
 
+# Force UTF-8 on Windows consoles to prevent UnicodeEncodeError
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 def log_info(msg):
     print(f"ℹ️  [Cluster-CI] {msg}")
 
@@ -87,12 +95,26 @@ def fix_pyproject(pyproject_path, fix_python=False, remove_torch_pin=False):
             deps = doc["project"]["dependencies"]
             new_deps = []
             for dep in deps:
-                if "torch" in dep.lower() and "==" in dep:
-                    # Replace strict pinning with relaxed one
-                    new_dep = re.sub(r"==[0-9.]+", ">=2.0", dep)
-                    new_deps.append(new_dep)
-                    log_success(f"Relaxed dependency: {dep} -> {new_dep}")
-                    modified = True
+                if "==" in dep:
+                    parts = dep.split("==")
+                    dep_name = parts[0].strip().lower()
+                    if dep_name == "torch":
+                        new_dep = "torch>=2.0"
+                        new_deps.append(new_dep)
+                        log_success(f"Relaxed dependency: {dep} -> {new_dep}")
+                        modified = True
+                    elif dep_name == "torchvision":
+                        new_dep = "torchvision>=0.15"
+                        new_deps.append(new_dep)
+                        log_success(f"Relaxed dependency: {dep} -> {new_dep}")
+                        modified = True
+                    elif dep_name == "torchaudio":
+                        new_dep = "torchaudio>=2.0"
+                        new_deps.append(new_dep)
+                        log_success(f"Relaxed dependency: {dep} -> {new_dep}")
+                        modified = True
+                    else:
+                        new_deps.append(dep)
                 else:
                     new_deps.append(dep)
             doc["project"]["dependencies"] = new_deps
