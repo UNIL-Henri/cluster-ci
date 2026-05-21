@@ -34,13 +34,17 @@ uv pip install --system --break-system-packages --prerelease allow --prefix /hom
 # Post-install: purge any PyPI-downloaded NVIDIA/PyTorch packages that would
 # shadow the highly-optimized NGC system libraries in /usr/local/lib/python3.*/
 # See: PyTorch/NVIDIA Library Shadowing Bug (memory ae4a85be)
-rm -rf /home/user/.local/lib/python3.*/site-packages/torch \
-       /home/user/.local/lib/python3.*/site-packages/torch-* \
-       /home/user/.local/lib/python3.*/site-packages/torchvision \
-       /home/user/.local/lib/python3.*/site-packages/torchvision-* \
-       /home/user/.local/lib/python3.*/site-packages/nvidia* \
-       /home/user/.local/lib/python3.*/site-packages/triton* \
-       /home/user/.local/lib/python3.*/site-packages/xformers* 2>/dev/null || true
+for site_packages_dir in "/home/user/.local/lib/python3."*"/site-packages" "/workspace/.venv/lib/python3."*"/site-packages" "./.venv/lib/python3."*"/site-packages"; do
+    if [ -d "$site_packages_dir" ] || ls "$site_packages_dir" 1>/dev/null 2>&1; then
+        rm -rf "$site_packages_dir"/torch \
+               "$site_packages_dir"/torch-* \
+               "$site_packages_dir"/torchvision \
+               "$site_packages_dir"/torchvision-* \
+               "$site_packages_dir"/nvidia* \
+               "$site_packages_dir"/triton* \
+               "$site_packages_dir"/xformers* 2>/dev/null || true
+    fi
+done
 
 # Patch bitsandbytes for newer CUDA versions (e.g. 13.2) if missing
 BNB_DIR=$(ls -d /home/user/.local/lib/python3.*/site-packages/bitsandbytes 2>/dev/null | head -n 1)
