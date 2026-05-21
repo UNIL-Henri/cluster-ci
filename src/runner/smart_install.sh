@@ -25,18 +25,8 @@ fi
 
 echo "📦 [Cluster-CI] Dependencies changed (hash: ${CACHED_HASH:0:8}… → ${DEPS_HASH:0:8}…). Installing..."
 
-# Ensure uv is available
-command -v uv >/dev/null || python3 -m pip install uv --user --break-system-packages >/dev/null 2>&1
-
-# Install project with system packages, allowing pre-releases for NGC PyTorch
-EXCLUDE_ARGS="--exclude torch --exclude torchvision --exclude torchaudio"
-if python3 -c "import vllm" 2>/dev/null; then
-    echo "ℹ️  [Cluster-CI] vLLM is pre-installed/compiled. Excluding it from pip install to prevent overwrite."
-    EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude vllm"
-fi
-
-uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local $EXCLUDE_ARGS -e .
-
+# Install project with system packages using pip to bypass lockfile conflicts with NGC PyTorch
+pip install --break-system-packages --prefix /home/user/.local -e .
 
 # Post-install: purge any PyPI-downloaded NVIDIA/PyTorch/vLLM packages that would
 # shadow the highly-optimized NGC system libraries or source-compiled vLLM in /home/user/vllm
@@ -54,7 +44,6 @@ for site_packages_dir in "/home/user/.local/lib/python3."*"/site-packages" "/wor
                "$site_packages_dir"/vllm-* 2>/dev/null || true
     fi
 done
-
 
 # Patch bitsandbytes for newer CUDA versions (e.g. 13.2) if missing
 BNB_DIR=$(ls -d /home/user/.local/lib/python3.*/site-packages/bitsandbytes 2>/dev/null | head -n 1)
