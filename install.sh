@@ -365,7 +365,18 @@ EOF
     else
         curl -sSL "$RAW_URL/src/cluster/cluster_run.py" -o "$HOME/.local/bin/cluster-run"
     fi
+
+    # Fix line endings to prevent shebang issues in Git Bash on Windows
+    sed -i.bak 's/\r$//' "$HOME/.local/bin/cluster-run" 2>/dev/null || true
+    rm -f "$HOME/.local/bin/cluster-run.bak"
+
     chmod +x "$HOME/.local/bin/cluster-run"
+
+    # Create Windows wrapper for PowerShell/CMD
+    cat << 'EOF' > "$HOME/.local/bin/cluster-run.cmd"
+@echo off
+python "%~dp0cluster-run" %*
+EOF
 
 
     # Add ~/.local/bin to PATH if not already there
