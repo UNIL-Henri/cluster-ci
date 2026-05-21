@@ -297,54 +297,80 @@ def stream_logs(run_id, commit_sha):
         print("==========================================================================")
         
         try:
-            # We use curl to stream from ppng.io
-            proc = subprocess.Popen(["curl", "-s", "-N", f"https://ppng.io/cluster-ci-log-{commit_sha}"], stdout=sys.stdout, stderr=sys.stderr)
-            
-            def monitor_run_status():
-                while proc.poll() is None:
-                    time.sleep(5)
-                    try:
-                        res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-                        if res.returncode == 0:
-                            status_info = json.loads(res.stdout)
-                            status = status_info.get("status")
-                            if status in ("completed", "cancelled", "failure"):
-                                proc.terminate()
-                                break
-                    except Exception:
-                        pass
+            while True:
+                # Prior check of GHA run status
+                try:
+                    res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                    if res.returncode == 0:
+                        info = json.loads(res.stdout)
+                        status = info.get("status")
+                        conclusion = info.get("conclusion")
+                        if status == "completed" or conclusion:
+                            if conclusion == "success":
+                                print("✅ Cluster-CI run completed successfully!")
+                            else:
+                                print(f"❌ Cluster-CI run finished with status: {conclusion}")
+                            tmate_connected = True
+                            break
+                except Exception:
+                    pass
 
-            monitor_thread = threading.Thread(target=monitor_run_status, daemon=True)
-            monitor_thread.start()
+                # Start curl process to stream from ppng.io
+                proc = subprocess.Popen(["curl", "-s", "-N", f"https://ppng.io/cluster-ci-log-{commit_sha}"], stdout=sys.stdout, stderr=sys.stderr)
+                
+                stop_event = threading.Event()
+                
+                def monitor_run_status():
+                    while not stop_event.is_set() and proc.poll() is None:
+                        time.sleep(5)
+                        try:
+                            res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                            if res.returncode == 0:
+                                status_info = json.loads(res.stdout)
+                                status = status_info.get("status")
+                                conclusion = status_info.get("conclusion")
+                                if status == "completed" or conclusion:
+                                    proc.terminate()
+                                    break
+                        except Exception:
+                            pass
 
-            proc.wait()
-            tmate_connected = True
+                monitor_thread = threading.Thread(target=monitor_run_status, daemon=True)
+                monitor_thread.start()
+
+                # Wait for curl to finish
+                proc.wait()
+                stop_event.set()
+                tmate_connected = True
+
+                # Check GHA status again
+                try:
+                    res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                    if res.returncode == 0:
+                        info = json.loads(res.stdout)
+                        status = info.get("status")
+                        conclusion = info.get("conclusion")
+                        if status == "completed" or conclusion:
+                            if conclusion == "success":
+                                print("✅ Cluster-CI run completed successfully!")
+                            else:
+                                print(f"❌ Cluster-CI run finished with status: {conclusion}")
+                            break
+                except Exception:
+                    pass
+
+                # If the run is still active but curl stopped, wait and reconnect
+                print("\n🔄 Connection to piping lost or waiting for runner. Reconnecting in 3s...")
+                time.sleep(3)
+
         except KeyboardInterrupt:
-            proc.terminate()
+            try:
+                proc.terminate()
+            except Exception:
+                pass
             raise
             
         print("==========================================================================")
-
-    # 2. Wait for GHA final status if we streamed via tmate
-    if tmate_connected:
-        print("⏳ Waiting for GitHub Actions to finalize...")
-        for _ in range(30):
-            try:
-                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status,conclusion"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-                if res.returncode == 0:
-                    info = json.loads(res.stdout)
-                    status = info.get("status")
-                    conclusion = info.get("conclusion")
-                    if status == "completed" and conclusion:
-                        if conclusion == "success":
-                            print("✅ Cluster-CI run completed successfully!")
-                        else:
-                            print(f"❌ Cluster-CI run finished with status: {conclusion}")
-                        return 0
-            except Exception:
-                pass
-            time.sleep(2)
-        print("⚠️  Tmate session ended. GHA status could not be determined.")
         return 0
 
     # 3. Fallback: API Polling & Consolidated Logs Dump
