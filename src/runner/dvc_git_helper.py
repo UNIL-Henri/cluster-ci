@@ -143,7 +143,7 @@ def sync_metrics():
 
         size_mb = os.path.getsize(path) / (1024 * 1024)
         if size_mb < 5:
-            subprocess.run(['git', 'add', path], check=True)
+            subprocess.run(['git', 'add', '-f', path], check=True)
             log_info(f"Staged {path} ({size_mb:.2f} MB)")
             added_any = True
         else:
