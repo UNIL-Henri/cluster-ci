@@ -476,15 +476,10 @@ else
     EXEC_CMD="dvc repro $DVC_ARGS"
 fi
 
-log_info "🚀 Live Terminal Streaming enabled. Piping logs to server (decoupled)..."
+log_info "🚀 Live Terminal Streaming enabled. Piping logs to server..."
 set +e
-touch tmate_execution.log
-tail -f tmate_execution.log 2>/dev/null | curl -s -X POST -H "Content-Type: text/plain" -T - -N "https://piping.nwtgck.org/cluster-ci-log-${CALLER_COMMIT_SHA}" >/dev/null 2>&1 &
-CURL_PID=$!
-
-docker_exec "${EXEC_CMD}" 2>&1 | stdbuf -oL -eL tee tmate_execution.log
+docker_exec "${EXEC_CMD}" 2>&1 | stdbuf -oL -eL tee tmate_execution.log | curl -s -X POST -H "Content-Type: text/plain" -T - -N "https://ppng.io/cluster-ci-log-${CALLER_COMMIT_SHA}" || true
 EXEC_RET=${PIPESTATUS[0]}
-kill $CURL_PID 2>/dev/null || true
 set -e
 
 echo "===STAGE:dvc_repro:END==="

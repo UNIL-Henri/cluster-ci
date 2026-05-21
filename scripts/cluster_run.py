@@ -286,98 +286,26 @@ def cleanup():
         subprocess.run(["git", "push", "origin", "--delete", BRANCH, "--quiet"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def stream_logs(run_id, commit_sha):
-    """Monitor GHA run and capture live log stream via tmate/SSH or fallback API."""
+    """Monitor GHA run and capture live log stream via piping or fallback API."""
     repo_name = get_repo_full_name()
     tmate_connected = False
     
-    # 1. Poll for tmate reverse SSH session
+    # 1. Connect to live terminal via piping
     if commit_sha:
-        print("🔍 Polling for live terminal connection (timeout ~4 mins)...")
-        spin_chars = ["/", "-", "\\", "|"]
-        spin_idx = 0
+        print("🔍 Connecting to live terminal session via piping...")
+        print("⚡ Capturing real-time logs from runner (streaming to your terminal)...")
+        print("==========================================================================")
         
-        for attempt in range(120):
-            # Check if GHA completed in the meantime
-            try:
-                res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-                if res.returncode == 0:
-                    run_status = json.loads(res.stdout).get("status")
-                    if run_status in ("completed", "cancelled"):
-                        break
-            except Exception:
-                run_status = "queued"
-
-            # Check status API for tmate details
-            try:
-                res = subprocess.run(["gh", "api", f"repos/{repo_name}/commits/{commit_sha}/statuses"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-                if res.returncode == 0:
-                    statuses = json.loads(res.stdout)
-                    tmate_status = next((x for x in statuses if x.get("context") == "tmate"), None)
-                    if tmate_status:
-                        tmate_url = tmate_status.get("target_url")
-                        tmate_description = tmate_status.get("description", "")
-                        # SSH command is inside the description: "SSH: ssh token@tmate.io"
-                        if "ssh " in tmate_description:
-                            ssh_cmd_str = tmate_description.replace("SSH: ", "").strip()
-                            print(f"\r\033[K🟢 Live terminal stream found!")
-                            print(f"🔗 Web: {tmate_url}")
-                            print(f"🔌 SSH: {ssh_cmd_str}")
-                            print("⚡ Capturing real-time logs from runner (streaming to your terminal)...")
-                            print("==========================================================================")
-                            
-                            # Parse connection arguments for SSH
-                            ssh_parts = ssh_cmd_str.split()
-                            # We construct: ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -tt <user@host>
-                            ssh_executable = ssh_parts[0]
-                            ssh_args = [
-                                "-o", "StrictHostKeyChecking=accept-new",
-                                "-o", "ServerAliveInterval=10",
-                                "-o", "ServerAliveCountMax=3",
-                                "-tt"
-                            ] + ssh_parts[1:]
-                            
-                            # Start SSH connection and stream logs
-                            proc = subprocess.Popen([ssh_executable] + ssh_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                            
-                            # Process logs in real time
-                            # Robust decoding
-                            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-                            
-                            try:
-                                while True:
-                                    chunk = proc.stdout.read(1)
-                                    if not chunk:
-                                        break
-                                    char = decoder.decode(chunk)
-                                    if char:
-                                        process_tmate_char(char)
-                                # Ensure all remaining lines in virtual terminal grid are dumped
-                                dump_all_remaining()
-                            except KeyboardInterrupt:
-                                proc.terminate()
-                                raise
-                            finally:
-                                proc.wait()
-                                
-                            print("==========================================================================")
-                            tmate_connected = True
-                            break
-            except Exception as e:
-                # Silently catch exceptions during GHA/status check
-                pass
-
-            char = spin_chars[spin_idx]
-            spin_idx = (spin_idx + 1) % 4
+        try:
+            # We use curl to stream from ppng.io
+            proc = subprocess.Popen(["curl", "-s", "-N", f"https://ppng.io/cluster-ci-log-{commit_sha}"], stdout=sys.stdout, stderr=sys.stderr)
+            proc.wait()
+            tmate_connected = True
+        except KeyboardInterrupt:
+            proc.terminate()
+            raise
             
-            if run_status == "queued":
-                sys.stdout.write(f"\r⏳ Waiting in GitHub Actions queue [{char}] (allocation of a runner slot)...")
-            else:
-                sys.stdout.write(f"\r⏱️  Booting job environment [{char}] (registering with scheduler)...")
-            sys.stdout.flush()
-            time.sleep(2)
-            
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
+        print("==========================================================================")
 
     # 2. Wait for GHA final status if we streamed via tmate
     if tmate_connected:
