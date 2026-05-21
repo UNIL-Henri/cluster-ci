@@ -45,10 +45,4 @@ En tant qu'agent autonome, tu DOIS respecter scrupuleusement les contraintes sui
      - `cluster-run view [run_id]` : Affiche ou reprend le streaming des logs d'un run spécifié (ou du tout dernier run si aucun ID n'est fourni).
      - `cluster-run cancel [run_id]` : Interrompt proprement l'exécution d'un run en cours et nettoie la branche temporaire correspondante.
    - **Règle absolue** : Respecte toujours cette pipeline de soumission pour tester ou exécuter du code sur le cluster. N'essaie jamais de te connecter directement en SSH au Headnode ou aux Workers pour exécuter des scripts manuellement.
-
-5. **Déploiement et Mises à jour de l'Infrastructure (`cluster-ci`)** :
-   - ⚠️ **Règle stricte** : NE PUSHE JAMAIS DIRECTEMENT SUR LA BRANCHE `main` DE `cluster-ci` de ton propre chef.
-   - Un push sur la branche principale de `cluster-ci` déclenche une mise à jour globale et forcée de l'infrastructure (`deploy-infra.yml`). Cela a pour effet de drainer les nœuds et d'**ANNULER tous les jobs en cours d'exécution** sur le cluster (y compris tes propres expériences).
-   - Les modifications d'infrastructure (et leurs déploiements) relèvent de la responsabilité exclusive de l'utilisateur. Attends toujours son ordre explicite pour commiter et pousser sur ce dépôt.
-
 <!-- CLUSTER-CI:END -->

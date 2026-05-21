@@ -406,6 +406,23 @@ EOF
         fi
     fi
 
+    # Add ~/.local/bin to Windows User PATH if running under MSYS/Cygwin (Windows Git Bash)
+    if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        WINDOWS_BIN_DIR=$(cygpath -w "$HOME/.local/bin" 2>/dev/null || echo "$USERPROFILE\\.local\\bin")
+        echo "🪟 Windows system detected. Registering $WINDOWS_BIN_DIR in Windows User PATH..."
+        powershell.exe -NoProfile -Command "
+            \$binDir = '$WINDOWS_BIN_DIR';
+            \$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User');
+            \$paths = \$currentPath -split ';';
+            if (\$paths -notcontains \$binDir) {
+                [Environment]::SetEnvironmentVariable('Path', \$currentPath + ';' + \$binDir, 'User');
+                write-output '💡 Added ~/.local/bin to Windows User PATH. You may need to restart your terminal or editor (VS Code, etc.) for changes to take effect.';
+            } else {
+                write-output '✅ ~/.local/bin is already in Windows User PATH.';
+            }
+        " 2>/dev/null || echo "⚠️ Failed to automatically update Windows User PATH. Please add $WINDOWS_BIN_DIR to your Windows environment PATH variables manually."
+    fi
+
     echo ""
     echo "🎉 Installation complete!"
     echo "👉 Remember to commit and push the generated files:"
