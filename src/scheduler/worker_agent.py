@@ -140,6 +140,10 @@ def execute_job(job):
     env["CLUSTER_CI_MODE"] = "executor"
     env["JOB_ID"] = job_id
     env["LOGS_DIR"] = LOGS_DIR
+    commit_hash = job.get('commit_hash')
+    if commit_hash:
+        logger.info(f"Injecting CALLER_COMMIT_SHA for job {job_id}: {commit_hash}")
+        env["CALLER_COMMIT_SHA"] = commit_hash
     if p2p_url:
         logger.info(f"Injecting P2P URL for job {job_id}: {p2p_url}")
         env["DVC_REMOTE_P2P_URL"] = p2p_url

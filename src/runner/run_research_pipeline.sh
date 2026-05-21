@@ -12,11 +12,12 @@ CLI_TARGET_BRANCH=$2
 CLI_GH_TOKEN="${3:-$GH_TOKEN}"
 
 # Capture the caller's commit hash before changing directory
-CALLER_COMMIT_SHA=""
-if [ -n "$GITHUB_SHA" ]; then
-    CALLER_COMMIT_SHA="$GITHUB_SHA"
-elif git rev-parse HEAD &>/dev/null; then
-    CALLER_COMMIT_SHA=$(git rev-parse HEAD)
+if [ -z "$CALLER_COMMIT_SHA" ]; then
+    if [ -n "$GITHUB_SHA" ]; then
+        CALLER_COMMIT_SHA="$GITHUB_SHA"
+    elif git rev-parse HEAD &>/dev/null; then
+        CALLER_COMMIT_SHA=$(git rev-parse HEAD)
+    fi
 fi
 export CALLER_COMMIT_SHA
 
