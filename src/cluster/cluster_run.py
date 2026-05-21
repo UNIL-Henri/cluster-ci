@@ -554,6 +554,33 @@ def shadow_run(background=False):
 
     if conclusion == "success":
         print("✅ Cluster-CI run completed successfully.")
+        print("📥 Fetching updated dvc.lock and metrics from cluster...")
+        try:
+            # 1. Fetch the latest commits on the draft branch
+            subprocess.run(["git", "fetch", "origin", BRANCH], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # 2. Detect files changed by the cluster execution (excluding .cluster-ci-commit or other temporary markers)
+            res_diff = subprocess.run(["git", "diff", "HEAD", f"origin/{BRANCH}", "--name-only"], capture_output=True, text=True)
+            if res_diff.returncode == 0:
+                files_to_sync = []
+                for line in res_diff.stdout.splitlines():
+                    name = line.strip()
+                    if name and not name.startswith(".cluster-ci"):
+                        files_to_sync.append(name)
+                
+                if files_to_sync:
+                    print(f"📂 Syncing modified files from cluster: {', '.join(files_to_sync)}")
+                    # Checkout these files from the remote draft branch
+                    subprocess.run(["git", "checkout", f"origin/{BRANCH}", "--"] + files_to_sync, check=True)
+                    print("✅ Local workspace synchronized with cluster artifacts.")
+                else:
+                    print("ℹ️ No changes detected in the cluster execution.")
+            else:
+                # Fallback to checkout dvc.lock directly if diff command fails
+                subprocess.run(["git", "checkout", f"origin/{BRANCH}", "--", "dvc.lock"], check=True)
+                print("✅ Synchronized local dvc.lock.")
+        except Exception as e:
+            print(f"⚠️ Failed to auto-sync dvc.lock/metrics from cluster: {e}")
     else:
         print(f"❌ Cluster-CI run finished with status: {conclusion or 'unknown'}")
 

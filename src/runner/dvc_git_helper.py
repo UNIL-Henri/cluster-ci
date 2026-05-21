@@ -120,14 +120,23 @@ def get_cache_false_paths(dvc_yaml_path):
     return list(paths)
 
 def sync_metrics():
+    added_any = False
+
+    # 1. Stage dvc.lock if it exists
+    if os.path.exists('dvc.lock'):
+        # Check if dvc.lock has changes before adding
+        res_diff = subprocess.run(['git', 'diff', '--quiet', 'dvc.lock'])
+        if res_diff.returncode != 0:
+            subprocess.run(['git', 'add', 'dvc.lock'], check=True)
+            log_info("Staged modified dvc.lock for synchronization")
+            added_any = True
+        else:
+            log_info("dvc.lock is already up to date, skipping staging.")
+
+    # 2. Stage metrics and plots
     dvc_yaml_path = 'dvc.yaml'
     paths = get_cache_false_paths(dvc_yaml_path)
 
-    if not paths:
-        log_info("No metrics/plots with cache: false found to sync.")
-        return
-
-    added_any = False
     for path in paths:
         if not os.path.isfile(path):
             continue
@@ -144,10 +153,10 @@ def sync_metrics():
         # Check if there are actual changes staged
         res = subprocess.run(['git', 'diff', '--cached', '--quiet'])
         if res.returncode != 0:
-            log_info("Committing and pushing auto-synced metrics...")
+            log_info("Committing and pushing auto-synced metrics and dvc.lock...")
             subprocess.run(['git', 'config', 'user.name', 'cluster-ci-bot'], check=True)
             subprocess.run(['git', 'config', 'user.email', 'bot@cluster-ci.io'], check=True)
-            subprocess.run(['git', 'commit', '-m', 'chore(ci): auto-sync metrics [skip ci]'], check=True)
+            subprocess.run(['git', 'commit', '-m', 'chore(ci): auto-sync metrics and dvc.lock [skip ci]'], check=True)
             # Try to push to current branch with reconciliation mechanism
             try:
                 subprocess.run(['git', 'push', 'origin', 'HEAD'], check=True, capture_output=True, text=True)
