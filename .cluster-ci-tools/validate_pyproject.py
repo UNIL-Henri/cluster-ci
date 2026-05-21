@@ -5,12 +5,6 @@ import subprocess
 import re
 from pathlib import Path
 
-# Force standard output streams to use UTF-8 to prevent UnicodeEncodeError under Windows CMD/PowerShell
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
-
 try:
     import tomlkit
 except ImportError:
@@ -123,12 +117,7 @@ def simulate_resolution(pyproject_path, constraints_path):
         pyproject_path
     ]
     
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-    except FileNotFoundError:
-        log_info("⚠️  'uv' command not found. Skipping dependency resolution simulation. Please install 'uv' for exhaustive checks.")
-        return True
-        
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         log_error("Resolution simulation failed!")
         print(result.stderr)
