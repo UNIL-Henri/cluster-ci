@@ -36,6 +36,8 @@ uv pip install --system --break-system-packages --prerelease allow --prefix /hom
 # See: PyTorch/NVIDIA Library Shadowing Bug (memory ae4a85be)
 rm -rf /home/user/.local/lib/python3.*/site-packages/torch \
        /home/user/.local/lib/python3.*/site-packages/torch-* \
+       /home/user/.local/lib/python3.*/site-packages/torchvision \
+       /home/user/.local/lib/python3.*/site-packages/torchvision-* \
        /home/user/.local/lib/python3.*/site-packages/nvidia* \
        /home/user/.local/lib/python3.*/site-packages/triton* \
        /home/user/.local/lib/python3.*/site-packages/xformers* 2>/dev/null || true
