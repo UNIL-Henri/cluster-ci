@@ -38,8 +38,8 @@ fi
 uv pip install --system --break-system-packages --prerelease allow --prefix /home/user/.local $EXCLUDE_ARGS -e .
 
 
-# Post-install: purge any PyPI-downloaded NVIDIA/PyTorch packages that would
-# shadow the highly-optimized NGC system libraries in /usr/local/lib/python3.*/
+# Post-install: purge any PyPI-downloaded NVIDIA/PyTorch/vLLM packages that would
+# shadow the highly-optimized NGC system libraries or source-compiled vLLM in /home/user/vllm
 # See: PyTorch/NVIDIA Library Shadowing Bug (memory ae4a85be)
 for site_packages_dir in "/home/user/.local/lib/python3."*"/site-packages" "/workspace/.venv/lib/python3."*"/site-packages" "./.venv/lib/python3."*"/site-packages"; do
     if [ -d "$site_packages_dir" ] || ls "$site_packages_dir" 1>/dev/null 2>&1; then
@@ -49,9 +49,12 @@ for site_packages_dir in "/home/user/.local/lib/python3."*"/site-packages" "/wor
                "$site_packages_dir"/torchvision-* \
                "$site_packages_dir"/nvidia* \
                "$site_packages_dir"/triton* \
-               "$site_packages_dir"/xformers* 2>/dev/null || true
+               "$site_packages_dir"/xformers* \
+               "$site_packages_dir"/vllm \
+               "$site_packages_dir"/vllm-* 2>/dev/null || true
     fi
 done
+
 
 # Patch bitsandbytes for newer CUDA versions (e.g. 13.2) if missing
 BNB_DIR=$(ls -d /home/user/.local/lib/python3.*/site-packages/bitsandbytes 2>/dev/null | head -n 1)
