@@ -200,6 +200,8 @@ else
 [Unit]
 Description=Cluster-CI Worker Agent
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -208,6 +210,8 @@ WorkingDirectory=$BASE_DIR
 EnvironmentFile=$BASE_DIR/.env
 ExecStart=$(uv python find) $BASE_DIR/src/scheduler/worker_agent.py
 Restart=always
+RestartSec=10
+WatchdogSec=120
 
 [Install]
 WantedBy=multi-user.target
