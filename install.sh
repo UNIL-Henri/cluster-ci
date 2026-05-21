@@ -231,7 +231,7 @@ jobs:
       - name: Run Orchestrator
         env:
           ALL_GITHUB_SECRETS: \${{ toJSON(secrets) }}
-        run: bash src/runner/run_research_pipeline.sh "\${{ github.repository }}" "\${{ github.head_ref || github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
+        run: /usr/local/bin/cluster-ci-run "\${{ github.repository }}" "\${{ github.head_ref || github.ref_name }}" "\${{ secrets.GITHUB_TOKEN }}"
 EOF
 
     # 3. .cluster-ci configuration file injection
