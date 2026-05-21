@@ -142,6 +142,15 @@ else
     # --- Client-side Installation (Research Project) ---
     echo "🚀 Cluster-CI: Client Installation"
 
+    # Detect the correct python binary to use (avoiding Windows Store stub for python3)
+    LOCAL_PYTHON="python3"
+    if command -v python3 &>/dev/null && python3 --version &>/dev/null; then
+        LOCAL_PYTHON="python3"
+    elif command -v python &>/dev/null && python --version &>/dev/null; then
+        LOCAL_PYTHON="python"
+    fi
+    echo "🐍 Using Python binary: $LOCAL_PYTHON"
+
     # 0. Dependencies check (GitHub CLI)
     if ! command -v gh &> /dev/null; then
         echo "🔍 GitHub CLI (gh) not found. Attempting installation..."
@@ -279,7 +288,7 @@ EOF
 
     # Install dependencies for the validator
     echo "📦 Installing validator dependencies (tomlkit)..."
-    python3 -c "import tomlkit" 2>/dev/null || python3 -m pip install tomlkit --user || true
+    $LOCAL_PYTHON -c "import tomlkit" 2>/dev/null || $LOCAL_PYTHON -m pip install tomlkit --user || true
 
     # Inject Hook
     HOOK_FILE=".git/hooks/pre-commit"
@@ -289,7 +298,7 @@ EOF
 #!/bin/bash
 # Cluster-CI Pre-commit Validator
 exec < /dev/tty
-python3 .cluster-ci-tools/validate_pyproject.py --interactive --pyproject pyproject.toml --constraints .cluster-ci-tools/cluster_constraints.txt
+$LOCAL_PYTHON .cluster-ci-tools/validate_pyproject.py --interactive --pyproject pyproject.toml --constraints .cluster-ci-tools/cluster_constraints.txt
 EOF
     chmod +x "$HOOK_FILE"
     echo "✅ Pre-commit hook installed."
@@ -369,6 +378,12 @@ EOF
     # Fix line endings to prevent shebang issues in Git Bash on Windows
     sed -i.bak 's/\r$//' "$HOME/.local/bin/cluster-run" 2>/dev/null || true
     rm -f "$HOME/.local/bin/cluster-run.bak"
+
+    # If LOCAL_PYTHON is python (on Windows), replace the python3 shebang with python
+    if [ "$LOCAL_PYTHON" = "python" ]; then
+        sed -i.bak '1s/python3/python/' "$HOME/.local/bin/cluster-run" 2>/dev/null || true
+        rm -f "$HOME/.local/bin/cluster-run.bak"
+    fi
 
     chmod +x "$HOME/.local/bin/cluster-run"
 
