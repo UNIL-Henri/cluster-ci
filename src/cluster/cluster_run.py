@@ -316,7 +316,7 @@ def stream_logs(run_id, commit_sha):
                     pass
 
                 # Start curl process to stream from ppng.io
-                proc = subprocess.Popen(["curl", "-s", "-N", f"https://ppng.io/cluster-ci-log-{commit_sha}"], stdout=sys.stdout, stderr=sys.stderr)
+                proc = subprocess.Popen(["curl", "-s", "-N", f"https://ppng.io/cluster-ci-log-{commit_sha}"])
                 
                 stop_event = threading.Event()
                 
