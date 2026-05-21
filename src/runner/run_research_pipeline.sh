@@ -138,6 +138,21 @@ function cleanup_job_resources() {
         docker rm -f "cluster-viewer-$SAFE_JOB_ID" 2>/dev/null || true
         rm -f "/tmp/tmate_${SAFE_JOB_ID}.sock" "/tmp/tmate_${SAFE_JOB_ID}.conf" 2>/dev/null || true
     fi
+
+    # Kill host dvc-viewer process associated with this job's port or job ID
+    if [ -n "$VIEWER_PORT" ]; then
+        log_info "Cleaning up host dvc-viewer processes on port ${VIEWER_PORT}..."
+        for pid in $(pgrep -f "dvc-viewer.*--port ${VIEWER_PORT}" || true); do
+            log_info "Killing host dvc-viewer process (PID: $pid) on port ${VIEWER_PORT}..."
+            kill -9 "$pid" 2>/dev/null || true
+        done
+    fi
+    # Backup cleanup of any leftover dvc-viewer process globally on host since this job is ending
+    for pid in $(pgrep -f "dvc-viewer" || true); do
+        log_info "Force-cleaning residual dvc-viewer process on host (PID: $pid)..."
+        kill -9 "$pid" 2>/dev/null || true
+    done
+
     [ -n "$DVC_VIEWER_PID" ] && kill -9 "$DVC_VIEWER_PID" 2>/dev/null || true
     python3 "$BASE_DIR/src/runner/gc_orchestrator.py" update-idle "$TARGET_REPO" "$BASE_DIR/repositories/$TARGET_REPO"
     log_info "Running post-flight Maintenance GC (Lazy Transfer)..."
@@ -152,12 +167,12 @@ log_info "[Step 2/3] Preventive purge of residual containers and processes..."
 # This ensures that if a previous attempt of the SAME job failed/crashed, we clean it up.
 docker rm -f "${MAIN_CONTAINER_NAME}" "${VIEWER_CONTAINER_NAME}" 2>/dev/null || true
 
-# 2.2 Cleanup legacy dvc-viewer processes (fallback for non-dockerized viewers)
+# 2.2 Cleanup residual dvc-viewer processes globally on the host worker.
+# Since the worker only runs one research job at a time, any leftover dvc-viewer
+# process on the host is a stale orphan from a previous job and must be purged.
 for pid in $(pgrep -f "dvc-viewer" || true); do
-    if pwdx "$pid" 2>/dev/null | grep -q ": $BASE_DIR/$REPO_WORK_DIR$"; then
-        log_info "Cleaning up ghost legacy dvc-viewer process (PID: $pid)..."
-        kill -9 "$pid" 2>/dev/null || true
-    fi
+    log_info "Cleaning up leftover dvc-viewer process on host (PID: $pid)..."
+    kill -9 "$pid" 2>/dev/null || true
 done
 
 if [ ! -d "$REPO_BASENAME/.git" ]; then
@@ -449,7 +464,6 @@ else
         -v "$HOME_CACHE_VOLUME:/home/user" \
         -p "0.0.0.0:$VIEWER_PORT:$VIEWER_PORT" \
         --ipc=host \
-        --pid="container:${MAIN_CONTAINER_NAME}" \
         --user "$(id -u):$(id -g)" -e HOME=/home/user \
         -e CLUSTER_CI_MODE=executor \
         $ENV_FILE_FLAG \

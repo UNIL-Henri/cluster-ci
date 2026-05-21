@@ -6,7 +6,22 @@ import time
 import fcntl
 import subprocess
 import requests
+import psutil
 from pathlib import Path
+
+def kill_host_dvc_viewer_processes():
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                cmdline = proc.info.get('cmdline') or []
+                cmdline_str = " ".join(cmdline).lower()
+                if "dvc-viewer" in cmdline_str or proc.info.get('name') == "dvc-viewer":
+                    print(f"[Zombie GC] Killing host dvc-viewer process (PID: {proc.info['pid']})")
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+    except Exception as e:
+        print(f"Error scanning for host dvc-viewer processes: {e}")
 
 # Config
 PANIC_THRESHOLD_GB = 50
@@ -294,6 +309,8 @@ def run_zombie_gc():
             try:
                 os.remove(zombie_registry_path)
             except: pass
+        # Clean up any leftover host-level dvc-viewer processes since no job containers are active
+        kill_host_dvc_viewer_processes()
         return
 
     with open(zombie_registry_path, "a+") as f:
@@ -359,6 +376,8 @@ def run_zombie_gc():
                     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
                     # Also kill viewer if present
                     subprocess.run(["docker", "rm", "-f", container_name.replace("cluster-job-", "cluster-viewer-")], capture_output=True)
+                    # And kill leftover host processes
+                    kill_host_dvc_viewer_processes()
                 else:
                     new_registry[container_name] = {
                         "last_activity": last_activity,

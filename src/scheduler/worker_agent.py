@@ -28,6 +28,18 @@ def get_headers():
         headers["Authorization"] = f"Bearer {CLUSTER_TOKEN}"
     return headers
 
+def kill_dvc_viewer_processes():
+    logger.info("Scanning for remaining dvc-viewer processes on host...")
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info.get('cmdline') or []
+            cmdline_str = " ".join(cmdline).lower()
+            if "dvc-viewer" in cmdline_str or proc.info.get('name') == "dvc-viewer":
+                logger.info(f"Killing host dvc-viewer process (PID: {proc.info['pid']}, cmd: {cmdline})")
+                proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+
 # Generate or load a persistent worker ID
 WORKER_ID_FILE = "worker_id.txt"
 if os.path.exists(WORKER_ID_FILE):
@@ -127,6 +139,7 @@ def execute_job(job):
     env_vars = job.get('env_vars')
 
     logger.info(f"Executing job {job_id} for {repo}@{branch} with {ram_limit_gb}GB limit")
+    kill_dvc_viewer_processes()
     update_job_status(job_id, 'running')
 
     with job_lock:
@@ -270,6 +283,7 @@ def execute_job(job):
         logger.error(f"Execution failed: {e}")
         update_job_status(job_id, 'failed', -1)
     finally:
+        kill_dvc_viewer_processes()
         if 'log_file' in locals() and not log_file.closed:
             log_file.close()
         should_restart = False
@@ -368,6 +382,7 @@ def cancel_job(job_id):
     logger.info(f"Forcing destruction of containers for job {job_id}")
     res = subprocess.run(["docker", "rm", "-f", f"cluster-job-{safe_job_id}", f"cluster-viewer-{safe_job_id}"],
                          capture_output=True, text=True)
+    kill_dvc_viewer_processes()
 
     with job_lock:
         if current_job_id == job_id and current_process:

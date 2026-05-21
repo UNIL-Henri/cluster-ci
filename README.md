@@ -94,7 +94,7 @@ Cluster CI is based on GitOps principles. Instead of the agent trying to maintai
    Une fois alloué, le conteneur a accès à 100% de la RAM hôte pour éviter les limites artificielles.
 ## Main Results
 
-- **Status**: Under construction (Last updated: 21 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
+- **Status**: Operational & secured against zombie processes (Last updated: 21 May 2026). The system replaces the legacy synchronous network approach with a robust asynchronous CI/CD loop.
 
 ## Documentation Index
 
