@@ -299,6 +299,24 @@ def stream_logs(run_id, commit_sha):
         try:
             # We use curl to stream from ppng.io
             proc = subprocess.Popen(["curl", "-s", "-N", f"https://ppng.io/cluster-ci-log-{commit_sha}"], stdout=sys.stdout, stderr=sys.stderr)
+            
+            def monitor_run_status():
+                while proc.poll() is None:
+                    time.sleep(5)
+                    try:
+                        res = subprocess.run(["gh", "run", "view", str(run_id), "--json", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                        if res.returncode == 0:
+                            status_info = json.loads(res.stdout)
+                            status = status_info.get("status")
+                            if status in ("completed", "cancelled", "failure"):
+                                proc.terminate()
+                                break
+                    except Exception:
+                        pass
+
+            monitor_thread = threading.Thread(target=monitor_run_status, daemon=True)
+            monitor_thread.start()
+
             proc.wait()
             tmate_connected = True
         except KeyboardInterrupt:
